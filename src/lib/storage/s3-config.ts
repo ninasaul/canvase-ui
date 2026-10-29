@@ -40,14 +40,49 @@ export function isPlaceholderStorageEndpoint(endpoint: string): boolean {
   );
 }
 
+/**
+ * S3/R2 API endpoint must be the service host only (no bucket path).
+ * Path-style uploads then become `{endpoint}/{bucket}/{key}`.
+ * If users paste `...cloudflarestorage.com/my-bucket`, strip the trailing bucket.
+ */
+export function normalizeStorageEndpoint(
+  endpoint: string,
+  bucket?: string,
+): string {
+  const trimmed = endpoint.trim().replace(/\/+$/, "");
+  if (!trimmed) {
+    return "";
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return trimmed;
+    }
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    const bucketName = bucket?.trim();
+    if (
+      bucketName &&
+      segments.length > 0 &&
+      segments[segments.length - 1] === bucketName
+    ) {
+      segments.pop();
+    }
+    parsed.pathname = segments.length > 0 ? `/${segments.join("/")}` : "";
+    // URL#href keeps a trailing slash for empty path on some hosts; normalize.
+    return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, "") || parsed.origin;
+  } catch {
+    return trimmed;
+  }
+}
+
 export function assertUsableStorageEndpoint(endpoint: string): void {
-  const trimmed = endpoint.trim().replace(/\/$/, "");
+  const trimmed = normalizeStorageEndpoint(endpoint);
   if (!trimmed) {
     throw new Error("S3 endpoint is required");
   }
   if (isPlaceholderStorageEndpoint(trimmed)) {
     throw new Error(
-      "S3 endpoint still looks like a placeholder. Use your real R2/S3 host, e.g. https://<accountid>.r2.cloudflarestorage.com",
+      "S3 endpoint still looks like a placeholder. Use your real R2/S3 host, e.g. https://<accountid>.r2.cloudflarestorage.com (do not append /bucket)",
     );
   }
   try {
@@ -61,9 +96,12 @@ export function assertUsableStorageEndpoint(endpoint: string): void {
 }
 
 function readEnvStorageConfig(): ResolvedStorageConfig | null {
-  const endpoint = (process.env.S3_ENDPOINT ?? "").trim().replace(/\/$/, "");
   const region = (process.env.S3_REGION ?? "auto").trim() || "auto";
   const bucket = (process.env.S3_BUCKET ?? "").trim();
+  const endpoint = normalizeStorageEndpoint(
+    process.env.S3_ENDPOINT ?? "",
+    bucket,
+  );
   const accessKeyId = (process.env.S3_ACCESS_KEY_ID ?? "").trim();
   const secretAccessKey = (process.env.S3_SECRET_ACCESS_KEY ?? "").trim();
   const publicBaseUrl = (process.env.S3_PUBLIC_BASE_URL ?? "")
@@ -105,11 +143,12 @@ async function readUserStorageConfig(
     row.secretAccessKeyCipher,
     row.secretAccessKeyIv,
   ).trim();
-  const endpoint = row.endpoint.trim().replace(/\/$/, "");
+  const bucket = row.bucket.trim();
+  const endpoint = normalizeStorageEndpoint(row.endpoint, bucket);
   if (
     !endpoint ||
     isPlaceholderStorageEndpoint(endpoint) ||
-    !row.bucket.trim() ||
+    !bucket ||
     !row.accessKeyId.trim() ||
     !secretAccessKey ||
     !row.publicBaseUrl.trim()
@@ -119,7 +158,7 @@ async function readUserStorageConfig(
   return {
     endpoint,
     region: row.region.trim() || "auto",
-    bucket: row.bucket.trim(),
+    bucket,
     accessKeyId: row.accessKeyId.trim(),
     secretAccessKey,
     publicBaseUrl: row.publicBaseUrl.trim().replace(/\/$/, ""),

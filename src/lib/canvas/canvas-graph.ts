@@ -105,6 +105,8 @@ export type CanvasGraph = {
   nodes: CanvasGraphNode[];
   edges: CanvasGraphEdge[];
   settings?: CanvasSettings;
+  /** Logical selection (agent tools / multiplayer); optional. */
+  selection?: string[];
 };
 
 export const CANVAS_GRAPH_SCHEMA_VERSION = 1 as const;
@@ -410,6 +412,13 @@ export function parseCanvasGraph(value: unknown): CanvasGraph {
     })),
     ...(isRecord(graph.settings)
       ? { settings: graph.settings as CanvasSettings }
+      : {}),
+    ...(Array.isArray(graph.selection)
+      ? {
+          selection: graph.selection.filter(
+            (id): id is string => typeof id === "string" && id.trim().length > 0,
+          ),
+        }
       : {}),
   };
 }

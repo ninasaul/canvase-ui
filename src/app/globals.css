@@ -189,6 +189,34 @@
   }
 }
 
+@keyframes canvas-node-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes canvas-node-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes canvas-node-track-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
 @keyframes ui-overlay-in {
   from {
     opacity: 0;

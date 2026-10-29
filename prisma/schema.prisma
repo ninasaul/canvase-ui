@@ -25,6 +25,7 @@ model User {
   mediaAssets       MediaAsset[]
   storageConfig     UserStorageConfig?
   generationConfig  UserGenerationConfig?
+  agentTokens       AgentToken[]
 
   @@unique([email])
   @@map("user")
@@ -79,21 +80,99 @@ model Verification {
 }
 
 model Canvas {
-  id               String       @id @default(cuid())
+  id               String             @id @default(cuid())
   ownerId          String
-  owner            User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  owner            User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   title            String
   graph            Json
-  version          Int          @default(1)
-  status           CanvasStatus @default(active)
+  version          Int                @default(1)
+  status           CanvasStatus       @default(active)
   thumbnailAssetId String?
-  thumbnailAsset   MediaAsset?  @relation(fields: [thumbnailAssetId], references: [id], onDelete: SetNull)
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  thumbnailAsset   MediaAsset?        @relation(fields: [thumbnailAssetId], references: [id], onDelete: SetNull)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  agentTokens      AgentToken[]
+  commandLogs      CanvasCommandLog[]
+  agentRuns        CanvasAgentRun[]
 
   @@index([ownerId, updatedAt])
   @@index([thumbnailAssetId])
   @@map("canvas")
+}
+
+enum AgentTokenActorType {
+  user
+  agent
+}
+
+/// Short-lived scoped token for external agents (Codex MCP / HTTP tools).
+model AgentToken {
+  id         String    @id @default(cuid())
+  ownerId    String
+  owner      User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  canvasId   String
+  canvas     Canvas    @relation(fields: [canvasId], references: [id], onDelete: Cascade)
+  tokenHash  String
+  label      String    @default("")
+  scopes     String[]
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([tokenHash])
+  @@index([ownerId, canvasId])
+  @@index([canvasId, revokedAt])
+  @@map("agent_token")
+}
+
+model CanvasCommandLog {
+  id            String              @id @default(cuid())
+  canvasId      String
+  canvas        Canvas              @relation(fields: [canvasId], references: [id], onDelete: Cascade)
+  actorType     AgentTokenActorType
+  actorId       String
+  tool          String
+  input         Json
+  result        Json
+  versionBefore Int
+  versionAfter  Int
+  createdAt     DateTime            @default(now())
+
+  @@index([canvasId, createdAt])
+  @@map("canvas_command_log")
+}
+
+enum CanvasAgentRunStatus {
+  queued
+  running
+  succeeded
+  partial
+  failed
+  cancelled
+}
+
+/// Server-side generation run triggered by Agent tools (Codex MCP).
+model CanvasAgentRun {
+  id          String               @id @default(cuid())
+  canvasId    String
+  canvas      Canvas               @relation(fields: [canvasId], references: [id], onDelete: Cascade)
+  ownerId     String
+  mode        String
+  status      CanvasAgentRunStatus @default(queued)
+  nodeIds     String[]
+  /// Record<nodeId, { status, error?, requestId?, outputUrl? }>
+  nodeStates  Json                 @default("{}")
+  error       String?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([canvasId, createdAt])
+  @@index([ownerId, status, createdAt])
+  @@map("canvas_agent_run")
 }
 
 enum MediaType {

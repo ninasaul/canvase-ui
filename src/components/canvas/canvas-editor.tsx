@@ -30,6 +30,7 @@ import {
   Minus,
   Play,
   Plus,
+  Plugs,
   Pulse,
   StopCircle,
   TextT,
@@ -84,6 +85,7 @@ import { PlaygroundMediaLibraryPicker } from "@/components/playground/playground
 import { uploadPlaygroundAssetWithMeta } from "@/lib/playground-media";
 import { CanvasVideoGenerationDock } from "@/components/canvas/canvas-video-generation-dock";
 import { CanvasHelperLinesOverlay } from "@/components/canvas/canvas-helper-lines";
+import { CanvasConnectAgentModal } from "@/components/canvas/canvas-connect-agent-modal";
 import { CanvasModelSettingsModal } from "@/components/canvas/canvas-model-settings-modal";
 import { canvasNodeTypes } from "@/components/canvas/canvas-node-types";
 import {
@@ -114,15 +116,20 @@ import { useTheme } from "@/components/theme-provider";
 import { useCurrencySymbol } from "@/components/currency-provider";
 import { usePortalQuery } from "@/hooks/use-portal-query";
 import {
+  cancelAgentRun,
   cancelCanvasRun,
+  getActiveAgentRun,
   getCanvas,
   getActiveCanvasRun,
   getCanvasRun,
   isCanvasVersionConflict,
+  listAgentTokens,
   updateCanvas,
   uploadCanvasThumbnail,
+  type AgentRunNodeStateView,
   type CanvasDetail,
 } from "@/lib/canvas/canvas-api";
+import type { CanvasNodeRunStatus } from "@/lib/tu-shared-browser";
 import {
   CANVAS_EDGE_COLORS,
   DEFAULT_CANVAS_PREFERENCES,
@@ -408,6 +415,10 @@ function CanvasEditorInner({
   const [assetLibraryOpen, setAssetLibraryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
+  const [connectAgentOpen, setConnectAgentOpen] = useState(false);
+  const [agentTokenActive, setAgentTokenActive] = useState(false);
+  const [agentRunId, setAgentRunId] = useState<string | null>(null);
+  const agentRunSeenRef = useRef(false);
   const [settingsDraft, setSettingsDraft] = useState<CanvasSettings>({});
   const [preferences, setPreferences] = useState<CanvasPreferences>(() =>
     loadCanvasPreferences(),
@@ -578,7 +589,137 @@ function CanvasEditorInner({
 
   useEffect(() => {
     useCanvasRunStatusStore.getState().reset();
+    setAgentRunId(null);
+    agentRunSeenRef.current = false;
   }, [canvasDocument.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listAgentTokens(canvasDocument.id)
+      .then((result) => {
+        if (!cancelled) {
+          setAgentTokenActive(result.items.some((item) => item.active));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAgentTokenActive(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canvasDocument.id]);
+
+  useEffect(() => {
+    if (!agentTokenActive) {
+      return;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const remote = await getCanvas(canvasDocument.id);
+        if (cancelled) {
+          return;
+        }
+        if (remote.version === versionRef.current) {
+          return;
+        }
+        if (dirty) {
+          setConflict(true);
+          return;
+        }
+        onReload();
+      } catch {
+        // Ignore transient poll failures.
+      }
+    };
+    const timer = window.setInterval(() => {
+      void tick();
+    }, 5000);
+    void tick();
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [agentTokenActive, canvasDocument.id, dirty, onReload]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    function mapAgentNodeStatus(
+      status: AgentRunNodeStateView["status"],
+    ): CanvasNodeRunStatus {
+      if (status === "pending") {
+        return "queued";
+      }
+      return status;
+    }
+
+    const tick = async () => {
+      try {
+        const { run } = await getActiveAgentRun(canvasDocument.id);
+        if (cancelled) {
+          return;
+        }
+        if (!run) {
+          if (agentRunSeenRef.current) {
+            agentRunSeenRef.current = false;
+            setAgentRunId(null);
+            if (!dirty) {
+              onReload();
+            }
+          }
+          return;
+        }
+        agentRunSeenRef.current = true;
+        setAgentRunId(run.runId);
+        const statusStore = useCanvasRunStatusStore.getState();
+        for (const nodeId of run.nodeIds) {
+          const state = run.nodes[nodeId];
+          if (!state) {
+            statusStore.setNode(nodeId, "queued");
+            updateNodeData(nodeId, { status: "queued", error: undefined });
+            continue;
+          }
+          const mapped = mapAgentNodeStatus(state.status);
+          statusStore.setNode(
+            nodeId,
+            mapped,
+            state.error,
+            state.requestId,
+            run.runId,
+          );
+          updateNodeData(nodeId, {
+            status: mapped,
+            ...(state.error !== undefined ? { error: state.error } : {}),
+            ...(state.requestId ? { requestId: state.requestId } : {}),
+            ...(state.outputUrl
+              ? {
+                  url: state.outputUrl,
+                  urls: [state.outputUrl],
+                  source: "generation" as const,
+                }
+              : {}),
+            ...(mapped === "running" || mapped === "queued"
+              ? { finishedAt: undefined }
+              : {}),
+          });
+        }
+      } catch {
+        // Ignore transient poll failures.
+      }
+    };
+
+    const timer = window.setInterval(() => {
+      void tick();
+    }, 2000);
+    void tick();
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [canvasDocument.id, dirty, onReload, updateNodeData]);
 
   useEffect(() => {
     void readStorageConfig()
@@ -1168,6 +1309,18 @@ function CanvasEditorInner({
 
   const cancelActiveRun = useCallback(() => {
     setRunMenuOpen(false);
+    if (agentRunId) {
+      void cancelAgentRun(canvasDocument.id, agentRunId)
+        .then(() => {
+          setAgentRunId(null);
+          agentRunSeenRef.current = false;
+        })
+        .catch((error) => {
+          toast.danger(
+            error instanceof Error ? error.message : messages.canvas.runFailed,
+          );
+        });
+    }
     if (serverRunId) {
       void cancelCanvasRun(canvasDocument.id, serverRunId).catch((error) => {
         toast.danger(
@@ -1177,7 +1330,7 @@ function CanvasEditorInner({
       return;
     }
     activeRun?.controller.abort();
-  }, [activeRun, canvasDocument.id, serverRunId]);
+  }, [activeRun, agentRunId, canvasDocument.id, serverRunId]);
 
   useEffect(() => {
     return () => {
@@ -2222,6 +2375,24 @@ function CanvasEditorInner({
                     />
                   </Button>
                 </Tooltip>
+                <Tooltip content={messages.canvas.connectAgent}>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={messages.canvas.connectAgent}
+                    onClick={() => setConnectAgentOpen(true)}
+                  >
+                    <Icon
+                      icon={Plugs}
+                      size={15}
+                      className={
+                        agentTokenActive
+                          ? "text-sky-500"
+                          : "text-zinc-500 dark:text-zinc-300"
+                      }
+                    />
+                  </Button>
+                </Tooltip>
                 <span className="h-5 w-px bg-zinc-200/80 dark:bg-zinc-700/80" />
                 <div className="flex items-center gap-0.5">
                   <Tooltip
@@ -3098,7 +3269,7 @@ function CanvasEditorInner({
       <CanvasRunningTasksModal
         open={tasksOpen}
         onClose={() => setTasksOpen(false)}
-        runActive={Boolean(activeRun)}
+        runActive={Boolean(activeRun || agentRunId)}
         onCancelRun={cancelActiveRun}
       />
       ) : null}
@@ -3267,6 +3438,13 @@ function CanvasEditorInner({
         open={modelSettingsOpen}
         onClose={() => setModelSettingsOpen(false)}
         onSaved={() => setByokRevision((current) => current + 1)}
+      />
+
+      <CanvasConnectAgentModal
+        open={connectAgentOpen}
+        canvasId={canvasDocument.id}
+        onClose={() => setConnectAgentOpen(false)}
+        onTokensChanged={setAgentTokenActive}
       />
 
       {settingsOpen ? (

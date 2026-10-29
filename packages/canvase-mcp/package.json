@@ -1,0 +1,21 @@
+{
+  "name": "@canvase/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "canvase-mcp": "./src/cli.js"
+  },
+  "scripts": {
+    "start": "node ./src/cli.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "typescript": "^5.9.2"
+  }
+}

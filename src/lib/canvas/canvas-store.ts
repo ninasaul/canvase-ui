@@ -188,6 +188,9 @@ function graphFromState(
   edges: CanvasFlowEdge[],
   settings: CanvasSettings,
 ): CanvasGraph {
+  const selection = nodes
+    .filter((node) => node.selected)
+    .map((node) => node.id);
   return {
     schemaVersion: 1,
     viewport: { x: 0, y: 0, zoom: 1 },
@@ -221,6 +224,7 @@ function graphFromState(
       ...(edge.data ? { data: edge.data } : {}),
     })),
     ...(Object.keys(settings).length > 0 ? { settings } : {}),
+    ...(selection.length > 0 ? { selection } : {}),
   };
 }
 
@@ -697,10 +701,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       return;
     }
     const parsed = parseCanvasGraph(graph);
+    const selectedIds = new Set(parsed.selection ?? []);
     set({
       nodes: orderNodesParentsFirst(
         parsed.nodes.map((node) => ({
           ...node,
+          selected: selectedIds.has(node.id),
           data: { ...node.data },
           ...(node.parentId
             ? { extent: "parent" as const, zIndex: 1 }

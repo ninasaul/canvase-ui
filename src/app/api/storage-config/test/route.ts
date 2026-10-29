@@ -6,6 +6,7 @@ import { decryptSecret } from "@/lib/storage/secret-crypto";
 import { testStorageConnection } from "@/lib/storage/s3-client";
 import {
   assertUsableStorageEndpoint,
+  normalizeStorageEndpoint,
   resolveStorageConfig,
   type ResolvedStorageConfig,
 } from "@/lib/storage/s3-config";
@@ -50,8 +51,10 @@ export async function POST(request: Request) {
   let config: ResolvedStorageConfig | null = null;
 
   if (draft) {
+    const bucket = draft.bucket.trim();
+    const endpoint = normalizeStorageEndpoint(draft.endpoint, bucket);
     try {
-      assertUsableStorageEndpoint(draft.endpoint);
+      assertUsableStorageEndpoint(endpoint);
     } catch (error) {
       return jsonError(
         error instanceof Error ? error.message : "Invalid endpoint",
@@ -80,9 +83,9 @@ export async function POST(request: Request) {
     }
 
     config = {
-      endpoint: draft.endpoint.replace(/\/$/, ""),
+      endpoint,
       region: draft.region.trim() || "auto",
-      bucket: draft.bucket.trim(),
+      bucket,
       accessKeyId: draft.accessKeyId.trim(),
       secretAccessKey,
       publicBaseUrl: draft.publicBaseUrl.replace(/\/$/, ""),

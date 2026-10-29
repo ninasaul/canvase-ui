@@ -1,5 +1,3 @@
-"use client";
-
 import type {
   CanvasGraph,
   CanvasGraphNode,
@@ -54,6 +52,9 @@ function findNode(graph: CanvasGraph, nodeId: string): CanvasGraphNode | null {
 function generationConnectionForNode(
   node: CanvasGraphNode,
 ): V1GenerationConnection {
+  if (typeof window === "undefined") {
+    return {};
+  }
   const modelId = node.data.model?.trim() ?? "";
   const connection = resolveByokConnection({
     // Catalog vendor wins over possibly stale node.data.vendor.
@@ -65,6 +66,16 @@ function generationConnectionForNode(
     ...(connection.vendorId ? { vendorId: connection.vendorId } : {}),
     ...(connection.apiKey ? { apiKey: connection.apiKey } : {}),
   };
+}
+
+function resolveNodeGeneration(
+  node: CanvasGraphNode,
+  override?: V1GenerationConnection,
+): V1GenerationConnection {
+  if (override && (override.baseUrl || override.apiKey || override.vendorId)) {
+    return override;
+  }
+  return generationConnectionForNode(node);
 }
 
 /** Text nodes connected to prompt/context inputs, in edge order. */
@@ -218,7 +229,7 @@ async function generatedAssets(
   assetId?: string;
   assetIds?: string[];
 }> {
-  if (!taskId) {
+  if (!taskId || typeof window === "undefined") {
     return { url: fallbackUrl, urls: [fallbackUrl] };
   }
   try {
@@ -242,6 +253,7 @@ export async function runCanvasImageNode(options: {
   onApiKeyChange?: (value: string) => void;
   update: CanvasRunUpdate;
   signal?: AbortSignal;
+  generation?: V1GenerationConnection;
 }): Promise<void> {
   const { nodeId, graph, apiKey, onApiKeyChange, update, signal } = options;
   const node = findNode(graph, nodeId);
@@ -301,7 +313,7 @@ export async function runCanvasImageNode(options: {
     finishedAt: undefined,
   });
 
-  const generation = generationConnectionForNode(node);
+  const generation = resolveNodeGeneration(node, options.generation);
 
   try {
     const response = await runWithPlaygroundAuthRetry(
@@ -351,6 +363,7 @@ export async function runCanvasTextNode(options: {
   onApiKeyChange?: (value: string) => void;
   update: CanvasRunUpdate;
   signal?: AbortSignal;
+  generation?: V1GenerationConnection;
 }): Promise<void> {
   const { nodeId, graph, apiKey, onApiKeyChange, update, signal } = options;
   const node = findNode(graph, nodeId);
@@ -377,7 +390,7 @@ export async function runCanvasTextNode(options: {
     throw new Error(messages.canvas.promptRequired);
   }
   const system = node.data.systemPrompt?.trim();
-  const generation = generationConnectionForNode(node);
+  const generation = resolveNodeGeneration(node, options.generation);
   update(nodeId, {
     status: "running",
     error: undefined,
@@ -432,6 +445,7 @@ export async function runCanvasVideoNode(options: {
   onApiKeyChange?: (value: string) => void;
   update: CanvasRunUpdate;
   signal?: AbortSignal;
+  generation?: V1GenerationConnection;
 }): Promise<void> {
   const { nodeId, graph, apiKey, onApiKeyChange, update, signal } = options;
   const node = findNode(graph, nodeId);
@@ -571,7 +585,7 @@ export async function runCanvasVideoNode(options: {
     referenceAudio,
   });
 
-  const generation = generationConnectionForNode(node);
+  const generation = resolveNodeGeneration(node, options.generation);
 
   update(nodeId, {
     status: "running",

@@ -6,6 +6,7 @@ import { encryptSecret } from "@/lib/storage/secret-crypto";
 import {
   assertUsableStorageEndpoint,
   getPublicStorageConfigView,
+  normalizeStorageEndpoint,
 } from "@/lib/storage/s3-config";
 
 
@@ -64,7 +65,8 @@ export async function PUT(request: Request) {
         iv: existing!.secretAccessKeyIv,
       };
 
-  const endpoint = parsed.data.endpoint.replace(/\/$/, "");
+  const bucket = parsed.data.bucket.trim();
+  const endpoint = normalizeStorageEndpoint(parsed.data.endpoint, bucket);
   const publicBaseUrl = parsed.data.publicBaseUrl.replace(/\/$/, "");
   try {
     assertUsableStorageEndpoint(endpoint);
@@ -81,7 +83,7 @@ export async function PUT(request: Request) {
       userId: user.id,
       endpoint,
       region: parsed.data.region,
-      bucket: parsed.data.bucket,
+      bucket,
       accessKeyId: parsed.data.accessKeyId,
       secretAccessKeyCipher: encrypted.cipher,
       secretAccessKeyIv: encrypted.iv,
@@ -91,7 +93,7 @@ export async function PUT(request: Request) {
     update: {
       endpoint,
       region: parsed.data.region,
-      bucket: parsed.data.bucket,
+      bucket,
       accessKeyId: parsed.data.accessKeyId,
       secretAccessKeyCipher: encrypted.cipher,
       secretAccessKeyIv: encrypted.iv,

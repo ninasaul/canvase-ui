@@ -5,8 +5,6 @@ import { memo, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
-  CircleNotch,
-  Clock,
   ImageSquare,
   Plus,
   VideoCamera,
@@ -326,30 +324,54 @@ function NodeRunningOverlay({
   const running = effectiveStatus === "running";
   return (
     <div
-      className={`pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-white/65 backdrop-blur-[1px] dark:bg-zinc-950/65 ${
+      className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-white/55 backdrop-blur-md dark:bg-zinc-950/50 ${
         selected ? "rounded-none" : "rounded-lg"
       }`}
-    >
-      <span className="relative flex h-9 w-9 items-center justify-center">
-        {running ? (
-          <span className="absolute inset-0 animate-ping rounded-full bg-sky-400/20" />
-        ) : null}
-        <span className="relative flex h-7 w-7 items-center justify-center rounded-full border border-zinc-200/70 bg-white/95 shadow-sm dark:border-zinc-700/70 dark:bg-zinc-800">
-          <Icon
-            icon={running ? CircleNotch : Clock}
-            size={14}
-            className={
-              running
-                ? "animate-spin text-sky-600 dark:text-sky-300"
-                : "text-zinc-500 dark:text-zinc-300"
-            }
-          />
-        </span>
-      </span>
-      <span className="rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-zinc-600 shadow-sm dark:bg-zinc-900/90 dark:text-zinc-200">
-        {running
+      aria-label={
+        running
           ? messages.canvas.executingNode
-          : messages.canvas.statusQueued}
+          : messages.canvas.statusQueued
+      }
+    >
+      <span
+        className={`relative flex h-9 w-9 items-center justify-center ${
+          running
+            ? "animate-[canvas-node-breathe_1.5s_ease-in-out_infinite]"
+            : "animate-[canvas-node-breathe_2.4s_ease-in-out_infinite] opacity-80"
+        }`}
+      >
+        <svg
+          viewBox="0 0 36 36"
+          className={`h-9 w-9 ${
+            running
+              ? "animate-[canvas-node-spin_0.75s_linear_infinite]"
+              : ""
+          }`}
+          aria-hidden
+        >
+          <circle
+            cx="18"
+            cy="18"
+            r="14"
+            fill="none"
+            strokeWidth="2.5"
+            className={`stroke-zinc-300/80 dark:stroke-zinc-600/80 ${
+              running
+                ? "animate-[canvas-node-track-pulse_1.5s_ease-in-out_infinite]"
+                : ""
+            }`}
+          />
+          <circle
+            cx="18"
+            cy="18"
+            r="14"
+            fill="none"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeDasharray={running ? "28 60" : "10 78"}
+            className="stroke-sky-500 dark:stroke-sky-400"
+          />
+        </svg>
       </span>
     </div>
   );

@@ -11,6 +11,7 @@ Auth uses [Better Auth](https://www.better-auth.com/) (email/password). Canvas a
 - Same-origin `/v1` proxy injects an optional server-side `GENERATION_API_KEY` — keys are not stored in the browser
 - Media library via browser **presigned PUT** to R2 / S3 / MinIO
 - Canvas cover + list previews; async WebP thumbnails via a BullMQ worker (sharp / ffmpeg)
+- **Connect Agent**: scoped tokens + HTTP tool gateway + `@canvase/mcp` (stdio) for Codex / other MCP hosts — graph edit and server-side `canvas_run`
 - i18n (zh / en), theme toggle, canvas preferences
 
 ## Stack
@@ -85,7 +86,7 @@ Bucket **CORS** must allow `PUT` (and typically `GET` / `HEAD`) from your app or
 Examples:
 
 ```bash
-# Cloudflare R2
+# Cloudflare R2 (endpoint = account host only; bucket is separate)
 S3_ENDPOINT="https://<accountid>.r2.cloudflarestorage.com"
 S3_REGION="auto"
 S3_BUCKET="canvase-media"
@@ -123,6 +124,26 @@ After an asset is marked `ready`, the API enqueues a job on Redis (`asset-thumbn
 
 Canvas cover uploads (`purpose=canvas_thumbnail`) are skipped by the worker. Until a thumbnail exists, UIs fall back to the original `url`.
 
+Editor image nodes prefer `node.data.thumbnailUrl` over `url`. On canvas load (and MCP read tools), missing `thumbnailUrl` is hydrated from `MediaAsset` when `assetId` / `assetIds` are present. After agent `canvas_run`, the server writes `thumbnailUrl` if the asset already has one, otherwise enqueues a job.
+
+## Connect Agent (MCP)
+
+Agents can edit and run a single canvas through scoped tokens.
+
+1. Open a canvas → **Connect Agent**
+2. Issue a token (default scopes: `canvas:read`, `canvas:edit`, `canvas:run`)
+3. Copy the MCP config snippet into Codex / your MCP host
+4. Keep cwd at the monorepo root (or use absolute paths to `packages/canvase-mcp`)
+
+| Piece | Role |
+| --- | --- |
+| Agent token | Bound to one canvas + scopes; shown once; revocable |
+| Tool gateway | `/api/agent/tools` (+ `/api/agent/tools/[toolName]`) |
+| `@canvase/mcp` | stdio MCP server; forwards tool calls to the gateway |
+| Runs | Server-side DAG via `canvas_run` / status / cancel; editor polls active runs for node overlays |
+
+Edit tools use optimistic concurrency (`expectedVersion` from `canvas_get`). Details, tool list, and troubleshooting: [`packages/canvase-mcp/README.md`](packages/canvase-mcp/README.md).
+
 ## Scripts
 
 | Command | Description |
@@ -133,6 +154,7 @@ Canvas cover uploads (`purpose=canvas_thumbnail`) are skipped by the worker. Unt
 | `pnpm db:migrate` | Create / apply Prisma migrations |
 | `pnpm db:studio` | Prisma Studio |
 | `pnpm worker` / `pnpm worker:dev` | Asset thumbnail worker (requires Redis) |
+| `pnpm --filter @canvase/mcp start` | stdio MCP server (needs `CANVASE_*` env; see package README) |
 
 ## Open source vs hosted (tu_api)
 

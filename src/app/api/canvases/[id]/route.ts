@@ -1,8 +1,16 @@
-import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { jsonError, jsonOk } from "@/lib/api";
-import { resolveCanvasCoverFields } from "@/lib/canvas/canvas-thumbnail";
-import { isCanvasGraph } from "@/lib/canvas/graph";
+import {
+  CanvasUpdateError,
+  applyCanvasGraphUpdate,
+  getOwnedActiveCanvas,
+} from "@/lib/canvas/apply-canvas-graph-update";
+import {
+  collectGraphAssetIds,
+  hydrateGraphNodeThumbnails,
+  resolveCanvasCoverFields,
+} from "@/lib/canvas/canvas-thumbnail";
+import { isCanvasGraph, parseCanvasGraph } from "@/lib/canvas/graph";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -39,16 +47,19 @@ async function getOwnedCanvas(canvasId: string, ownerId: string) {
 
 function serializeCanvasDetail(
   canvas: NonNullable<Awaited<ReturnType<typeof getOwnedCanvas>>>,
+  graphOverride?: ReturnType<typeof parseCanvasGraph>,
 ) {
+  const graph =
+    graphOverride ??
+    (isCanvasGraph(canvas.graph)
+      ? parseCanvasGraph(canvas.graph)
+      : canvas.graph);
   const cover = resolveCanvasCoverFields(
     canvas.thumbnailAssetId,
     canvas.thumbnailAsset,
-    canvas.graph,
+    graph,
   );
-  const graph = isCanvasGraph(canvas.graph) ? canvas.graph : canvas.graph;
-  const nodeCount = isCanvasGraph(canvas.graph)
-    ? canvas.graph.nodes.length
-    : 0;
+  const nodeCount = isCanvasGraph(graph) ? graph.nodes.length : 0;
   return {
     id: canvas.id,
     title: canvas.title,
@@ -75,7 +86,28 @@ export async function GET(_request: Request, context: RouteContext) {
     return jsonError("Canvas not found", 404);
   }
 
-  return jsonOk(serializeCanvasDetail(canvas));
+  let graph = isCanvasGraph(canvas.graph)
+    ? parseCanvasGraph(canvas.graph)
+    : null;
+  if (graph) {
+    const assetIds = collectGraphAssetIds(graph);
+    if (assetIds.length > 0) {
+      const assets = await prisma.mediaAsset.findMany({
+        where: {
+          id: { in: assetIds },
+          ownerId: user.id,
+          status: "ready",
+          thumbnailUrl: { not: null },
+        },
+        select: { id: true, thumbnailUrl: true },
+      });
+      graph = hydrateGraphNodeThumbnails(graph, assets);
+    }
+  }
+
+  return jsonOk(
+    serializeCanvasDetail(canvas, graph ?? undefined),
+  );
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -85,10 +117,6 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   const { id } = await context.params;
-  const canvas = await getOwnedCanvas(id, user.id);
-  if (!canvas) {
-    return jsonError("Canvas not found", 404);
-  }
 
   let body: unknown;
   try {
@@ -102,28 +130,45 @@ export async function PATCH(request: Request, context: RouteContext) {
     return jsonError("Invalid request body", 400);
   }
 
-  if (parsed.data.version !== canvas.version) {
-    return jsonError("Version conflict", 409);
+  try {
+    if (parsed.data.graph !== undefined) {
+      if (!isCanvasGraph(parsed.data.graph)) {
+        return jsonError("Invalid canvas graph", 400);
+      }
+      await applyCanvasGraphUpdate({
+        canvasId: id,
+        ownerId: user.id,
+        expectedVersion: parsed.data.version,
+        graph: parseCanvasGraph(parsed.data.graph),
+        title: parsed.data.title,
+      });
+    } else {
+      const canvas = await getOwnedActiveCanvas(id, user.id);
+      if (!canvas) {
+        return jsonError("Canvas not found", 404);
+      }
+      if (parsed.data.version !== canvas.version) {
+        return jsonError("Version conflict", 409);
+      }
+      await prisma.canvas.update({
+        where: { id: canvas.id },
+        data: {
+          ...(parsed.data.title ? { title: parsed.data.title } : {}),
+          version: { increment: 1 },
+        },
+      });
+    }
+  } catch (error) {
+    if (error instanceof CanvasUpdateError) {
+      return jsonError(error.message, error.status);
+    }
+    throw error;
   }
 
-  if (parsed.data.graph !== undefined && !isCanvasGraph(parsed.data.graph)) {
-    return jsonError("Invalid canvas graph", 400);
+  const updated = await getOwnedCanvas(id, user.id);
+  if (!updated) {
+    return jsonError("Canvas not found", 404);
   }
-
-  const updated = await prisma.canvas.update({
-    where: { id: canvas.id },
-    data: {
-      ...(parsed.data.title ? { title: parsed.data.title } : {}),
-      ...(parsed.data.graph !== undefined
-        ? { graph: parsed.data.graph as Prisma.InputJsonValue }
-        : {}),
-      version: { increment: 1 },
-    },
-    include: {
-      thumbnailAsset: { select: thumbnailSelect },
-    },
-  });
-
   return jsonOk(serializeCanvasDetail(updated));
 }
 

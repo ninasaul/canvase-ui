@@ -211,3 +211,111 @@ export async function cancelCanvasRun(
     { method: "POST" },
   );
 }
+
+export type AgentTokenListItem = {
+  id: string;
+  label: string;
+  scopes: string[];
+  expiresAt: string;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+  active: boolean;
+};
+
+export type AgentTokenCreated = {
+  id: string;
+  token: string;
+  canvasId: string;
+  scopes: string[];
+  label: string;
+  expiresAt: string;
+  mcpConfig: {
+    mcpServers: {
+      "canvase-canvas": {
+        command: string;
+        args: string[];
+        env: Record<string, string>;
+      };
+    };
+  };
+  env: {
+    CANVASE_BASE_URL: string;
+    CANVASE_TOKEN: string;
+    CANVASE_CANVAS_ID: string;
+  };
+};
+
+export async function listAgentTokens(
+  canvasId: string,
+): Promise<{ items: AgentTokenListItem[] }> {
+  return portalRequest<{ items: AgentTokenListItem[] }>(
+    `/api/agent/tokens?canvasId=${encodeURIComponent(canvasId)}`,
+  );
+}
+
+export async function createAgentToken(input: {
+  canvasId: string;
+  scopes?: string[];
+  label?: string;
+  ttlHours?: number;
+}): Promise<AgentTokenCreated> {
+  return portalRequest<AgentTokenCreated>("/api/agent/tokens", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function revokeAgentToken(
+  tokenId: string,
+): Promise<{ ok: true }> {
+  return portalRequest<{ ok: true }>(`/api/agent/tokens/${tokenId}`, {
+    method: "DELETE",
+  });
+}
+
+export type AgentRunNodeStateView = {
+  status:
+    | "pending"
+    | "queued"
+    | "running"
+    | "succeeded"
+    | "failed"
+    | "skipped"
+    | "cancelled";
+  error?: string;
+  requestId?: string;
+  outputUrl?: string;
+};
+
+export type AgentRunView = {
+  runId: string;
+  canvasId: string;
+  mode: string;
+  status: string;
+  nodeIds: string[];
+  nodes: Record<string, AgentRunNodeStateView>;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function getActiveAgentRun(
+  canvasId: string,
+): Promise<{ run: AgentRunView | null }> {
+  return portalRequest<{ run: AgentRunView | null }>(
+    `/api/agent/runs/active?canvasId=${encodeURIComponent(canvasId)}`,
+  );
+}
+
+export async function cancelAgentRun(
+  canvasId: string,
+  runId: string,
+): Promise<{ run: AgentRunView }> {
+  return portalRequest<{ run: AgentRunView }>(
+    `/api/agent/runs/${encodeURIComponent(runId)}/cancel?canvasId=${encodeURIComponent(canvasId)}`,
+    { method: "POST" },
+  );
+}

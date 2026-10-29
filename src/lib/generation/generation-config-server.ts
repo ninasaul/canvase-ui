@@ -371,13 +371,51 @@ export async function resolveUserGenerationApiKey(
   userId: string,
   hints?: { vendorId?: string | null; baseUrl?: string | null },
 ): Promise<string> {
+  const connection = await resolveUserGenerationConnection(userId, hints);
+  return connection.apiKey;
+}
+
+export type ServerGenerationConnection = {
+  baseUrl: string;
+  apiKey: string;
+  vendorId: string;
+};
+
+/**
+ * Resolve decrypted BYOK gateway connection for server-side generation
+ * (Agent runs, workers). Prefers vendorId, then active profile, then env.
+ */
+export async function resolveUserGenerationConnection(
+  userId: string,
+  hints?: {
+    vendorId?: string | null;
+    baseUrl?: string | null;
+    modelId?: string | null;
+  },
+): Promise<ServerGenerationConnection> {
   const row = await prisma.userGenerationConfig.findUnique({
     where: { userId },
   });
+  const envBase = normalizeGenerationBaseUrl(
+    process.env.GENERATION_BASE_URL ?? "",
+  );
+  const envKey = (process.env.GENERATION_API_KEY ?? "").trim();
+
   if (!row) {
-    return "";
+    return {
+      baseUrl: envBase,
+      apiKey: envKey,
+      vendorId: defaultVendorGatewayId(),
+    };
   }
+
   const profiles = parseStoredProfiles(row.profilesJson);
+  const models = Array.isArray(row.modelsJson)
+    ? row.modelsJson
+        .map(normalizeModel)
+        .filter((item): item is ByokModelPreset => item !== null)
+    : [];
+
   const candidates: string[] = [];
   if (hints?.vendorId?.trim()) {
     candidates.push(hints.vendorId.trim());
@@ -386,27 +424,57 @@ export async function resolveUserGenerationApiKey(
       candidates.push(mapped);
     }
   }
+  const modelId = hints?.modelId?.trim();
+  if (modelId) {
+    const model = models.find((item) => item.id === modelId);
+    if (model?.vendor?.trim()) {
+      const mapped = gatewayIdFromVendorHint(model.vendor);
+      if (mapped) {
+        candidates.push(mapped);
+      }
+      candidates.push(model.vendor.trim());
+    }
+  }
   candidates.push(row.activeVendorId);
 
   for (const candidate of candidates) {
-    const key = decryptProfileKey(profiles[candidate]);
-    if (key) {
-      return key;
+    const profile = profiles[candidate];
+    if (!profile) {
+      continue;
+    }
+    const apiKey = decryptProfileKey(profile);
+    const baseUrl = normalizeGenerationBaseUrl(profile.baseUrl ?? "") || envBase;
+    if (apiKey || baseUrl) {
+      return {
+        baseUrl,
+        apiKey: apiKey || envKey,
+        vendorId: candidate,
+      };
     }
   }
 
   const wantedBase = (hints?.baseUrl ?? "").trim().replace(/\/$/, "");
   if (wantedBase) {
-    for (const profile of Object.values(profiles)) {
+    for (const [vendorId, profile] of Object.entries(profiles)) {
       const base = (profile.baseUrl ?? "").trim().replace(/\/$/, "");
       if (base && base === wantedBase) {
-        const key = decryptProfileKey(profile);
-        if (key) {
-          return key;
+        const apiKey = decryptProfileKey(profile);
+        if (apiKey || base) {
+          return {
+            baseUrl: normalizeGenerationBaseUrl(base) || envBase,
+            apiKey: apiKey || envKey,
+            vendorId,
+          };
         }
       }
     }
   }
 
-  return "";
+  const active = profiles[row.activeVendorId];
+  return {
+    baseUrl:
+      normalizeGenerationBaseUrl(active?.baseUrl ?? "") || envBase,
+    apiKey: decryptProfileKey(active) || envKey,
+    vendorId: row.activeVendorId || defaultVendorGatewayId(),
+  };
 }

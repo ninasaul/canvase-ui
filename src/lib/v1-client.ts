@@ -52,19 +52,41 @@ export class V1RequestError extends Error {
   }
 }
 
+function resolveAppOrigin(): string {
+  const fromEnv =
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    process.env.BETTER_AUTH_URL?.trim() ||
+    "";
+  if (fromEnv) {
+    return fromEnv.replace(/\/$/, "");
+  }
+  return "http://127.0.0.1:3000";
+}
+
 function buildUrl(path: string): string {
   const normalized = path.startsWith("/") ? path : `/${path}`;
-  return `${apiBase}${normalized}`;
+  if (apiBase) {
+    return `${apiBase.replace(/\/$/, "")}${normalized}`;
+  }
+  if (typeof window === "undefined") {
+    return `${resolveAppOrigin()}${normalized}`;
+  }
+  return normalized;
 }
 
 function applyGenerationHeaders(
   headers: Headers,
   options?: { baseUrl?: string; apiKey?: string; vendorId?: string },
 ): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-  const baseUrl = (options?.baseUrl ?? readByokBaseUrl())
+  const hasExplicit =
+    Boolean(options?.baseUrl?.trim()) ||
+    Boolean(options?.apiKey?.trim()) ||
+    Boolean(options?.vendorId?.trim());
+  // Browser: fall back to local BYOK store. Server: only apply explicit opts.
+  const baseUrl = (
+    options?.baseUrl ??
+    (typeof window !== "undefined" ? readByokBaseUrl() : "")
+  )
     .trim()
     .replace(/\/$/, "");
   if (baseUrl) {
@@ -76,10 +98,16 @@ function applyGenerationHeaders(
     headers.set(GENERATION_VENDOR_HEADER, vendorId);
     headers.set(BYOK_VENDOR_HEADER, vendorId);
   }
-  const apiKey = (options?.apiKey ?? readByokApiKey()).trim();
+  const apiKey = (
+    options?.apiKey ??
+    (typeof window !== "undefined" ? readByokApiKey() : "")
+  ).trim();
   if (apiKey) {
     headers.set(GENERATION_API_KEY_HEADER, apiKey);
     headers.set(BYOK_API_KEY_HEADER, apiKey);
+  }
+  if (typeof window === "undefined" && !hasExplicit && !baseUrl && !apiKey) {
+    return;
   }
 }
 

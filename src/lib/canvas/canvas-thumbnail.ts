@@ -2,6 +2,7 @@ import type { MediaAsset, MediaType } from "@prisma/client";
 
 import {
   isCanvasGraph,
+  type CanvasGraph,
   type CanvasNodeData,
 } from "@/lib/canvas/graph";
 
@@ -120,4 +121,80 @@ export function resolveCanvasCoverFields(
     previewUrl: fromGraph.previewUrl,
     previewType: fromGraph.previewType,
   };
+}
+
+/**
+ * Fill missing node.data.thumbnailUrl from MediaAsset rows (by assetId /
+ * assetIds). Display-only; persists on the next canvas save.
+ */
+export function hydrateGraphNodeThumbnails(
+  graph: CanvasGraph,
+  assets: Array<{ id: string; thumbnailUrl: string | null }>,
+): CanvasGraph {
+  if (assets.length === 0) {
+    return graph;
+  }
+  const thumbnailByAssetId = new Map<string, string>();
+  for (const asset of assets) {
+    const thumbnailUrl = asset.thumbnailUrl?.trim();
+    if (thumbnailUrl) {
+      thumbnailByAssetId.set(asset.id, thumbnailUrl);
+    }
+  }
+  if (thumbnailByAssetId.size === 0) {
+    return graph;
+  }
+
+  let changed = false;
+  const nodes = graph.nodes.map((node) => {
+    if (node.type !== "image" && node.type !== "video") {
+      return node;
+    }
+    if (node.data.thumbnailUrl?.trim()) {
+      return node;
+    }
+    const candidateIds = [
+      node.data.assetId,
+      ...(node.data.assetIds ?? []),
+    ].filter((id): id is string => Boolean(id?.trim()));
+    let resolved: string | undefined;
+    for (const assetId of candidateIds) {
+      resolved = thumbnailByAssetId.get(assetId);
+      if (resolved) {
+        break;
+      }
+    }
+    if (!resolved) {
+      return node;
+    }
+    changed = true;
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        thumbnailUrl: resolved,
+      },
+    };
+  });
+
+  return changed ? { ...graph, nodes } : graph;
+}
+
+export function collectGraphAssetIds(graph: CanvasGraph): string[] {
+  const ids = new Set<string>();
+  for (const node of graph.nodes) {
+    if (node.type !== "image" && node.type !== "video") {
+      continue;
+    }
+    if (node.data.assetId?.trim()) {
+      ids.add(node.data.assetId.trim());
+    }
+    for (const assetId of node.data.assetIds ?? []) {
+      const trimmed = assetId?.trim();
+      if (trimmed) {
+        ids.add(trimmed);
+      }
+    }
+  }
+  return [...ids];
 }

@@ -16,6 +16,7 @@ export type CanvasGeneratedAssets = {
   urls: string[];
   assetId?: string;
   assetIds?: string[];
+  thumbnailUrl?: string;
 };
 
 /**
@@ -55,5 +56,8 @@ export function withGeneratedAssets(
     urls: assets.urls,
     ...(assets.assetId ? { assetId: assets.assetId } : {}),
     ...(assets.assetIds ? { assetIds: assets.assetIds } : {}),
+    ...(assets.thumbnailUrl?.trim()
+      ? { thumbnailUrl: assets.thumbnailUrl.trim() }
+      : {}),
   };
 }
