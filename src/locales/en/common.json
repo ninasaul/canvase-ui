@@ -1,0 +1,50 @@
+{
+  "appName": "Canvase",
+  "appTagline": "Open-source AI media workflow canvas",
+  "dismiss": "Dismiss",
+  "cancel": "Cancel",
+  "close": "Close",
+  "confirm": "Confirm",
+  "empty": "No data",
+  "save": "Save",
+  "loading": "Loading…",
+  "themeToggle": "Toggle theme",
+  "themeLight": "Switch to light mode",
+  "themeDark": "Switch to dark mode",
+  "localeToggle": "Switch language",
+  "localeZh": "中文",
+  "localeEn": "English",
+  "placeholderInput": "Enter {label}",
+  "placeholderSelect": "Select {label}",
+  "previousPage": "Previous",
+  "nextPage": "Next",
+  "pageLabel": "Page {page} / {total}",
+  "pageButtonLabel": "Page {page}",
+  "paginationAriaLabel": "Pagination",
+  "dateTimePicker": {
+    "select": "Select date and time",
+    "selectRange": "Select date range",
+    "prevMonth": "Previous month",
+    "nextMonth": "Next month",
+    "hour": "Hour",
+    "minute": "Minute",
+    "start": "Start",
+    "end": "End",
+    "apply": "Apply",
+    "clear": "Clear",
+    "quickLast7d": "Last 7 days",
+    "quickLast30d": "Last 30 days",
+    "quickThisMonth": "This month"
+  },
+  "viewMode": {
+    "label": "View mode",
+    "list": "List",
+    "grid": "Grid"
+  },
+  "nav": {
+    "canvases": "Canvases",
+    "account": "Account",
+    "signIn": "Sign in",
+    "signOut": "Sign out"
+  }
+}

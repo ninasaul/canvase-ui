@@ -1,0 +1,169 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CanvasStatus {
+  active
+  archived
+}
+
+model User {
+  id             String              @id @default(cuid())
+  name           String
+  email          String
+  emailVerified  Boolean             @default(false)
+  image          String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  sessions       Session[]
+  accounts       Account[]
+  canvases       Canvas[]
+  mediaAssets       MediaAsset[]
+  storageConfig     UserStorageConfig?
+  generationConfig  UserGenerationConfig?
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+model Canvas {
+  id               String       @id @default(cuid())
+  ownerId          String
+  owner            User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title            String
+  graph            Json
+  version          Int          @default(1)
+  status           CanvasStatus @default(active)
+  thumbnailAssetId String?
+  thumbnailAsset   MediaAsset?  @relation(fields: [thumbnailAssetId], references: [id], onDelete: SetNull)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([ownerId, updatedAt])
+  @@index([thumbnailAssetId])
+  @@map("canvas")
+}
+
+enum MediaType {
+  image
+  video
+  audio
+  other
+}
+
+enum MediaAssetStatus {
+  pending
+  ready
+  failed
+}
+
+model MediaAsset {
+  id                  String           @id @default(cuid())
+  ownerId             String
+  owner               User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  objectKey           String
+  url                 String
+  mimeType            String
+  mediaType           MediaType
+  purpose             String           @default("playground_upload")
+  displayName         String
+  sizeBytes           Int
+  thumbnailUrl        String?
+  thumbnailObjectKey  String?
+  thumbnailWidth      Int?
+  thumbnailHeight     Int?
+  status              MediaAssetStatus @default(pending)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  canvasCovers        Canvas[]
+
+  @@index([ownerId, createdAt])
+  @@index([ownerId, status, createdAt])
+  @@map("media_asset")
+}
+
+model UserStorageConfig {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint             String
+  region               String   @default("auto")
+  bucket               String
+  accessKeyId          String
+  secretAccessKeyCipher String
+  secretAccessKeyIv    String
+  publicBaseUrl        String
+  forcePathStyle       Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("user_storage_config")
+}
+
+/// Per-user generation gateways. API keys are AES-GCM encrypted at rest.
+model UserGenerationConfig {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeVendorId String
+  /// Record<vendorId, { baseUrl, apiKeyCipher?, apiKeyIv? }>
+  profilesJson   Json
+  /// ByokModelPreset[]
+  modelsJson     Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("user_generation_config")
+}

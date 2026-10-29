@@ -1,33 +1,358 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  button:enabled,
+  [role="button"]:not([aria-disabled="true"]),
+  [role="checkbox"]:enabled,
+  [role="switch"]:enabled,
+  [role="option"],
+  [role="menuitem"],
+  [role="tab"]:not([aria-disabled="true"]),
+  summary {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled="true"],
+  [role="checkbox"]:disabled,
+  [role="switch"]:disabled {
+    cursor: not-allowed;
+  }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
+:root {
+  color-scheme: light;
+  --background: #ffffff;
+  --foreground: #171717;
+  --ui-duration-fast: 120ms;
+  --ui-duration: 180ms;
+  --ui-duration-slow: 240ms;
+  --ui-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ui-ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #0a0a0a;
+  --foreground: #ededed;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@keyframes ui-menu-in-bottom {
+  from {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes ui-menu-in-top {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes ui-menu-out-bottom {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.92);
+  }
+}
+
+@keyframes ui-menu-out-top {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(12px) scale(0.92);
+  }
+}
+
+.ui-menu-enter-bottom {
+  transform-origin: top center;
+  animation: ui-menu-in-bottom var(--ui-duration-slow) var(--ui-ease-spring) both;
+}
+
+.ui-menu-enter-top {
+  transform-origin: bottom center;
+  animation: ui-menu-in-top var(--ui-duration-slow) var(--ui-ease-spring) both;
+}
+
+.ui-menu-exit-bottom {
+  transform-origin: top center;
+  animation: ui-menu-out-bottom var(--ui-duration) var(--ui-ease-out) both;
+  pointer-events: none;
+}
+
+.ui-menu-exit-top {
+  transform-origin: bottom center;
+  animation: ui-menu-out-top var(--ui-duration) var(--ui-ease-out) both;
+  pointer-events: none;
+}
+
+@keyframes ui-tooltip-in-bottom {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes ui-tooltip-in-top {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes ui-tooltip-out-bottom {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+@keyframes ui-tooltip-out-top {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+
+.ui-tooltip-enter-bottom {
+  transform-origin: top center;
+  animation: ui-tooltip-in-bottom var(--ui-duration-fast) var(--ui-ease-out) both;
+}
+
+.ui-tooltip-enter-top {
+  transform-origin: bottom center;
+  animation: ui-tooltip-in-top var(--ui-duration-fast) var(--ui-ease-out) both;
+}
+
+.ui-tooltip-exit-bottom {
+  transform-origin: top center;
+  animation: ui-tooltip-out-bottom var(--ui-duration-fast) var(--ui-ease-out) both;
+  pointer-events: none;
+}
+
+.ui-tooltip-exit-top {
+  transform-origin: bottom center;
+  animation: ui-tooltip-out-top var(--ui-duration-fast) var(--ui-ease-out) both;
+  pointer-events: none;
+}
+
+@keyframes ui-check-in {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ui-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ui-overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes ui-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes ui-modal-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+
+.ui-overlay-enter {
+  animation: ui-overlay-in var(--ui-duration) var(--ui-ease-out) both;
+}
+
+.ui-overlay-exit {
+  animation: ui-overlay-out var(--ui-duration-slow) var(--ui-ease-out) both;
+}
+
+.ui-modal-enter {
+  transform-origin: center bottom;
+  animation: ui-modal-in var(--ui-duration) var(--ui-ease-out) both;
+}
+
+.ui-modal-exit {
+  transform-origin: center bottom;
+  animation: ui-modal-out var(--ui-duration-slow) var(--ui-ease-out) both;
+}
+
+@media (min-width: 640px) {
+  .ui-modal-enter,
+  .ui-modal-exit {
+    transform-origin: center center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-menu-enter-bottom,
+  .ui-menu-enter-top,
+  .ui-menu-exit-bottom,
+  .ui-menu-exit-top,
+  .ui-tooltip-enter-bottom,
+  .ui-tooltip-enter-top,
+  .ui-tooltip-exit-bottom,
+  .ui-tooltip-exit-top,
+  .ui-overlay-enter,
+  .ui-overlay-exit,
+  .ui-modal-enter,
+  .ui-modal-exit {
+    animation: none;
+  }
+
+  .ui-press:active {
+    transform: none;
+  }
+
+  .ui-press,
+  [role="switch"] span,
+  [role="checkbox"] svg {
+    transition-duration: 0.01ms !important;
+    animation: none !important;
   }
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+/* Select mode: default arrow on the pane (XYFlow uses pointer/grab otherwise). */
+.canvas-selecting .react-flow__pane,
+.canvas-selecting .react-flow__pane.draggable,
+.canvas-selecting .react-flow__pane.selection {
+  cursor: default;
 }
+
+.canvas-space-pan .react-flow__pane,
+.canvas-space-pan .react-flow__pane.draggable,
+.canvas-space-pan .react-flow__pane.selection {
+  cursor: grab;
+}
+
+.canvas-space-pan .react-flow__pane.dragging {
+  cursor: grabbing;
+}
+
+/*
+ * Edge anchors use handle bounds outer edge (Left→left, Right→right).
+ * Keep the handle itself tiny so the path sits on the node border; hit/visual
+ * size lives on absolutely positioned children and does not affect bounds.
+ */
+.react-flow__handle.canvas-input-handle,
+.react-flow__handle.canvas-output-handle {
+  width: 2px;
+  height: 2px;
+  min-width: 2px;
+  min-height: 2px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.react-flow__handle.canvas-input-handle {
+  left: 0;
+}
+
+.react-flow__handle.canvas-output-handle {
+  right: 0;
+}
+
+/*
+ * XYFlow ships .react-flow__node-group with padding/border/bg/radius.
+ * That stylesheet is imported from canvas-editor after globals, so beat it
+ * with equal-or-higher specificity + !important on the conflicting props.
+ */
+.react-flow__node.react-flow__node-group {
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0.75rem !important;
+  background: transparent !important;
+  color: inherit !important;
+  text-align: left !important;
+  box-shadow: none !important;
+  overflow: visible;
+}
+
+.react-flow__node.react-flow__node-group.selectable:hover,
+.react-flow__node.react-flow__node-group.selectable.selected,
+.react-flow__node.react-flow__node-group.selectable:focus,
+.react-flow__node.react-flow__node-group.selectable:focus-visible {
+  box-shadow: none !important;
+}
+
+.react-flow__node-group .react-flow__resize-control {
+  z-index: 30;
+}
+

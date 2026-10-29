@@ -1,0 +1,11 @@
+packages:
+  - .
+  - packages/*
+
+allowBuilds:
+  unrs-resolver: true
+  sharp: true
+  "@prisma/engines": true
+  esbuild: true
+  prisma: true
+  msgpackr-extract: true

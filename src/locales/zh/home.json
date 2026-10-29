@@ -1,0 +1,5 @@
+{
+  "ctaStart": "开始使用",
+  "ctaSignIn": "登录",
+  "description": "文本 / 图片 / 视频工作流画布。账号由 Better Auth 管理，画布数据落 Postgres。"
+}

@@ -1,0 +1,5 @@
+{
+  "ctaStart": "Get started",
+  "ctaSignIn": "Sign in",
+  "description": "Text / image / video workflow canvas. Auth via Better Auth, canvases in Postgres."
+}

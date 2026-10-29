@@ -1,0 +1,148 @@
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
+import { jsonError, jsonOk } from "@/lib/api";
+import { resolveCanvasCoverFields } from "@/lib/canvas/canvas-thumbnail";
+import { isCanvasGraph } from "@/lib/canvas/graph";
+import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/session";
+
+type RouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+const updateCanvasSchema = z.object({
+  title: z.string().trim().min(1).max(120).optional(),
+  graph: z.unknown().optional(),
+  version: z.number().int().positive(),
+});
+
+const thumbnailSelect = {
+  id: true,
+  url: true,
+  thumbnailUrl: true,
+  mediaType: true,
+  status: true,
+} as const;
+
+async function getOwnedCanvas(canvasId: string, ownerId: string) {
+  return prisma.canvas.findFirst({
+    where: {
+      id: canvasId,
+      ownerId,
+      status: "active",
+    },
+    include: {
+      thumbnailAsset: { select: thumbnailSelect },
+    },
+  });
+}
+
+function serializeCanvasDetail(
+  canvas: NonNullable<Awaited<ReturnType<typeof getOwnedCanvas>>>,
+) {
+  const cover = resolveCanvasCoverFields(
+    canvas.thumbnailAssetId,
+    canvas.thumbnailAsset,
+    canvas.graph,
+  );
+  const graph = isCanvasGraph(canvas.graph) ? canvas.graph : canvas.graph;
+  const nodeCount = isCanvasGraph(canvas.graph)
+    ? canvas.graph.nodes.length
+    : 0;
+  return {
+    id: canvas.id,
+    title: canvas.title,
+    version: canvas.version,
+    status: canvas.status,
+    graph,
+    nodeCount,
+    assets: [] as { assetId: string; nodeId: string }[],
+    ...cover,
+    createdAt: canvas.createdAt.toISOString(),
+    updatedAt: canvas.updatedAt.toISOString(),
+  };
+}
+
+export async function GET(_request: Request, context: RouteContext) {
+  const user = await requireUser();
+  if (!user) {
+    return jsonError("Unauthorized", 401);
+  }
+
+  const { id } = await context.params;
+  const canvas = await getOwnedCanvas(id, user.id);
+  if (!canvas) {
+    return jsonError("Canvas not found", 404);
+  }
+
+  return jsonOk(serializeCanvasDetail(canvas));
+}
+
+export async function PATCH(request: Request, context: RouteContext) {
+  const user = await requireUser();
+  if (!user) {
+    return jsonError("Unauthorized", 401);
+  }
+
+  const { id } = await context.params;
+  const canvas = await getOwnedCanvas(id, user.id);
+  if (!canvas) {
+    return jsonError("Canvas not found", 404);
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError("Invalid JSON body", 400);
+  }
+
+  const parsed = updateCanvasSchema.safeParse(body);
+  if (!parsed.success) {
+    return jsonError("Invalid request body", 400);
+  }
+
+  if (parsed.data.version !== canvas.version) {
+    return jsonError("Version conflict", 409);
+  }
+
+  if (parsed.data.graph !== undefined && !isCanvasGraph(parsed.data.graph)) {
+    return jsonError("Invalid canvas graph", 400);
+  }
+
+  const updated = await prisma.canvas.update({
+    where: { id: canvas.id },
+    data: {
+      ...(parsed.data.title ? { title: parsed.data.title } : {}),
+      ...(parsed.data.graph !== undefined
+        ? { graph: parsed.data.graph as Prisma.InputJsonValue }
+        : {}),
+      version: { increment: 1 },
+    },
+    include: {
+      thumbnailAsset: { select: thumbnailSelect },
+    },
+  });
+
+  return jsonOk(serializeCanvasDetail(updated));
+}
+
+export async function DELETE(_request: Request, context: RouteContext) {
+  const user = await requireUser();
+  if (!user) {
+    return jsonError("Unauthorized", 401);
+  }
+
+  const { id } = await context.params;
+  const canvas = await getOwnedCanvas(id, user.id);
+  if (!canvas) {
+    return jsonError("Canvas not found", 404);
+  }
+
+  await prisma.canvas.update({
+    where: { id: canvas.id },
+    data: { status: "archived" },
+  });
+
+  return jsonOk({ ok: true as const });
+}

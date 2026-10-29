@@ -1,0 +1,14 @@
+{
+  "name": "@canvase/generation-params",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./image": "./src/image.ts",
+    "./video": "./src/video.ts",
+    "./model-families": "./src/model-families.ts"
+  },
+  "types": "./src/index.ts",
+  "sideEffects": false
+}

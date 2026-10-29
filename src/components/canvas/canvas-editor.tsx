@@ -1,0 +1,4396 @@
+"use client";
+
+import "@xyflow/react/dist/style.css";
+
+import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowUUpLeft,
+  ArrowUUpRight,
+  BoundingBox,
+  Brain,
+  CaretDown,
+  Check,
+  CircleNotch,
+  Clock,
+  CornersOut,
+  Cursor,
+  DotsNine,
+  DownloadSimple,
+  FolderPlus,
+  GearSix,
+  HandGrabbing,
+  ImageSquare,
+  Images,
+  Info,
+  Keyboard,
+  Lock,
+  LockOpen,
+  MapTrifold,
+  Minus,
+  Play,
+  Plus,
+  Pulse,
+  StopCircle,
+  TextT,
+  TreeStructure,
+  UploadSimple,
+  VideoCamera,
+  Waveform,
+} from "@phosphor-icons/react";
+import {
+  Background,
+  BackgroundVariant,
+  MiniMap,
+  Panel,
+  ReactFlow,
+  ReactFlowProvider,
+  ConnectionLineType,
+  SelectionMode,
+  type Connection,
+  type Edge,
+  type NodeChange,
+  type NodePositionChange,
+  type OnConnect,
+  type OnNodeDrag,
+  useReactFlow,
+} from "@xyflow/react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { CanvasActionsContext } from "@/components/canvas/canvas-actions";
+import { canvasEdgeTypes } from "@/components/canvas/canvas-edge";
+import { CanvasColorPicker } from "@/components/canvas/canvas-color-picker";
+import { CanvasImageGenerationDock } from "@/components/canvas/canvas-image-generation-dock";
+import { CanvasNodeLabels } from "@/components/canvas/canvas-node-labels";
+import { CanvasNodeDockLayer } from "@/components/canvas/canvas-node-dock-layer";
+import { CanvasZoomLabel } from "@/components/canvas/canvas-zoom-label";
+import { CanvasRunningTasksModal } from "@/components/canvas/canvas-running-tasks";
+import { CanvasRunHistoryModal } from "@/components/canvas/canvas-run-history";
+import { CanvasShortcutsModal } from "@/components/canvas/canvas-shortcuts-modal";
+import {
+  buildCanvasRunPlan,
+  runCanvasPlan,
+  type CanvasRunMode,
+  type CanvasRunPlan,
+} from "@/lib/canvas/canvas-dag-runner";
+import { CanvasPreferencesProvider } from "@/components/canvas/canvas-preferences-context";
+import { CanvasTextGenerationDock } from "@/components/canvas/canvas-text-generation-dock";
+import { PlaygroundMediaLibraryPicker } from "@/components/playground/playground-media-library-picker";
+import { uploadPlaygroundAssetWithMeta } from "@/lib/playground-media";
+import { CanvasVideoGenerationDock } from "@/components/canvas/canvas-video-generation-dock";
+import { CanvasHelperLinesOverlay } from "@/components/canvas/canvas-helper-lines";
+import { CanvasModelSettingsModal } from "@/components/canvas/canvas-model-settings-modal";
+import { canvasNodeTypes } from "@/components/canvas/canvas-node-types";
+import {
+  getHelperLines,
+  type CanvasHelperLines,
+} from "@/lib/canvas/canvas-helper-lines";
+import { PlaygroundModelSelect } from "@/components/playground/playground-model-select";
+import {
+  FieldSurface,
+  FormField,
+  SelectField,
+  SwitchField,
+} from "@/components/form-field";
+import {
+  PreferenceControl,
+  PreferenceGroup,
+  PreferenceRow,
+} from "@/components/preference-list";
+import { LocaleToggle } from "@/components/locale-toggle";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { Tooltip } from "@/components/ui/tooltip";
+import { Popover } from "@/components/ui/popover";
+import { Modal } from "@/components/ui/modal";
+import { toast } from "@/components/ui/toast";
+import { useTheme } from "@/components/theme-provider";
+import { useCurrencySymbol } from "@/components/currency-provider";
+import { usePortalQuery } from "@/hooks/use-portal-query";
+import {
+  cancelCanvasRun,
+  getCanvas,
+  getActiveCanvasRun,
+  getCanvasRun,
+  isCanvasVersionConflict,
+  updateCanvas,
+  uploadCanvasThumbnail,
+  type CanvasDetail,
+} from "@/lib/canvas/canvas-api";
+import {
+  CANVAS_EDGE_COLORS,
+  DEFAULT_CANVAS_PREFERENCES,
+  canvasEdgeDashArray,
+  loadCanvasPreferences,
+  saveCanvasPreferences,
+  type CanvasPreferences,
+} from "@/lib/canvas/canvas-preferences";
+import { edgeRoleOptions } from "@/lib/canvas/canvas-edge-roles";
+import { stableGraphJson } from "@/lib/canvas/canvas-graph-json";
+import { downloadCanvasArchive } from "@/lib/canvas/canvas-archive";
+import {
+  canvasLayoutPositionsEqual,
+  layoutCanvasNodes,
+  type CanvasAutoLayoutMode,
+} from "@/lib/canvas/canvas-auto-layout";
+import {
+  runCanvasImageNode,
+  runCanvasTextNode,
+  runCanvasVideoNode,
+} from "@/lib/canvas/canvas-runner";
+import {
+  useCanvasStore,
+  type CanvasFlowEdge,
+  type CanvasFlowNode,
+} from "@/lib/canvas/canvas-store";
+import { recoverCanvasNode } from "@/lib/canvas/canvas-task-recovery";
+import { useCanvasHistory } from "@/lib/canvas/use-canvas-history";
+import { useCanvasRunStatusStore } from "@/lib/canvas/canvas-run-status-store";
+import { formatDateTime } from "@/lib/format";
+import {
+  estimateCanvasGenerationCost,
+  formatCanvasCost,
+} from "@/lib/canvas/canvas-generation-cost";
+import { useLocaleRouter } from "@/lib/locale-navigation";
+import { messages } from "@/messages";
+import { loadGenerationModels } from "@/lib/generation/local-models";
+import {
+  isGenerationConfigured,
+  readByokBaseUrl,
+  readByokConfig,
+} from "@/lib/generation/byok-store";
+
+import { pruneCanvasSettingsModels } from "@/lib/canvas/canvas-settings-prune";
+import {
+  readStorageConfig,
+  testStorageConfig,
+  writeStorageConfig,
+} from "@/lib/storage/storage-config-client";
+
+import type {
+  CanvasNodeType,
+  CanvasSettings,
+} from "@/lib/tu-shared-browser";
+
+type CanvasSettingsTab = "canvas" | "generation" | "storage";
+
+const nodeColors: Record<string, string> = {
+  text: "#3b82f6",
+  image: "#10b981",
+  video: "#8b5cf6",
+  audio: "#f97316",
+  group: "#94a3b8",
+};
+
+const CANVAS_MIN_ZOOM = 0.05;
+const CANVAS_MAX_ZOOM = 4;
+const CANVAS_SNAP_DISTANCE = 40;
+const CANVAS_CONNECTION_SNAP_RADIUS = 96;
+const CANVAS_DEFAULT_ZOOM = 0.8;
+const CANVAS_DEFAULT_VIEWPORT = { x: 0, y: 0, zoom: CANVAS_DEFAULT_ZOOM };
+
+type CanvasGraphObservation = {
+  nodes: CanvasFlowNode[];
+  edges: CanvasFlowEdge[];
+  settings: CanvasSettings;
+  title: string;
+};
+
+function sameGraphObservation(
+  previous: CanvasGraphObservation,
+  next: CanvasGraphObservation,
+): boolean {
+  if (
+    previous.title !== next.title ||
+    previous.settings !== next.settings ||
+    previous.nodes.length !== next.nodes.length ||
+    previous.edges.length !== next.edges.length
+  ) {
+    return false;
+  }
+  for (let index = 0; index < next.nodes.length; index += 1) {
+    const left = previous.nodes[index]!;
+    const right = next.nodes[index]!;
+    if (
+      left.id !== right.id ||
+      left.type !== right.type ||
+      left.parentId !== right.parentId ||
+      left.position.x !== right.position.x ||
+      left.position.y !== right.position.y ||
+      left.width !== right.width ||
+      left.height !== right.height ||
+      left.data !== right.data
+    ) {
+      return false;
+    }
+  }
+  for (let index = 0; index < next.edges.length; index += 1) {
+    const left = previous.edges[index]!;
+    const right = next.edges[index]!;
+    if (
+      left.id !== right.id ||
+      left.source !== right.source ||
+      left.target !== right.target ||
+      left.sourceHandle !== right.sourceHandle ||
+      left.targetHandle !== right.targetHandle ||
+      left.data?.role !== right.data?.role ||
+      left.data?.order !== right.data?.order
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+const CANVAS_DEFAULT_FIT_VIEW_OPTIONS = {
+  minZoom: CANVAS_MIN_ZOOM,
+  maxZoom: CANVAS_DEFAULT_ZOOM,
+  padding: 0.2,
+};
+
+const CANVAS_BACKGROUND_PATTERN_COLORS = {
+  light: {
+    dots: "#d4d4d8",
+    lines: "#ececee",
+    cross: "#d4d4d8",
+    none: "transparent",
+  },
+  dark: {
+    dots: "rgba(255,255,255,0.18)",
+    lines: "rgba(255,255,255,0.075)",
+    cross: "rgba(255,255,255,0.16)",
+    none: "transparent",
+  },
+} as const;
+
+const EDGE_COLOR_OPTIONS = [
+  {
+    value: "muted" as const,
+    label: messages.canvas.edgeColorMuted,
+    color: CANVAS_EDGE_COLORS.muted,
+  },
+  {
+    value: "blue" as const,
+    label: messages.canvas.edgeColorBlue,
+    color: CANVAS_EDGE_COLORS.blue,
+  },
+  {
+    value: "green" as const,
+    label: messages.canvas.edgeColorGreen,
+    color: CANVAS_EDGE_COLORS.green,
+  },
+  {
+    value: "violet" as const,
+    label: messages.canvas.edgeColorViolet,
+    color: CANVAS_EDGE_COLORS.violet,
+  },
+  {
+    value: "orange" as const,
+    label: messages.canvas.edgeColorOrange,
+    color: CANVAS_EDGE_COLORS.orange,
+  },
+  {
+    value: "red" as const,
+    label: messages.canvas.edgeColorRed,
+    color: CANVAS_EDGE_COLORS.red,
+  },
+  {
+    value: "cyan" as const,
+    label: messages.canvas.edgeColorCyan,
+    color: CANVAS_EDGE_COLORS.cyan,
+  },
+  {
+    value: "pink" as const,
+    label: messages.canvas.edgeColorPink,
+    color: CANVAS_EDGE_COLORS.pink,
+  },
+];
+
+function hasCycle(source: string, target: string, edges: Edge[]): boolean {
+  const adjacency = new Map<string, string[]>();
+  for (const edge of edges) {
+    const list = adjacency.get(edge.source) ?? [];
+    list.push(edge.target);
+    adjacency.set(edge.source, list);
+  }
+  const stack = [target];
+  const seen = new Set<string>();
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (id === source) {
+      return true;
+    }
+    if (seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    stack.push(...(adjacency.get(id) ?? []));
+  }
+  return false;
+}
+
+function isCanvasConnectionValid(
+  connection: Connection | Edge,
+  nodes: Array<{ id: string; type?: string | null }>,
+  edges: Edge[],
+): boolean {
+  const source = nodes.find((node) => node.id === connection.source);
+  const target = nodes.find((node) => node.id === connection.target);
+  if (!source?.type || !target?.type) {
+    return false;
+  }
+  const sourceType = source.type as CanvasNodeType;
+  const targetType = target.type as CanvasNodeType;
+  const handle = connection.targetHandle ?? "";
+  if (
+    (targetType === "image" ||
+      targetType === "video" ||
+      targetType === "audio") &&
+    handle === "in"
+  ) {
+    if (edgeRoleOptions(sourceType, targetType).length === 0) {
+      return false;
+    }
+    return !hasCycle(source.id, target.id, edges);
+  }
+  const acceptedType =
+    handle === "prompt" || handle === "context" || handle === "text"
+      ? "text"
+      : handle === "reference_video"
+        ? "video"
+        : handle === "reference_audio"
+          ? "audio"
+          : "image";
+  if (sourceType !== acceptedType) {
+    return false;
+  }
+  return !hasCycle(source.id, target.id, edges);
+}
+
+function costToCents(value: string): bigint {
+  const [whole = "0", fraction = ""] = value.split(".");
+  return BigInt(whole) * BigInt(100) + BigInt((fraction + "00").slice(0, 2));
+}
+
+function CanvasEditorInner({
+  canvasDocument,
+  onReload,
+}: {
+  canvasDocument: CanvasDetail;
+  onReload: () => void;
+}) {
+  const { push } = useLocaleRouter();
+  const { resolvedTheme } = useTheme();
+  const currencySymbol = useCurrencySymbol();
+  const { screenToFlowPosition, fitView, zoomTo, zoomIn, zoomOut } = useReactFlow();
+  const canvasSurfaceRef = useRef<HTMLDivElement>(null);
+  const [configNodeId, setConfigNodeId] = useState<string | null>(null);
+
+  useState(() => {
+    useCanvasStore.getState().reset(canvasDocument.graph);
+  });
+  const [title, setTitle] = useState(canvasDocument.title);
+  const [, setVersion] = useState(canvasDocument.version);
+  const [savedAt, setSavedAt] = useState(canvasDocument.updatedAt);
+  const [thumbnailUrl, setThumbnailUrl] = useState(
+    canvasDocument.thumbnailUrl ?? null,
+  );
+  const [thumbnailBusy, setThumbnailBusy] = useState(false);
+  const thumbnailRef = useRef<HTMLInputElement>(null);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [conflict, setConflict] = useState(false);
+  const [assetLibraryOpen, setAssetLibraryOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
+  const [settingsDraft, setSettingsDraft] = useState<CanvasSettings>({});
+  const [preferences, setPreferences] = useState<CanvasPreferences>(() =>
+    loadCanvasPreferences(),
+  );
+  const [preferencesDraft, setPreferencesDraft] = useState<CanvasPreferences>(
+    DEFAULT_CANVAS_PREFERENCES,
+  );
+  const [settingsTab, setSettingsTab] = useState<CanvasSettingsTab>("canvas");
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [byokRevision, setByokRevision] = useState(0);
+  const [storageEndpointDraft, setStorageEndpointDraft] = useState("");
+  const [storageRegionDraft, setStorageRegionDraft] = useState("auto");
+  const [storageBucketDraft, setStorageBucketDraft] = useState("");
+  const [storageAccessKeyIdDraft, setStorageAccessKeyIdDraft] = useState("");
+  const [storageSecretDraft, setStorageSecretDraft] = useState("");
+  const [storagePublicBaseUrlDraft, setStoragePublicBaseUrlDraft] =
+    useState("");
+  const [storageForcePathStyleDraft, setStorageForcePathStyleDraft] =
+    useState(true);
+  const [storageSecretConfigured, setStorageSecretConfigured] = useState(false);
+  const [storageSource, setStorageSource] = useState<"user" | "env" | "none">(
+    "none",
+  );
+  const [storageConfigured, setStorageConfigured] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [storageTesting, setStorageTesting] = useState(false);
+  const [groupOpen, setGroupOpen] = useState(false);
+  const [groupName, setGroupName] = useState("");
+  const [nodeInfoOpen, setNodeInfoOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(canvasDocument.title);
+  const [selectMode, setSelectMode] = useState(false);
+  const [spacePressed, setSpacePressed] = useState(false);
+  const [draggingNode, setDraggingNode] = useState(false);
+  const [helperLines, setHelperLines] = useState<CanvasHelperLines | null>(
+    null,
+  );
+  const [runMenuOpen, setRunMenuOpen] = useState(false);
+  const [runHistoryOpen, setRunHistoryOpen] = useState(false);
+  const runMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const [runConfirm, setRunConfirm] = useState<{
+    mode: CanvasRunMode;
+    plan: CanvasRunPlan;
+  } | null>(null);
+  const [activeRun, setActiveRun] = useState<{
+    mode: CanvasRunMode;
+    controller: AbortController;
+  } | null>(null);
+  const [serverRunId, setServerRunId] = useState<string | null>(null);
+  const [archiveMenuOpen, setArchiveMenuOpen] = useState(false);
+  const [insertMenu, setInsertMenu] = useState<{
+    left: number;
+    top: number;
+    flow: { x: number; y: number };
+  } | null>(null);
+  const [archiveBusy, setArchiveBusy] = useState<"image" | "video" | null>(null);
+  const archiveButtonRef = useRef<HTMLButtonElement>(null);
+  const toolbarUploadRef = useRef<HTMLInputElement>(null);
+  const [toolbarUploading, setToolbarUploading] = useState(false);
+  const [toolbarUploadProgress, setToolbarUploadProgress] = useState(0);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
+  const [viewportLocked, setViewportLocked] = useState(false);
+  const layoutMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const lastSavedRef = useRef({
+    title: canvasDocument.title,
+    graph: stableGraphJson(useCanvasStore.getState().toGraph()),
+  });
+  const graphObservationRef = useRef<CanvasGraphObservation | null>(null);
+  const titleRef = useRef(canvasDocument.title);
+  const versionRef = useRef(canvasDocument.version);
+  const inFlightRef = useRef(false);
+  const pendingRef = useRef(false);
+  const saveTimerRef = useRef<number | null>(null);
+  const retryTimerRef = useRef<number | null>(null);
+  const retryCountRef = useRef(0);
+  const conflictRef = useRef(false);
+  const dirtyRef = useRef(false);
+  const initialAutosaveSkippedRef = useRef(false);
+  const flushSaveRef = useRef<() => void>(() => undefined);
+  const activeRunsRef = useRef<Map<string, AbortController>>(new Map());
+
+  const nodes = useCanvasStore((state) => state.nodes);
+  const edges = useCanvasStore((state) => state.edges);
+  const selectedNodes = useMemo(
+    () =>
+      nodes.filter(
+        (node) => node.selected && node.type !== "group" && !node.parentId,
+      ),
+    [nodes],
+  );
+  const librarySelectedUrls = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          nodes.flatMap((node) =>
+            [node.data.url, ...(node.data.urls ?? [])].filter(
+              (url): url is string => Boolean(url?.trim()),
+            ),
+          ),
+        ),
+      ),
+    [nodes],
+  );
+  const settings = useCanvasStore((state) => state.settings);
+  const setSettings = useCanvasStore((state) => state.setSettings);
+  const groupSelection = useCanvasStore((state) => state.groupSelection);
+  const addNodesToGroup = useCanvasStore((state) => state.addNodesToGroup);
+  const setNodePosition = useCanvasStore((state) => state.setNodePosition);
+  const setDragOverGroupId = useCanvasStore(
+    (state) => state.setDragOverGroupId,
+  );
+  const setSnapTargetId = useCanvasStore(
+    (state) => state.setSnapTargetId,
+  );
+  const onNodesChange = useCanvasStore((state) => state.onNodesChange);
+  const onEdgesChange = useCanvasStore((state) => state.onEdgesChange);
+  const onConnect = useCanvasStore((state) => state.onConnect);
+  const addNode = useCanvasStore((state) => state.addNode);
+  const selectAll = useCanvasStore((state) => state.selectAll);
+  const clearSelection = useCanvasStore((state) => state.clearSelection);
+  const addMediaNode = useCanvasStore((state) => state.addMediaNode);
+  const updateNodeData = useCanvasStore((state) => state.updateNodeData);
+  const removeNode = useCanvasStore((state) => state.removeNode);
+  const duplicateNode = useCanvasStore((state) => state.duplicateNode);
+  const replace = useCanvasStore((state) => state.replace);
+  const toGraph = useCanvasStore((state) => state.toGraph);
+
+  const history = useCanvasHistory({ nodes, edges, apply: replace });
+
+  const openCanvasSettings = useCallback(
+    (tab: CanvasSettingsTab) => {
+      setSettingsDraft(settings);
+      setPreferencesDraft(preferences);
+      setSettingsTab(tab);
+      setStorageError(null);
+      setSettingsOpen(true);
+      void (async () => {
+        try {
+          const storage = await readStorageConfig();
+          setStorageSource(storage.source);
+          setStorageConfigured(storage.configured);
+          setStorageSecretConfigured(storage.secretConfigured);
+          setStorageEndpointDraft(storage.endpoint);
+          setStorageRegionDraft(storage.region || "auto");
+          setStorageBucketDraft(storage.bucket);
+          setStorageAccessKeyIdDraft(
+            storage.source === "user" ? storage.accessKeyId : "",
+          );
+          setStorageSecretDraft("");
+          setStoragePublicBaseUrlDraft(storage.publicBaseUrl);
+          setStorageForcePathStyleDraft(storage.forcePathStyle);
+        } catch {
+          // keep previous storage drafts
+        }
+      })();
+    },
+    [preferences, settings],
+  );
+
+  const openModelSettings = useCallback(() => {
+    setModelSettingsOpen(true);
+  }, []);
+
+  useEffect(() => {
+    useCanvasRunStatusStore.getState().reset();
+  }, [canvasDocument.id]);
+
+  useEffect(() => {
+    void readStorageConfig()
+      .then((storage) => {
+        setStorageConfigured(storage.configured);
+        setStorageSource(storage.source);
+      })
+      .catch(() => {
+        setStorageConfigured(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    void readByokConfig()
+      .then(() => {
+        setByokRevision((current) => current + 1);
+      })
+      .catch(() => {
+        // Keep local cache when offline / unauthorized.
+      });
+  }, []);
+
+  const modelsQuery = usePortalQuery(
+    `generation-canvas-models:${readByokBaseUrl()}:${byokRevision}`,
+    () => loadGenerationModels(),
+  );
+  const models = useMemo(() => modelsQuery.data ?? [], [modelsQuery.data]);
+  const imageModels = useMemo(
+    () => models.filter((model) => model.capability === "image"),
+    [models],
+  );
+  const videoModels = useMemo(
+    () => models.filter((model) => model.capability === "video"),
+    [models],
+  );
+  const chatModels = useMemo(
+    () => models.filter((model) => model.capability === "chat"),
+    [models],
+  );
+
+  useEffect(() => {
+    if (!modelsQuery.data) {
+      return;
+    }
+    const availableIds = new Set(models.map((model) => model.id));
+    const pruned = pruneCanvasSettingsModels(settings, availableIds);
+    if (pruned.changed) {
+      setSettings(pruned.settings);
+    }
+    setSettingsDraft((current) => {
+      const draftPruned = pruneCanvasSettingsModels(current, availableIds);
+      return draftPruned.changed ? draftPruned.settings : current;
+    });
+  }, [models, modelsQuery.data, setSettings, settings]);
+
+  useEffect(() => {
+    titleRef.current = title;
+  }, [title]);
+
+  useEffect(() => {
+    conflictRef.current = conflict;
+  }, [conflict]);
+
+  const markDirty = (value: boolean) => {
+    dirtyRef.current = value;
+    setDirty(value);
+  };
+
+  const flushSave = useCallback(async () => {
+    if (inFlightRef.current) {
+      pendingRef.current = true;
+      return;
+    }
+    if (conflictRef.current) {
+      return;
+    }
+    const currentTitle = titleRef.current;
+    const graph = toGraph();
+    const graphJson = stableGraphJson(graph);
+    if (
+      currentTitle === lastSavedRef.current.title &&
+      graphJson === lastSavedRef.current.graph
+    ) {
+      markDirty(false);
+      return;
+    }
+
+    inFlightRef.current = true;
+    pendingRef.current = false;
+    setSaving(true);
+    const versionForSave = versionRef.current;
+    try {
+      const saved = await updateCanvas(canvasDocument.id, {
+        version: versionForSave,
+        title: currentTitle,
+        graph,
+      });
+      lastSavedRef.current = {
+        title: saved.title,
+        graph: stableGraphJson(saved.graph),
+      };
+      versionRef.current = saved.version;
+      setVersion(saved.version);
+      setSavedAt(saved.updatedAt);
+      setConflict(false);
+      conflictRef.current = false;
+      retryCountRef.current = 0;
+      if (retryTimerRef.current) {
+        window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      const latestGraph = stableGraphJson(toGraph());
+      const dirtyAfterSave =
+        titleRef.current !== saved.title ||
+        latestGraph !== lastSavedRef.current.graph;
+      markDirty(dirtyAfterSave);
+    } catch (error: unknown) {
+      if (isCanvasVersionConflict(error)) {
+        conflictRef.current = true;
+        setConflict(true);
+        markDirty(true);
+        return;
+      }
+      markDirty(true);
+      toast.danger(
+        error instanceof Error ? error.message : messages.canvas.saveFailed,
+      );
+      retryCountRef.current += 1;
+      const delay = Math.min(
+        8000,
+        1000 * 2 ** Math.min(retryCountRef.current - 1, 3),
+      );
+      if (retryTimerRef.current) {
+        window.clearTimeout(retryTimerRef.current);
+      }
+      retryTimerRef.current = window.setTimeout(() => {
+        retryTimerRef.current = null;
+        void flushSaveRef.current();
+      }, delay);
+    } finally {
+      inFlightRef.current = false;
+      setSaving(false);
+      if (!conflictRef.current && pendingRef.current) {
+        pendingRef.current = false;
+        void flushSaveRef.current();
+      }
+    }
+  }, [canvasDocument.id, toGraph]);
+
+  useEffect(() => {
+    flushSaveRef.current = () => {
+      void flushSave();
+    };
+  }, [flushSave]);
+
+  useEffect(() => {
+    if (
+      activeRun ||
+      serverRunId ||
+      nodes.some(
+        (node) =>
+          Boolean(node.data.runId) &&
+          (node.data.status === "running" || node.data.status === "queued"),
+      )
+    ) {
+      return;
+    }
+    if (!initialAutosaveSkippedRef.current) {
+      initialAutosaveSkippedRef.current = true;
+      graphObservationRef.current = { nodes, edges, settings, title };
+      return;
+    }
+    if (conflict) {
+      return;
+    }
+    const observation = { nodes, edges, settings, title };
+    const previous = graphObservationRef.current;
+    graphObservationRef.current = observation;
+    if (previous && sameGraphObservation(previous, observation)) {
+      return;
+    }
+    if (!previous) {
+      return;
+    }
+    markDirty(true);
+    if (inFlightRef.current) {
+      pendingRef.current = true;
+      return;
+    }
+    if (retryTimerRef.current) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
+      void flushSaveRef.current();
+    }, 800);
+  }, [activeRun, conflict, edges, nodes, serverRunId, settings, title]);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+      }
+      if (retryTimerRef.current) {
+        window.clearTimeout(retryTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!dirtyRef.current) {
+        return;
+      }
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const current = useCanvasStore.getState().nodes;
+    for (const node of current) {
+      if (
+        node.data.status !== "running" &&
+        node.data.status !== "queued"
+      ) {
+        continue;
+      }
+      if (node.type === "text") {
+        updateNodeData(node.id, {
+          status: "interrupted",
+          error: messages.canvas.taskRecoveryFailed,
+        });
+        continue;
+      }
+      if (node.type !== "image" && node.type !== "video") {
+        continue;
+      }
+      const requestId = node.data.requestId?.trim();
+      if (!requestId) {
+        updateNodeData(node.id, {
+          status: "interrupted",
+          error: messages.canvas.taskRecoveryFailed,
+        });
+        continue;
+      }
+      void recoverCanvasNode({
+        nodeId: node.id,
+        requestId,
+        fallbackUrl: node.data.url ?? "",
+        update: updateNodeData,
+        signal: controller.signal,
+      });
+    }
+    return () => controller.abort();
+  }, [updateNodeData]);
+
+  useEffect(() => {
+    saveCanvasPreferences(preferences);
+  }, [preferences]);
+
+  const isValidConnection = useCallback(
+    (connection: Connection | Edge) =>
+      isCanvasConnectionValid(connection, nodes, edges),
+    [edges, nodes],
+  );
+
+  /** Multi-select: drag from one selected source → also wire other selected sources. */
+  const handleConnect = useCallback(
+    (connection: Connection) => {
+      onConnect(connection);
+
+      const sourceId = connection.source;
+      const targetId = connection.target;
+      if (!sourceId || !targetId) {
+        return;
+      }
+
+      const state = useCanvasStore.getState();
+      const selectedSourceIds = state.nodes
+        .filter(
+          (node) =>
+            node.selected &&
+            node.type !== "group" &&
+            !node.parentId &&
+            node.id !== targetId,
+        )
+        .map((node) => node.id);
+
+      if (
+        selectedSourceIds.length < 2 ||
+        !selectedSourceIds.includes(sourceId)
+      ) {
+        return;
+      }
+
+      const targetHandle = connection.targetHandle ?? "in";
+      const sourceHandle = connection.sourceHandle ?? "out";
+      let connectedCount = 1;
+
+      for (const extraSourceId of selectedSourceIds) {
+        if (extraSourceId === sourceId) {
+          continue;
+        }
+        const nextConnection: Connection = {
+          source: extraSourceId,
+          target: targetId,
+          sourceHandle,
+          targetHandle,
+        };
+        const latest = useCanvasStore.getState();
+        const alreadyLinked = latest.edges.some(
+          (edge) =>
+            edge.source === extraSourceId &&
+            edge.target === targetId &&
+            (edge.targetHandle ?? "in") === targetHandle,
+        );
+        if (alreadyLinked) {
+          continue;
+        }
+        if (
+          !isCanvasConnectionValid(
+            nextConnection,
+            latest.nodes,
+            latest.edges,
+          )
+        ) {
+          continue;
+        }
+        onConnect(nextConnection);
+        connectedCount += 1;
+      }
+
+      if (connectedCount > 1) {
+        toast.success(
+          messages.canvas.batchConnected.replace(
+            "{count}",
+            String(connectedCount),
+          ),
+        );
+      }
+    },
+    [onConnect],
+  );
+
+  const executeNode = useCallback(
+    async (nodeId: string, signal?: AbortSignal) => {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (!node) {
+        throw new Error(messages.canvas.nodeMissing);
+      }
+      if (!isGenerationConfigured()) {
+        throw new Error(messages.canvas.generationMissing);
+      }
+      if (
+        node.type !== "image" &&
+        node.type !== "video" &&
+        node.type !== "text"
+      ) {
+        throw new Error(messages.canvas.runUnsupported);
+      }
+      const run =
+        node.type === "image"
+          ? runCanvasImageNode
+          : node.type === "video"
+            ? runCanvasVideoNode
+            : runCanvasTextNode;
+      await run({
+        nodeId,
+        graph: toGraph(),
+        apiKey: "",
+        update: updateNodeData,
+        signal,
+      });
+    },
+    [nodes, toGraph, updateNodeData],
+  );
+
+  const runNode = useCallback(
+    async (nodeId: string) => {
+      if (activeRun) {
+        toast.info(messages.canvas.runAlreadyRunning);
+        return;
+      }
+      const current = useCanvasStore
+        .getState()
+        .nodes.find((node) => node.id === nodeId);
+      if (
+        activeRunsRef.current.has(nodeId) ||
+        current?.data.status === "running" ||
+        current?.data.status === "queued"
+      ) {
+        toast.info(messages.canvas.runAlreadyRunning);
+        return;
+      }
+      const controller = new AbortController();
+      activeRunsRef.current.set(nodeId, controller);
+      try {
+        await executeNode(nodeId, controller.signal);
+      } catch (error) {
+        toast.danger(
+          error instanceof Error ? error.message : messages.canvas.runFailed,
+        );
+      } finally {
+        activeRunsRef.current.delete(nodeId);
+      }
+    },
+    [activeRun, executeNode],
+  );
+
+  const prepareRun = useCallback(
+    (mode: CanvasRunMode) => {
+      setRunMenuOpen(false);
+      if (activeRun || activeRunsRef.current.size > 0) {
+        toast.info(messages.canvas.runAlreadyRunning);
+        return;
+      }
+      if (!isGenerationConfigured()) {
+        toast.danger(messages.canvas.generationMissing);
+        openModelSettings();
+        return;
+      }
+      const selectedIds = selectedNodes.map((node) => node.id);
+      if (
+        (mode === "selected" || mode === "from") &&
+        selectedIds.length === 0
+      ) {
+        toast.info(messages.canvas.runSelectNode);
+        return;
+      }
+      const plan = buildCanvasRunPlan(toGraph(), {
+        mode,
+        selectedNodeIds: selectedIds,
+        fromNodeIds: selectedIds,
+      });
+      if (!plan) {
+        toast.info(
+          mode === "retry-failed"
+            ? messages.canvas.runNoFailed
+            : mode === "all"
+              ? messages.canvas.runNoNodes
+              : messages.canvas.runSelectNode,
+        );
+        return;
+      }
+      setRunConfirm({ mode, plan });
+    },
+    [activeRun, openModelSettings, selectedNodes, toGraph],
+  );
+
+  const startLocalPlanRun = useCallback(async () => {
+    const pending = runConfirm;
+    if (!pending) {
+      return;
+    }
+    setRunConfirm(null);
+    const controller = new AbortController();
+    setActiveRun({ mode: pending.mode, controller });
+    const planned = new Set(pending.plan.nodeIds);
+    useCanvasStore.setState((state) => ({
+      nodes: state.nodes.map((node) =>
+        planned.has(node.id)
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                status: "queued",
+                error: undefined,
+                finishedAt: undefined,
+              },
+            }
+          : node,
+      ),
+    }));
+    try {
+      const result = await runCanvasPlan({
+        plan: pending.plan,
+        signal: controller.signal,
+        concurrency: 2,
+        update: updateNodeData,
+        runNode: (nodeId, signal) => executeNode(nodeId, signal),
+      });
+      if (controller.signal.aborted) {
+        toast.info(messages.canvas.runCancelled);
+      } else if (result.failed.length > 0 || result.skipped.length > 0) {
+        toast.info(
+          messages.canvas.runPartial
+            .replace("{failed}", String(result.failed.length))
+            .replace("{skipped}", String(result.skipped.length)),
+        );
+      } else {
+        toast.success(messages.canvas.runCompleted);
+      }
+    } catch (error) {
+      toast.danger(
+        error instanceof Error ? error.message : messages.canvas.runFailed,
+      );
+    } finally {
+      setActiveRun(null);
+    }
+  }, [executeNode, runConfirm, updateNodeData]);
+
+  const startPlanRun = useCallback(async () => {
+    await startLocalPlanRun();
+  }, [startLocalPlanRun]);
+
+  useEffect(() => {
+    let stopped = false;
+    void getActiveCanvasRun(canvasDocument.id)
+      .then((run) => {
+        if (!stopped && run) {
+          setServerRunId(run.id);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      stopped = true;
+    };
+  }, [canvasDocument.id]);
+
+  useEffect(() => {
+    if (!serverRunId) {
+      return;
+    }
+    let stopped = false;
+    let timer: number | null = null;
+    async function poll() {
+      try {
+        const run = await getCanvasRun(canvasDocument.id, serverRunId!);
+        if (stopped) {
+          return;
+        }
+        const runStatus = useCanvasRunStatusStore.getState();
+        for (const item of run.nodes) {
+          runStatus.setNode(
+            item.nodeId,
+            item.status === "pending" ? "queued" : item.status,
+            item.error ?? undefined,
+            item.requestId ?? undefined,
+            item.taskId ?? undefined,
+          );
+        }
+        if (["succeeded", "partial", "failed", "cancelled"].includes(run.status)) {
+          stopped = true;
+          setServerRunId(null);
+          setActiveRun(null);
+          useCanvasRunStatusStore.getState().reset();
+          if (run.status === "cancelled") {
+            toast.info(messages.canvas.runCancelled);
+          } else if (run.status === "succeeded") {
+            toast.success(messages.canvas.runCompleted);
+          } else {
+            toast.info(run.error ?? messages.canvas.runFailed);
+          }
+          onReload();
+          return;
+        }
+        timer = window.setTimeout(() => void poll(), 1500);
+      } catch (error) {
+        if (stopped) {
+          return;
+        }
+        stopped = true;
+        setServerRunId(null);
+        setActiveRun(null);
+        useCanvasRunStatusStore.getState().reset();
+        toast.danger(
+          error instanceof Error ? error.message : messages.canvas.runFailed,
+        );
+      }
+    }
+    void poll();
+    return () => {
+      stopped = true;
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [canvasDocument.id, onReload, serverRunId, updateNodeData]);
+
+  const cancelActiveRun = useCallback(() => {
+    setRunMenuOpen(false);
+    if (serverRunId) {
+      void cancelCanvasRun(canvasDocument.id, serverRunId).catch((error) => {
+        toast.danger(
+          error instanceof Error ? error.message : messages.canvas.runFailed,
+        );
+      });
+      return;
+    }
+    activeRun?.controller.abort();
+  }, [activeRun, canvasDocument.id, serverRunId]);
+
+  useEffect(() => {
+    return () => {
+      activeRun?.controller.abort();
+    };
+  }, [activeRun]);
+
+  const addNodeWithPreset = useCallback(
+    (
+      type: "text" | "image" | "video" | "audio" | "group",
+      position: { x: number; y: number },
+    ) => {
+      if (type === "group") {
+        addNode("group", position, { label: messages.canvas.groupDefault });
+        return;
+      }
+      const preset = settings[type];
+      const data = preset
+        ? {
+            ...(preset.model ? { model: preset.model } : {}),
+            ...(preset.vendor ? { vendor: preset.vendor } : {}),
+            ...(preset.params ? { params: { ...preset.params } } : {}),
+            ...(preset.systemPrompt
+              ? { systemPrompt: preset.systemPrompt }
+              : {}),
+          }
+        : undefined;
+      addNode(type, position, data);
+    },
+    [addNode, settings],
+  );
+
+  const addAtCenter = useCallback(
+    (type: "text" | "image" | "video" | "audio") => {
+      addNodeWithPreset(
+        type,
+        screenToFlowPosition({
+          x: window.innerWidth / 2 + nodes.length * 12,
+          y: window.innerHeight / 2 + nodes.length * 12,
+        }),
+      );
+    },
+    [addNodeWithPreset, nodes.length, screenToFlowPosition],
+  );
+
+  const addGroupAtCenter = useCallback(() => {
+    addNodeWithPreset(
+      "group",
+      screenToFlowPosition({
+        x: window.innerWidth / 2 - 210,
+        y: window.innerHeight / 2 - 160,
+      }),
+    );
+  }, [addNodeWithPreset, screenToFlowPosition]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest("input, textarea, select, [contenteditable='true']")
+      ) {
+        return;
+      }
+      if (document.querySelector('[role="dialog"]')) {
+        return;
+      }
+
+      const mod = event.metaKey || event.ctrlKey;
+      if (insertMenu && event.key.toLowerCase() !== "escape") {
+        return;
+      }
+      const key = event.key.toLowerCase();
+
+      if (mod) {
+        if (key === "z") {
+          event.preventDefault();
+          if (event.shiftKey) {
+            history.redo();
+          } else {
+            history.undo();
+          }
+          return;
+        }
+        if (key === "y") {
+          event.preventDefault();
+          history.redo();
+          return;
+        }
+        if (key === "d") {
+          event.preventDefault();
+          for (const node of nodes.filter((item) => item.selected)) {
+            duplicateNode(node.id);
+          }
+          return;
+        }
+        if (key === "a") {
+          event.preventDefault();
+          selectAll();
+          return;
+        }
+        if (key === "s") {
+          event.preventDefault();
+          void flushSaveRef.current();
+        }
+        return;
+      }
+
+      if (event.altKey || event.repeat) {
+        return;
+      }
+
+      if (event.shiftKey && key === "g") {
+        event.preventDefault();
+        addGroupAtCenter();
+        return;
+      }
+
+      switch (key) {
+        case "t":
+          event.preventDefault();
+          addAtCenter("text");
+          return;
+        case "i":
+          event.preventDefault();
+          addAtCenter("image");
+          return;
+        case "m":
+          event.preventDefault();
+          addAtCenter("video");
+          return;
+        case "a":
+          event.preventDefault();
+          addAtCenter("audio");
+          return;
+        case "h":
+          event.preventDefault();
+          setSelectMode(false);
+          setViewportLocked(false);
+          return;
+        case "v":
+          event.preventDefault();
+          setSelectMode((value) => !value);
+          return;
+        case "g":
+          if (selectedNodes.length >= 2) {
+            event.preventDefault();
+            setGroupName(
+              `${messages.canvas.groupDefault} ${selectedNodes.length}`,
+            );
+            setGroupOpen(true);
+          }
+          return;
+        case "f":
+          event.preventDefault();
+          void fitView({ padding: 0.2, duration: 250 });
+          return;
+        case "l":
+          event.preventDefault();
+          setViewportLocked((locked) => !locked);
+          return;
+        case "escape":
+          if (insertMenu) {
+            event.preventDefault();
+            setInsertMenu(null);
+          } else if (configNodeId) {
+            event.preventDefault();
+            setConfigNodeId(null);
+          } else if (selectMode) {
+            event.preventDefault();
+            setSelectMode(false);
+          } else {
+            clearSelection();
+            setLayoutMenuOpen(false);
+          }
+          return;
+        case "1":
+          event.preventDefault();
+          void zoomTo(1, { duration: 150 });
+          return;
+        case "+":
+        case "=":
+          event.preventDefault();
+          void zoomIn({ duration: 150 });
+          return;
+        case "-":
+          event.preventDefault();
+          void zoomOut({ duration: 150 });
+          return;
+        default:
+          return;
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    addAtCenter,
+    addGroupAtCenter,
+    clearSelection,
+    configNodeId,
+    duplicateNode,
+    fitView,
+    history,
+    insertMenu,
+    nodes,
+    selectedNodes,
+    selectAll,
+    selectMode,
+    setConfigNodeId,
+    zoomTo,
+    zoomIn,
+    zoomOut,
+  ]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.code !== "Space" || event.repeat) {
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest(
+          "input, textarea, select, [contenteditable='true'], [role='dialog']",
+        )
+      ) {
+        return;
+      }
+      setSpacePressed(true);
+    }
+    function onKeyUp(event: KeyboardEvent) {
+      if (event.code === "Space") {
+        setSpacePressed(false);
+      }
+    }
+    function onBlur() {
+      setSpacePressed(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
+
+  const actions = useMemo(
+    () => ({
+      runNode: (nodeId: string) => void runNode(nodeId),
+      models,
+      canvasId: canvasDocument.id,
+    }),
+    [canvasDocument.id, models, runNode],
+  );
+
+  const configNode = useMemo(
+    () => nodes.find((node) => node.id === configNodeId),
+    [configNodeId, nodes],
+  );
+  const runCostEstimate = useMemo(() => {
+    if (!runConfirm) {
+      return null;
+    }
+    let cents = BigInt(0);
+    let priced = 0;
+    let unpriced = 0;
+    for (const nodeId of runConfirm.plan.nodeIds) {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (!node || (node.type !== "image" && node.type !== "video")) {
+        unpriced += 1;
+        continue;
+      }
+      const modelId = node.data.model?.trim() ?? "";
+      const model = models.find(
+        (item) =>
+          item.id === modelId &&
+          (!node.data.vendor || item.vendor === node.data.vendor),
+      ) ?? models.find((item) => item.id === modelId);
+      const estimate = estimateCanvasGenerationCost(
+        model?.pricing,
+        node.type,
+        node.data.params as Record<string, unknown> | undefined,
+      );
+      if (estimate === null) {
+        unpriced += 1;
+        continue;
+      }
+      cents += costToCents(estimate);
+      priced += 1;
+    }
+    return { total: formatCanvasCost(cents * 10_000n), priced, unpriced };
+  }, [models, nodes, runConfirm]);
+
+  const runStatusById = useCanvasRunStatusStore((state) => state.statusById);
+  const runningTaskCount = useMemo(
+    () =>
+      nodes.filter((node) => {
+        const status = runStatusById[node.id]?.status ?? node.data.status;
+        return status === "running" || status === "queued";
+      }).length,
+    [nodes, runStatusById],
+  );
+  const downloadableImages = useMemo(
+    () =>
+      nodes.filter(
+        (node) =>
+          node.type === "image" &&
+          Boolean(node.data.url || node.data.urls?.length || node.data.assetId),
+      ).length,
+    [nodes],
+  );
+  const downloadableVideos = useMemo(
+    () =>
+      nodes.filter(
+        (node) =>
+          node.type === "video" &&
+          Boolean(node.data.url || node.data.urls?.length || node.data.assetId),
+      ).length,
+    [nodes],
+  );
+  const autoLayoutModeLabel =
+    preferences.autoLayoutMode === "layered-tb"
+      ? messages.canvas.autoLayoutLayeredTb
+      : preferences.autoLayoutMode === "grid"
+        ? messages.canvas.autoLayoutGrid
+        : messages.canvas.autoLayoutLayeredLr;
+
+  const applyAutoLayout = useCallback(
+    (mode: CanvasAutoLayoutMode) => {
+      const next = layoutCanvasNodes(nodes, edges, mode);
+      if (next === nodes || canvasLayoutPositionsEqual(nodes, next)) {
+        toast.info(messages.canvas.autoLayoutNoChange);
+        return;
+      }
+      replace(next, edges);
+      window.setTimeout(() => {
+        void fitView({ padding: 0.2, duration: 300 });
+      }, 60);
+    },
+    [edges, fitView, nodes, replace],
+  );
+
+  const imageDefaultParams = settingsDraft.image?.params ?? {};
+  const videoDefaultParams = settingsDraft.video?.params ?? {};
+  const backgroundPatternColor =
+    CANVAS_BACKGROUND_PATTERN_COLORS[
+      resolvedTheme === "dark" ? "dark" : "light"
+    ][preferences.background];
+  const backgroundPatternSize =
+    preferences.background === "dots"
+      ? 2.4
+      : preferences.background === "cross"
+        ? 6
+        : 1;
+  const isMacPlatform =
+    typeof navigator !== "undefined" &&
+    /Mac|iPhone|iPad/.test(navigator.platform);
+  const modLabel = isMacPlatform ? "⌘" : "Ctrl";
+  const shiftLabel = isMacPlatform ? "⇧" : "Shift";
+  const saveStatusLabel = conflict
+    ? messages.canvas.versionConflict
+    : saving
+      ? messages.canvas.saving
+      : dirty
+        ? messages.canvas.unsaved
+        : savedAt
+          ? `${messages.canvas.savedLocal} · ${formatDateTime(savedAt)}`
+          : messages.canvas.savedLocal;
+  const saveStatusColor = conflict
+    ? "bg-amber-500"
+    : saving
+      ? "bg-sky-500 animate-pulse"
+      : dirty
+        ? "bg-amber-400"
+        : "bg-emerald-500";
+  const edgeStroke = CANVAS_EDGE_COLORS[preferences.edgeColor];
+  const edgeDash = canvasEdgeDashArray(preferences.edgeLineStyle);
+  const connectionLineType =
+    preferences.edgeType === "bezier"
+      ? ConnectionLineType.Bezier
+      : preferences.edgeType === "straight"
+        ? ConnectionLineType.Straight
+        : ConnectionLineType.SmoothStep;
+  const connectionLineStyle = useMemo(
+    () => ({
+      stroke: edgeStroke,
+      strokeWidth: preferences.edgeWidth,
+      ...(edgeDash ? { strokeDasharray: edgeDash } : {}),
+    }),
+    [edgeDash, edgeStroke, preferences.edgeWidth],
+  );
+  const defaultEdgeOptions = useMemo(
+    () => ({
+      type: "canvas" as const,
+      animated: preferences.animateEdges,
+      style: connectionLineStyle,
+    }),
+    [connectionLineStyle, preferences.animateEdges],
+  );
+
+  const nodeDock =
+    preferences.generationDockPlacement === "node" &&
+    configNode &&
+    (configNode.type === "image" ||
+      configNode.type === "video" ||
+      configNode.type === "text")
+      ? configNode
+      : null;
+  function nodeTypeName(type: string | undefined): string {
+    switch (type) {
+      case "image":
+        return messages.canvas.imageNode;
+      case "video":
+        return messages.canvas.videoNode;
+      case "audio":
+        return messages.canvas.audioNode;
+      case "group":
+        return messages.canvas.groupSelection;
+      default:
+        return messages.canvas.textNode;
+    }
+  }
+
+  function nodeStatusName(status: string | undefined): string {
+    switch (status) {
+      case "queued":
+        return messages.canvas.statusQueued;
+      case "running":
+        return messages.canvas.statusRunning;
+      case "succeeded":
+        return messages.canvas.statusSucceeded;
+      case "failed":
+        return messages.canvas.statusFailed;
+      case "skipped":
+        return messages.canvas.statusSkipped;
+      case "cancelled":
+        return messages.canvas.statusCancelled;
+      case "interrupted":
+        return messages.canvas.statusInterrupted;
+      default:
+        return messages.canvas.statusIdle;
+    }
+  }
+
+  const { infoNodes, infoRows, childCounts } = useMemo(() => {
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    if (!nodeInfoOpen) {
+      return {
+        infoNodes: new Map<string, CanvasFlowNode>(),
+        infoRows: [] as Array<{ node: CanvasFlowNode; depth: number }>,
+        childCounts: new Map<string, number>(),
+      };
+    }
+    const childrenByParent = new Map<string, CanvasFlowNode[]>();
+    for (const node of nodes) {
+      if (!node.parentId || !byId.has(node.parentId)) {
+        continue;
+      }
+      const list = childrenByParent.get(node.parentId) ?? [];
+      list.push(node);
+      childrenByParent.set(node.parentId, list);
+    }
+    const rows: Array<{ node: CanvasFlowNode; depth: number }> = [];
+    const visited = new Set<string>();
+    const append = (node: CanvasFlowNode, depth: number) => {
+      if (visited.has(node.id)) {
+        return;
+      }
+      visited.add(node.id);
+      rows.push({ node, depth });
+      if (node.type === "group" && !collapsedGroups.has(node.id)) {
+        for (const child of childrenByParent.get(node.id) ?? []) {
+          append(child, depth + 1);
+        }
+      }
+    };
+    for (const node of nodes) {
+      if (!node.parentId || !byId.has(node.parentId)) {
+        append(node, 0);
+      }
+    }
+    const counts = new Map<string, number>();
+    for (const node of nodes) {
+      if (node.parentId) {
+        counts.set(node.parentId, (counts.get(node.parentId) ?? 0) + 1);
+      }
+    }
+    return { infoNodes: byId, infoRows: rows, childCounts: counts };
+  }, [collapsedGroups, nodeInfoOpen, nodes]);
+
+  const groupAtNode = (node: CanvasFlowNode) => {
+    if (node.type === "group" || node.parentId) {
+      return undefined;
+    }
+    const width = node.measured?.width ?? node.width ?? 240;
+    const height = node.measured?.height ?? node.height ?? 200;
+    const centerX = node.position.x + width / 2;
+    const centerY = node.position.y + height / 2;
+    return [...nodes].reverse().find((item) => {
+      if (item.type !== "group") {
+        return false;
+      }
+      const groupWidth = item.width ?? item.measured?.width ?? 360;
+      const groupHeight = item.height ?? item.measured?.height ?? 280;
+      return (
+        centerX >= item.position.x &&
+        centerX <= item.position.x + groupWidth &&
+        centerY >= item.position.y &&
+        centerY <= item.position.y + groupHeight
+      );
+    });
+  };
+
+  const snapCandidateFor = (node: CanvasFlowNode) => {
+    if (!preferences.autoConnect) {
+      return null;
+    }
+    if (node.type === "group" || node.parentId) {
+      return null;
+    }
+    const width = node.measured?.width ?? node.width ?? 240;
+    const height = node.measured?.height ?? node.height ?? 200;
+    const left = node.position.x;
+    const top = node.position.y;
+    const right = left + width;
+    const bottom = top + height;
+    let best: {
+      id: string;
+      gap: number;
+      sourceId: string;
+      targetId: string;
+    } | null = null;
+    for (const candidate of nodes) {
+      if (
+        candidate.id === node.id ||
+        candidate.type === "group" ||
+        candidate.parentId
+      ) {
+        continue;
+      }
+      const candidateWidth =
+        candidate.measured?.width ?? candidate.width ?? 280;
+      const candidateHeight =
+        candidate.measured?.height ?? candidate.height ?? 200;
+      const candidateLeft = candidate.position.x;
+      const candidateTop = candidate.position.y;
+      const candidateRight = candidateLeft + candidateWidth;
+      const candidateBottom = candidateTop + candidateHeight;
+      const gapX = Math.max(
+        0,
+        Math.max(left, candidateLeft) - Math.min(right, candidateRight),
+      );
+      const gapY = Math.max(
+        0,
+        Math.max(top, candidateTop) - Math.min(bottom, candidateBottom),
+      );
+      const gap = Math.hypot(gapX, gapY);
+      if (gap > CANVAS_SNAP_DISTANCE || (best && gap >= best.gap)) {
+        continue;
+      }
+      const forward = edgeRoleOptions(node.type, candidate.type).length > 0;
+      const backward = edgeRoleOptions(candidate.type, node.type).length > 0;
+      if (!forward && !backward) {
+        continue;
+      }
+      if (
+        edges.some(
+          (edge) =>
+            (edge.source === node.id && edge.target === candidate.id) ||
+            (edge.source === candidate.id && edge.target === node.id),
+        )
+      ) {
+        continue;
+      }
+      const sourceId = forward ? node.id : candidate.id;
+      const targetId = forward ? candidate.id : node.id;
+      if (
+        !isValidConnection({
+          source: sourceId,
+          target: targetId,
+          sourceHandle: "out",
+          targetHandle: "in",
+        })
+      ) {
+        continue;
+      }
+      best = { id: candidate.id, gap, sourceId, targetId };
+    }
+    return best;
+  };
+
+  const handleNodesChange = useCallback(
+    (changes: NodeChange<CanvasFlowNode>[]) => {
+      if (!preferences.showHelperLines) {
+        onNodesChange(changes);
+        return;
+      }
+
+      const positionChange = changes.find(
+        (change): change is NodePositionChange =>
+          change.type === "position" &&
+          change.dragging === true &&
+          Boolean(change.position),
+      );
+
+      if (!positionChange?.position) {
+        onNodesChange(changes);
+        return;
+      }
+
+      const result = getHelperLines(positionChange, nodes);
+      if (result.snapPosition.x !== undefined) {
+        positionChange.position.x = result.snapPosition.x;
+      }
+      if (result.snapPosition.y !== undefined) {
+        positionChange.position.y = result.snapPosition.y;
+      }
+      setHelperLines({
+        horizontal: result.horizontal,
+        vertical: result.vertical,
+      });
+      onNodesChange(changes);
+    },
+    [nodes, onNodesChange, preferences.showHelperLines],
+  );
+
+  const handleNodeDragStart: OnNodeDrag<CanvasFlowNode> = () => {
+    setDraggingNode(true);
+    setHelperLines(null);
+    setDragOverGroupId(null);
+    setSnapTargetId(null);
+    setInsertMenu(null);
+  };
+
+  const handleNodeDragStop: OnNodeDrag<CanvasFlowNode> = (_event, node) => {
+    setDraggingNode(false);
+    setHelperLines(null);
+    const group = groupAtNode(node);
+    const snap = snapCandidateFor(node);
+    setDragOverGroupId(null);
+    setSnapTargetId(null);
+    if (group) {
+      addNodesToGroup(group.id, [node.id]);
+      toast.success(messages.canvas.groupNodeAdded);
+      return;
+    }
+    if (snap) {
+      onConnect({
+        source: snap.sourceId,
+        target: snap.targetId,
+        sourceHandle: "out",
+        targetHandle: "in",
+      });
+      toast.success(messages.canvas.autoConnected);
+    }
+  };
+
+  const handleNodeDrag: OnNodeDrag<CanvasFlowNode> = (_event, node) => {
+    if (node.parentId) {
+      setNodePosition(node.id, node.position.x, node.position.y);
+      setDragOverGroupId(null);
+      setSnapTargetId(null);
+      return;
+    }
+    setDragOverGroupId(groupAtNode(node)?.id ?? null);
+    setSnapTargetId(snapCandidateFor(node)?.id ?? null);
+  };
+
+  function exportJson() {
+    const payload = JSON.stringify(
+      { title, graph: toGraph() },
+      null,
+      2,
+    );
+    const blob = new Blob([payload], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = window.document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${title.trim() || "canvas"}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+
+  function openCanvasInfo() {
+    setTitleDraft(title);
+    setInfoOpen(true);
+  }
+
+  function closeCanvasInfo() {
+    setTitleDraft(title);
+    setInfoOpen(false);
+  }
+
+  function saveCanvasInfo() {
+    const next = titleDraft.trim() || messages.canvas.untitled;
+    setTitle(next);
+    setTitleDraft(next);
+    setInfoOpen(false);
+  }
+
+  async function uploadThumbnail(file: File) {
+    if (thumbnailBusy) {
+      return;
+    }
+    setThumbnailBusy(true);
+    try {
+      const result = await uploadCanvasThumbnail(canvasDocument.id, file);
+      setThumbnailUrl(result.thumbnailUrl);
+      toast.success(messages.canvas.thumbnailUploaded);
+    } catch (error) {
+      toast.danger(
+        error instanceof Error
+          ? error.message
+          : messages.canvas.thumbnailFailed,
+      );
+    } finally {
+      setThumbnailBusy(false);
+    }
+  }
+
+  async function downloadArchive(kind: "image" | "video") {
+    if (archiveBusy) {
+      return;
+    }
+    const candidates = nodes.filter(
+      (node) =>
+        node.type === kind &&
+        Boolean(node.data.url || node.data.urls?.length || node.data.assetId),
+    );
+    if (candidates.length === 0) {
+      toast.info(messages.canvas.archiveEmpty);
+      return;
+    }
+    setArchiveMenuOpen(false);
+    setArchiveBusy(kind);
+    try {
+      const result = await downloadCanvasArchive({
+        canvasId: canvasDocument.id,
+        canvasTitle: title,
+        nodes: candidates,
+        kind,
+      });
+      if (result.failed > 0) {
+        toast.danger(
+          messages.canvas.archivePartial
+            .replace("{downloaded}", String(result.downloaded))
+            .replace("{failed}", String(result.failed)),
+        );
+      } else {
+        toast.success(
+          messages.canvas.archiveDownloaded.replace(
+            "{count}",
+            String(result.downloaded),
+          ),
+        );
+      }
+    } catch (error) {
+      toast.danger(
+        error instanceof Error
+          ? error.message
+          : messages.canvas.downloadFailed,
+      );
+    } finally {
+      setArchiveBusy(null);
+    }
+  }
+
+  async function handleToolbarUpload(files: File[]) {
+    if (toolbarUploading || files.length === 0) {
+      return;
+    }
+    const valid: Array<{ file: File; kind: "image" | "video" | "audio" }> = [];
+    let failed = 0;
+    for (const file of files) {
+      const kind = file.type.startsWith("image/")
+        ? "image"
+        : file.type.startsWith("video/")
+          ? "video"
+          : file.type.startsWith("audio/")
+            ? "audio"
+            : null;
+      if (kind) {
+        valid.push({ file, kind });
+      } else {
+        failed += 1;
+      }
+    }
+    if (valid.length === 0) {
+      toast.danger(messages.canvas.uploadUnsupported);
+      return;
+    }
+
+    setToolbarUploading(true);
+    setToolbarUploadProgress(0);
+    const center = screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    });
+    const columns = Math.min(3, valid.length);
+    const gapX = 340;
+    const gapY = 300;
+    const startX = center.x - ((columns - 1) * gapX) / 2;
+    let uploadedCount = 0;
+    let lastUploadError: string | null = null;
+
+    try {
+      for (let index = 0; index < valid.length; index += 1) {
+        const { file, kind } = valid[index]!;
+        try {
+          const uploaded = await uploadPlaygroundAssetWithMeta(file, {
+            allowedKinds: [kind],
+            filename: file.name || kind,
+            onProgress: (percent) => {
+              const overall =
+                ((index + Math.max(0, Math.min(100, percent)) / 100) /
+                  valid.length) *
+                100;
+              setToolbarUploadProgress(Math.round(overall));
+            },
+          });
+          addMediaNode(
+            kind,
+            uploaded.url,
+            uploaded.assetId || undefined,
+            {
+              x: startX + (index % columns) * gapX,
+              y: center.y + Math.floor(index / columns) * gapY,
+            },
+            "upload",
+          );
+          uploadedCount += 1;
+        } catch (caught) {
+          failed += 1;
+          lastUploadError =
+            caught instanceof Error && caught.message
+              ? caught.message
+              : lastUploadError;
+        }
+      }
+      if (uploadedCount > 0 && failed === 0) {
+        toast.success(
+          messages.canvas.uploadMultipleSuccess.replace(
+            "{count}",
+            String(uploadedCount),
+          ),
+        );
+      } else if (uploadedCount > 0) {
+        toast.danger(
+          messages.canvas.uploadPartial
+            .replace("{uploaded}", String(uploadedCount))
+            .replace("{failed}", String(failed)),
+        );
+      } else if (
+        lastUploadError &&
+        lastUploadError !== "UPLOAD_FAILED" &&
+        lastUploadError !== "AUTH_REQUIRED" &&
+        lastUploadError !== "FILE_TOO_LARGE" &&
+        lastUploadError !== "UNSUPPORTED_TYPE"
+      ) {
+        toast.danger(lastUploadError);
+      } else {
+        toast.danger(messages.canvas.uploadFailed);
+      }
+    } finally {
+      setToolbarUploading(false);
+      setToolbarUploadProgress(0);
+    }
+  }
+
+  const toolbarVertical = preferences.toolbarPosition !== "bottom";
+  const toolbarPanelPosition: "center-left" | "center-right" | "bottom-center" =
+    preferences.toolbarPosition === "left"
+      ? "center-left"
+      : preferences.toolbarPosition === "right"
+        ? "center-right"
+        : "bottom-center";
+  const toolbarSeparatorClass = toolbarVertical
+    ? "my-1 h-px w-5 bg-zinc-200 dark:bg-zinc-700"
+    : "mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700";
+
+  return (
+    <>
+      <div className="flex h-full min-h-0 flex-col bg-zinc-50 dark:bg-zinc-950">
+        <input
+          ref={thumbnailRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          disabled={thumbnailBusy}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) {
+              void uploadThumbnail(file);
+            }
+            event.target.value = "";
+          }}
+        />
+        <input
+          ref={toolbarUploadRef}
+          type="file"
+          accept="image/*,video/*,audio/*"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            const files = Array.from(event.target.files ?? []);
+            if (files.length > 0) {
+              void handleToolbarUpload(files);
+            }
+            event.target.value = "";
+          }}
+        />
+
+        <CanvasActionsContext.Provider value={actions}>
+          <div
+            ref={canvasSurfaceRef}
+            className={`relative min-h-0 flex-1 ${
+              preferences.audioPlayerBorder ? "canvas-audio-bordered" : ""
+            } ${selectMode ? "canvas-selecting" : ""} ${
+              spacePressed ? "canvas-space-pan" : ""
+            }`}
+          >
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-2 p-2 pl-1">
+              <div className="pointer-events-auto flex min-w-0 items-center gap-0.5">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={messages.canvas.backToCanvas}
+                  title={messages.canvas.backToCanvas}
+                  onClick={() => push("/canvas")}
+                >
+                  <Icon icon={ArrowLeft} size={15} />
+                </Button>
+                <button
+                  type="button"
+                  className="min-w-0 max-w-[9rem] truncate rounded-md px-1.5 py-1 text-[12px] font-medium text-zinc-700 transition-colors hover:bg-white/50 dark:text-zinc-100 dark:hover:bg-white/10 sm:max-w-[16rem]"
+                  title={messages.canvas.canvasInfo}
+                  onClick={openCanvasInfo}
+                >
+                  {title.trim() || messages.canvas.untitled}
+                </button>
+                <Tooltip content={saveStatusLabel}>
+                  <span
+                    className={`mx-0.5 h-1.5 w-1.5 shrink-0 rounded-full ${saveStatusColor}`}
+                    aria-hidden="true"
+                  />
+                </Tooltip>
+              </div>
+              <div className="pointer-events-auto flex shrink-0 items-center gap-1 pt-0.5">
+                <div className="flex items-center gap-0.5">
+                <Tooltip content={messages.canvas.shortcuts}>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={messages.canvas.shortcuts}
+                    onClick={() => setShortcutsOpen(true)}
+                  >
+                    <Icon icon={Keyboard} size={14} />
+                  </Button>
+                </Tooltip>
+                <Tooltip content={messages.canvas.downloadAssets}>
+                  <Button
+                    ref={archiveButtonRef}
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={messages.canvas.downloadAssets}
+                    aria-expanded={archiveMenuOpen}
+                    disabled={archiveBusy !== null}
+                    onClick={() => setArchiveMenuOpen((open) => !open)}
+                  >
+                    <Icon
+                      icon={
+                        archiveBusy ? CircleNotch : DownloadSimple
+                      }
+                      size={14}
+                      className={archiveBusy ? "animate-spin" : ""}
+                    />
+                  </Button>
+                </Tooltip>
+                <Popover
+                  open={archiveMenuOpen}
+                  onOpenChange={setArchiveMenuOpen}
+                  anchorRef={archiveButtonRef}
+                  placement="bottom"
+                  role="menu"
+                  ariaLabel={messages.canvas.downloadAssets}
+                  minWidth={220}
+                  className="p-1"
+                >
+                  <div className="space-y-0.5">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={downloadableImages === 0 || archiveBusy !== null}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-zinc-600 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      onClick={() => void downloadArchive("image")}
+                    >
+                      <Icon icon={ImageSquare} size={14} />
+                      <span className="min-w-0 flex-1">
+                        {messages.canvas.downloadImages}
+                      </span>
+                      <span className="tabular-nums text-[10px] text-zinc-400">
+                        {downloadableImages}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={downloadableVideos === 0 || archiveBusy !== null}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-zinc-600 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      onClick={() => void downloadArchive("video")}
+                    >
+                      <Icon icon={VideoCamera} size={14} />
+                      <span className="min-w-0 flex-1">
+                        {messages.canvas.downloadVideos}
+                      </span>
+                      <span className="tabular-nums text-[10px] text-zinc-400">
+                        {downloadableVideos}
+                      </span>
+                    </button>
+                  </div>
+                </Popover>
+                </div>
+                <span className="h-5 w-px bg-zinc-200/80 dark:bg-zinc-700/80" />
+                <Tooltip content={messages.canvas.modelSettings}>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={messages.canvas.modelSettings}
+                    onClick={openModelSettings}
+                  >
+                    <Icon
+                      icon={Brain}
+                      size={15}
+                      className={
+                        isGenerationConfigured()
+                          ? "text-zinc-500 dark:text-zinc-300"
+                          : "text-amber-500"
+                      }
+                    />
+                  </Button>
+                </Tooltip>
+                <span className="h-5 w-px bg-zinc-200/80 dark:bg-zinc-700/80" />
+                <div className="flex items-center gap-0.5">
+                  <Tooltip
+                    content={
+                      activeRun
+                        ? messages.canvas.runCancel
+                        : messages.canvas.runMenu
+                    }
+                  >
+                    <Button
+                      ref={runMenuButtonRef}
+                      variant="ghost"
+                      size="icon-sm"
+                      className={
+                        activeRun
+                          ? "text-red-500 hover:text-red-600"
+                          : "text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
+                      }
+                      aria-label={
+                        activeRun
+                          ? messages.canvas.runCancel
+                          : messages.canvas.runMenu
+                      }
+                      aria-expanded={!activeRun && runMenuOpen}
+                      onClick={() => {
+                        if (activeRun) {
+                          cancelActiveRun();
+                          return;
+                        }
+                        setRunMenuOpen((open) => !open);
+                      }}
+                    >
+                      <Icon
+                        icon={activeRun ? StopCircle : Play}
+                        size={14}
+                      />
+                    </Button>
+                  </Tooltip>
+                  <Popover
+                    open={runMenuOpen && !activeRun}
+                    onOpenChange={setRunMenuOpen}
+                    anchorRef={runMenuButtonRef}
+                    placement="bottom"
+                    role="menu"
+                    ariaLabel={messages.canvas.runMenu}
+                    minWidth={190}
+                    className="p-1"
+                  >
+                    <div className="space-y-0.5">
+                      {(
+                        [
+                          ["all", messages.canvas.runAll],
+                          ["selected", messages.canvas.runSelected],
+                          ["from", messages.canvas.runFrom],
+                          ["retry-failed", messages.canvas.retryFailed],
+                        ] as const
+                      ).map(([mode, label]) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          role="menuitem"
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                          onClick={() => prepareRun(mode)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                      <div className="border-t border-zinc-100 pt-1 dark:border-zinc-800">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                          onClick={() => {
+                            setRunMenuOpen(false);
+                            setRunHistoryOpen(true);
+                          }}
+                        >
+                          <Icon icon={Clock} size={13} />
+                          {messages.canvas.runHistory}
+                        </button>
+                      </div>
+                    </div>
+                  </Popover>
+                </div>
+                <span className="h-5 w-px bg-zinc-200/80 dark:bg-zinc-700/80" />
+                <div className="flex items-center gap-0.5">
+                  <LocaleToggle />
+                  <ThemeToggle />
+                </div>
+              </div>
+            </div>
+
+            {conflict ? (
+              <div className="pointer-events-auto absolute left-1/2 top-16 z-30 flex w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 items-center gap-3 rounded-xl border border-amber-200/80 bg-amber-50/90 px-3 py-2 text-[11px] text-amber-800 shadow-lg backdrop-blur-xl dark:border-amber-900/60 dark:bg-amber-950/80 dark:text-amber-200">
+                <span className="min-w-0 flex-1 truncate">
+                  {messages.canvas.versionConflictBody}
+                </span>
+                <Button variant="secondary" size="sm" onClick={onReload}>
+                  {messages.canvas.reload}
+                </Button>
+              </div>
+            ) : null}
+
+            {insertMenu ? (
+              <>
+                <div
+                  className="absolute inset-0 z-40"
+                  onPointerDown={() => setInsertMenu(null)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setInsertMenu(null);
+                  }}
+                />
+                <div
+                  className="absolute z-50 w-52 rounded-xl border border-zinc-200 bg-white/95 p-1 shadow-xl backdrop-blur-xl dark:border-zinc-700 dark:bg-zinc-900/95"
+                  style={{ left: insertMenu.left, top: insertMenu.top }}
+                  onContextMenu={(event) => event.preventDefault()}
+                >
+                  <p className="px-2 pb-1 pt-1.5 text-[10px] font-medium text-zinc-400">
+                    {messages.canvas.insertNode}
+                  </p>
+                  {(
+                    [
+                      ["text", messages.canvas.addText, TextT],
+                      ["image", messages.canvas.addImage, ImageSquare],
+                      ["video", messages.canvas.addVideo, VideoCamera],
+                      ["audio", messages.canvas.addAudio, Waveform],
+                      ["group", messages.canvas.addGroup, FolderPlus],
+                    ] as const
+                  ).map(([type, label, icon]) => (
+                    <button
+                      key={type}
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      onClick={() => {
+                        addNodeWithPreset(type, insertMenu.flow);
+                        setInsertMenu(null);
+                      }}
+                    >
+                      <Icon icon={icon} size={14} className="text-zinc-400" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
+
+            <CanvasPreferencesProvider value={preferences}>
+              <ReactFlow
+                nodes={nodes}
+              edges={edges}
+              nodeTypes={canvasNodeTypes}
+              edgeTypes={canvasEdgeTypes}
+              onNodesChange={handleNodesChange}
+              onNodeDragStart={handleNodeDragStart}
+              onNodeDrag={handleNodeDrag}
+              onNodeDragStop={handleNodeDragStop}
+              onEdgesChange={onEdgesChange}
+              onNodesDelete={(deleted) => {
+                for (const node of deleted) {
+                  removeNode(node.id);
+                }
+              }}
+              deleteKeyCode={["Backspace", "Delete"]}
+              onConnect={handleConnect as OnConnect}
+              isValidConnection={isValidConnection}
+              onNodeClick={(_, node) => {
+                setInsertMenu(null);
+                const isMedia =
+                  node.type === "image" || node.type === "video";
+                const configurable = isMedia || node.type === "text";
+                setConfigNodeId(configurable ? node.id : null);
+              }}
+              onPaneClick={() => {
+                setConfigNodeId(null);
+                setInsertMenu(null);
+              }}
+              onPaneContextMenu={(event) => {
+                event.preventDefault();
+                const rect =
+                  canvasSurfaceRef.current?.getBoundingClientRect();
+                if (!rect) {
+                  return;
+                }
+                setInsertMenu({
+                  left: Math.min(
+                    Math.max(8, event.clientX - rect.left),
+                    Math.max(8, rect.width - 216),
+                  ),
+                  top: Math.min(
+                    Math.max(12, event.clientY - rect.top),
+                    Math.max(12, rect.height - 280),
+                  ),
+                  flow: screenToFlowPosition({
+                    x: event.clientX,
+                    y: event.clientY,
+                  }),
+                });
+              }}
+              fitView
+              proOptions={{ hideAttribution: true }}
+              onlyRenderVisibleElements
+              defaultViewport={CANVAS_DEFAULT_VIEWPORT}
+              fitViewOptions={CANVAS_DEFAULT_FIT_VIEW_OPTIONS}
+              panOnDrag={
+                viewportLocked ? false : selectMode ? [1] : true
+              }
+              selectionOnDrag={!viewportLocked && selectMode}
+              panActivationKeyCode="Space"
+              selectionMode={SelectionMode.Partial}
+              zoomOnScroll={!viewportLocked}
+              zoomOnPinch={!viewportLocked}
+              zoomOnDoubleClick={!viewportLocked}
+              snapToGrid={preferences.snapToGrid}
+              snapGrid={[16, 16]}
+              minZoom={CANVAS_MIN_ZOOM}
+              maxZoom={CANVAS_MAX_ZOOM}
+              colorMode={resolvedTheme === "dark" ? "dark" : "light"}
+              connectionRadius={CANVAS_CONNECTION_SNAP_RADIUS}
+              connectionLineType={connectionLineType}
+              connectionLineStyle={connectionLineStyle}
+              defaultEdgeOptions={defaultEdgeOptions}
+            >
+              <CanvasHelperLinesOverlay lines={helperLines} />
+              {preferences.background !== "none" ? (
+                <Background
+                  variant={
+                    preferences.background === "lines"
+                      ? BackgroundVariant.Lines
+                      : preferences.background === "cross"
+                        ? BackgroundVariant.Cross
+                        : BackgroundVariant.Dots
+                  }
+                  gap={preferences.backgroundGap}
+                  size={backgroundPatternSize}
+                  color={backgroundPatternColor}
+                />
+              ) : null}
+              {preferences.showMiniMap && nodes.length <= 150 && !draggingNode ? (
+                <MiniMap
+                  className="canvas-minimap"
+                  pannable
+                  zoomable
+                  nodeColor={(node) =>
+                    nodeColors[node.type ?? "text"] ?? "#a1a1aa"
+                  }
+                />
+              ) : null}
+              <Panel position={toolbarPanelPosition} className="!m-3">
+                <div className={`nodrag relative flex items-center gap-1 rounded-lg border border-zinc-200 bg-white/95 p-1 shadow-lg backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95 ${
+                  toolbarVertical
+                    ? "max-h-[calc(100vh-2rem)] flex-col overflow-y-auto"
+                    : "max-w-[calc(100vw-2rem)] overflow-x-auto"
+                }`}>
+                  <Tooltip
+                    content={`${
+                      selectMode
+                        ? messages.canvas.selectMode
+                        : messages.canvas.moveMode
+                    } · V / H`}
+                  >
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className={
+                        selectMode
+                          ? "bg-white text-zinc-900 shadow-sm hover:bg-white dark:bg-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                          : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                      }
+                      aria-label={
+                        selectMode
+                          ? messages.canvas.selectMode
+                          : messages.canvas.moveMode
+                      }
+                      aria-pressed={selectMode}
+                      onClick={() => setSelectMode((value) => !value)}
+                    >
+                      <Icon
+                        icon={selectMode ? Cursor : HandGrabbing}
+                        size={14}
+                      />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content={`${messages.canvas.groupSelection} · G`}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={selectedNodes.length < 2}
+                      aria-label={messages.canvas.groupSelection}
+                      onClick={() => {
+                        if (selectedNodes.length < 2) {
+                          return;
+                        }
+                        setGroupName(
+                          `${messages.canvas.groupDefault} ${selectedNodes.length}`,
+                        );
+                        setGroupOpen(true);
+                      }}
+                    >
+                      <Icon icon={BoundingBox} size={14} />
+                    </Button>
+                  </Tooltip>
+                  <div className={toolbarSeparatorClass} />
+                  <Tooltip content={`${messages.canvas.addText} · T`}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={messages.canvas.addText}
+                      onClick={() => addAtCenter("text")}
+                    >
+                      <Icon icon={TextT} size={14} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content={`${messages.canvas.addImage} · I`}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={messages.canvas.addImage}
+                      onClick={() => addAtCenter("image")}
+                    >
+                      <Icon icon={ImageSquare} size={14} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content={`${messages.canvas.addVideo} · M`}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={messages.canvas.addVideo}
+                      onClick={() => addAtCenter("video")}
+                    >
+                      <Icon icon={VideoCamera} size={14} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content={`${messages.canvas.addAudio} · A`}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={messages.canvas.addAudio}
+                      onClick={() => addAtCenter("audio")}
+                    >
+                      <Icon icon={Waveform} size={14} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content={`${messages.canvas.addGroup} · ${shiftLabel}G`}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={messages.canvas.addGroup}
+                      onClick={addGroupAtCenter}
+                    >
+                      <Icon icon={FolderPlus} size={14} />
+                    </Button>
+                  </Tooltip>
+                  <div className={toolbarSeparatorClass} />
+                  <Tooltip
+                    content={
+                      toolbarUploading
+                        ? `${messages.canvas.uploadToolbar} · ${toolbarUploadProgress}%`
+                        : messages.canvas.uploadToolbar
+                    }
+                  >
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={toolbarUploading}
+                      aria-label={messages.canvas.uploadToolbar}
+                      onClick={() => toolbarUploadRef.current?.click()}
+                    >
+                      {toolbarUploading ? (
+                        <span className="tabular-nums text-[9px] font-medium text-sky-600 dark:text-sky-300">
+                          {toolbarUploadProgress}%
+                        </span>
+                      ) : (
+                        <Icon icon={UploadSimple} size={14} />
+                      )}
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content={messages.canvas.assetLibrary}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={messages.canvas.assetLibrary}
+                      onClick={() => setAssetLibraryOpen(true)}
+                    >
+                      <Icon icon={Images} size={14} />
+                    </Button>
+                  </Tooltip>
+                  <div className={toolbarSeparatorClass} />
+                  <Tooltip content={`${messages.canvas.undo} · ${modLabel}Z`}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={!history.canUndo}
+                      aria-label={messages.canvas.undo}
+                      onClick={history.undo}
+                    >
+                      <Icon icon={ArrowUUpLeft} size={14} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content={`${messages.canvas.redo} · ${modLabel}${shiftLabel}Z`}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={!history.canRedo}
+                      aria-label={messages.canvas.redo}
+                      onClick={history.redo}
+                    >
+                      <Icon icon={ArrowUUpRight} size={14} />
+                    </Button>
+                  </Tooltip>
+                  <div className={toolbarSeparatorClass} />
+                  <Tooltip content={`${messages.canvas.autoLayout} · ${autoLayoutModeLabel}`}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={messages.canvas.autoLayout}
+                      onClick={() => applyAutoLayout(preferences.autoLayoutMode)}
+                    >
+                      <Icon icon={TreeStructure} size={14} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content={messages.canvas.chooseLayout}>
+                    <Button
+                      ref={layoutMenuButtonRef}
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={messages.canvas.chooseLayout}
+                      aria-expanded={layoutMenuOpen}
+                      onClick={() => setLayoutMenuOpen((open) => !open)}
+                    >
+                      <Icon icon={CaretDown} size={12} />
+                    </Button>
+                  </Tooltip>
+                  <Popover
+                    open={layoutMenuOpen}
+                    onOpenChange={setLayoutMenuOpen}
+                    anchorRef={layoutMenuButtonRef}
+                    placement="top"
+                    role="menu"
+                    ariaLabel={messages.canvas.autoLayoutMode}
+                    minWidth={220}
+                    className="p-1"
+                  >
+                    <div className="space-y-0.5">
+                      {(
+                        [
+                          ["layered-lr", messages.canvas.autoLayoutLayeredLr],
+                          ["layered-tb", messages.canvas.autoLayoutLayeredTb],
+                          ["grid", messages.canvas.autoLayoutGrid],
+                        ] as const
+                      ).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={preferences.autoLayoutMode === value}
+                          className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${
+                            preferences.autoLayoutMode === value
+                              ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
+                              : "text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
+                          }`}
+                          onClick={() => {
+                            setPreferences({
+                              ...preferences,
+                              autoLayoutMode: value,
+                            });
+                            applyAutoLayout(value);
+                            setLayoutMenuOpen(false);
+                          }}
+                        >
+                          <span>{label}</span>
+                          {preferences.autoLayoutMode === value ? (
+                            <Icon icon={Check} size={12} />
+                          ) : null}
+                        </button>
+                      ))}
+                    </div>
+                  </Popover>
+                  <div className={toolbarSeparatorClass} />
+                  <Tooltip content={messages.canvas.runningTasks}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="relative"
+                      aria-label={messages.canvas.runningTasks}
+                      onClick={() => setTasksOpen(true)}
+                    >
+                      <Icon icon={Pulse} size={14} />
+                      {runningTaskCount > 0 ? (
+                        <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-sky-500 px-0.5 text-[8px] font-semibold leading-none text-white">
+                          {runningTaskCount}
+                        </span>
+                      ) : null}
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content={messages.canvas.nodeInfo}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={messages.canvas.nodeInfo}
+                      onClick={() => setNodeInfoOpen(true)}
+                    >
+                      <Icon icon={Info} size={14} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content={messages.canvas.canvasSettings}>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={messages.canvas.canvasSettings}
+                      onClick={() => openCanvasSettings("canvas")}
+                    >
+                      <Icon icon={GearSix} size={14} />
+                    </Button>
+                  </Tooltip>
+                </div>
+              </Panel>
+              <Panel position="bottom-left" className="!m-3">
+                <div className="nodrag flex items-center gap-0.5 rounded-lg border border-zinc-200 bg-white/95 p-1 shadow-lg backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95">
+                    <Tooltip content={`${messages.canvas.zoomOut} · -`}>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={messages.canvas.zoomOut}
+                        onClick={() => void zoomOut({ duration: 150 })}
+                      >
+                        <Icon icon={Minus} size={14} />
+                      </Button>
+                    </Tooltip>
+                    <CanvasZoomLabel />
+                    <Tooltip content={`${messages.canvas.zoomIn} · +`}>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={messages.canvas.zoomIn}
+                        onClick={() => void zoomIn({ duration: 150 })}
+                      >
+                        <Icon icon={Plus} size={14} />
+                      </Button>
+                    </Tooltip>
+                    <Tooltip content={`${messages.canvas.fitView} · F`}>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={messages.canvas.fitView}
+                        onClick={() => void fitView({ padding: 0.2, duration: 250 })}
+                      >
+                        <Icon icon={CornersOut} size={14} />
+                      </Button>
+                    </Tooltip>
+                    <Tooltip
+                      content={`${
+                        viewportLocked
+                          ? messages.canvas.unlockViewport
+                          : messages.canvas.lockViewport
+                      } · L`}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className={
+                          viewportLocked
+                            ? "text-sky-600 dark:text-sky-400"
+                            : undefined
+                        }
+                        aria-label={
+                          viewportLocked
+                            ? messages.canvas.unlockViewport
+                            : messages.canvas.lockViewport
+                        }
+                        onClick={() => setViewportLocked((locked) => !locked)}
+                      >
+                        <Icon
+                          icon={viewportLocked ? Lock : LockOpen}
+                          size={14}
+                        />
+                      </Button>
+                    </Tooltip>
+                    <Tooltip content={messages.canvas.snapToGrid}>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className={
+                          preferences.snapToGrid
+                            ? "text-sky-600 dark:text-sky-400"
+                            : undefined
+                        }
+                        aria-label={messages.canvas.snapToGrid}
+                        aria-pressed={preferences.snapToGrid}
+                        onClick={() =>
+                          setPreferences((current) => ({
+                            ...current,
+                            snapToGrid: !current.snapToGrid,
+                          }))
+                        }
+                      >
+                        <Icon
+                          icon={
+                            preferences.snapToGrid ? DotsNine : BoundingBox
+                          }
+                          size={14}
+                        />
+                      </Button>
+                    </Tooltip>
+                    <Tooltip
+                      content={
+                        preferences.showMiniMap
+                          ? messages.canvas.hideMiniMap
+                          : messages.canvas.showMiniMap
+                      }
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className={
+                          preferences.showMiniMap
+                            ? "text-sky-600 dark:text-sky-400"
+                            : undefined
+                        }
+                        aria-label={
+                          preferences.showMiniMap
+                            ? messages.canvas.hideMiniMap
+                            : messages.canvas.showMiniMap
+                        }
+                        aria-pressed={preferences.showMiniMap}
+                        onClick={() =>
+                          setPreferences((current) => ({
+                            ...current,
+                            showMiniMap: !current.showMiniMap,
+                          }))
+                        }
+                      >
+                        <Icon icon={MapTrifold} size={14} />
+                      </Button>
+                    </Tooltip>
+                </div>
+              </Panel>
+              </ReactFlow>
+            </CanvasPreferencesProvider>
+
+            {selectedNodes.length >= 2 ? (
+              <div className="nodrag absolute left-1/2 top-3 z-30 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-zinc-200 bg-white/95 px-2 py-1.5 shadow-lg backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95">
+                <Icon
+                  icon={BoundingBox}
+                  size={14}
+                  className="text-zinc-400"
+                />
+                <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300">
+                  {messages.canvas.selectedNodeCount.replace(
+                    "{count}",
+                    String(selectedNodes.length),
+                  )}
+                </span>
+                <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    setGroupName(
+                      `${messages.canvas.groupDefault} ${selectedNodes.length}`,
+                    );
+                    setGroupOpen(true);
+                  }}
+                >
+                  {messages.canvas.createGroup}
+                </Button>
+              </div>
+            ) : null}
+
+            {!draggingNode ? <CanvasNodeLabels nodes={nodes} /> : null}
+
+            {nodeDock ? (
+              <CanvasNodeDockLayer key={nodeDock.id} node={nodeDock}>
+                {nodeDock.type === "image" ? (
+                  <CanvasImageGenerationDock
+                    key={nodeDock.id}
+                    nodeId={nodeDock.id}
+                    onClose={() => setConfigNodeId(null)}
+                    embedded
+                  />
+                ) : nodeDock.type === "video" ? (
+                  <CanvasVideoGenerationDock
+                    key={nodeDock.id}
+                    nodeId={nodeDock.id}
+                    onClose={() => setConfigNodeId(null)}
+                    embedded
+                  />
+                ) : (
+                  <CanvasTextGenerationDock
+                    key={nodeDock.id}
+                    nodeId={nodeDock.id}
+                    onClose={() => setConfigNodeId(null)}
+                    embedded
+                  />
+                )}
+              </CanvasNodeDockLayer>
+            ) : null}
+          </div>
+
+          {preferences.generationDockPlacement === "canvas" &&
+          configNode &&
+          configNode.type === "image" ? (
+            <CanvasImageGenerationDock
+              key={configNode.id}
+              nodeId={configNode.id}
+              onClose={() => setConfigNodeId(null)}
+            />
+          ) : preferences.generationDockPlacement === "canvas" &&
+            configNode &&
+            configNode.type === "video" ? (
+            <CanvasVideoGenerationDock
+              key={configNode.id}
+              nodeId={configNode.id}
+              onClose={() => setConfigNodeId(null)}
+            />
+          ) : preferences.generationDockPlacement === "canvas" &&
+            configNode &&
+            configNode.type === "text" ? (
+            <CanvasTextGenerationDock
+              key={configNode.id}
+              nodeId={configNode.id}
+              onClose={() => setConfigNodeId(null)}
+            />
+          ) : null}
+        </CanvasActionsContext.Provider>
+      </div>
+
+      {assetLibraryOpen ? (
+      <PlaygroundMediaLibraryPicker
+        open={assetLibraryOpen}
+        onClose={() => setAssetLibraryOpen(false)}
+        allowedMediaTypes={["image", "video", "audio"]}
+        selectedUrls={librarySelectedUrls}
+        onConfirm={(items) => {
+          const valid = items.filter(
+            (item) =>
+              item.mediaType === "image" ||
+              item.mediaType === "video" ||
+              item.mediaType === "audio",
+          );
+          if (valid.length > 0) {
+            const center = screenToFlowPosition({
+              x: window.innerWidth / 2,
+              y: window.innerHeight / 2,
+            });
+            const columns = Math.min(3, valid.length);
+            const startX = center.x - ((columns - 1) * 340) / 2;
+            valid.forEach((item, index) => {
+              addMediaNode(
+                item.mediaType as "image" | "video" | "audio",
+                item.url,
+                item.id,
+                {
+                  x: startX + (index % columns) * 340,
+                  y: center.y + Math.floor(index / columns) * 300,
+                },
+                "library",
+                item.thumbnailUrl ?? undefined,
+              );
+            });
+            toast.success(messages.canvas.assetSelected);
+          }
+          setAssetLibraryOpen(false);
+        }}
+        onUpload={() => {
+          setAssetLibraryOpen(false);
+          toolbarUploadRef.current?.click();
+        }}
+        storageConfigured={storageConfigured}
+        onConfigureStorage={() => {
+          setAssetLibraryOpen(false);
+          openCanvasSettings("storage");
+        }}
+      />
+      ) : null}
+
+      {runConfirm ? (
+      <Modal
+        open={Boolean(runConfirm)}
+        onClose={() => setRunConfirm(null)}
+        title={messages.canvas.runConfirmTitle}
+        size="md"
+        closeLabel={messages.close}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setRunConfirm(null)}
+            >
+              {messages.cancel}
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() => void startPlanRun()}
+            >
+              {messages.canvas.runConfirm}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            {messages.canvas.runConfirmBody}
+          </p>
+          <div className="space-y-1">
+            {runConfirm?.plan.nodeIds.slice(0, 8).map((nodeId) => {
+              const node = nodes.find((item) => item.id === nodeId);
+              if (!node) {
+                return null;
+              }
+              return (
+                <div
+                  key={nodeId}
+                  className="flex items-center justify-between gap-3 rounded-md bg-zinc-50 px-2 py-1.5 text-xs dark:bg-zinc-800/60"
+                >
+                  <span className="min-w-0 truncate text-zinc-700 dark:text-zinc-200">
+                    {node.data.label?.trim() || nodeTypeName(node.type)}
+                  </span>
+                  <span className="shrink-0 font-mono text-[10px] text-zinc-400">
+                    {node.data.model || messages.canvas.noModel}
+                  </span>
+                </div>
+              );
+            })}
+            {runConfirm && runConfirm.plan.nodeIds.length > 8 ? (
+              <p className="px-2 text-[10px] text-zinc-400">
+                +{runConfirm.plan.nodeIds.length - 8}
+              </p>
+            ) : null}
+          </div>
+          {runCostEstimate && runCostEstimate.priced > 0 ? (
+            <div className="flex items-center justify-between gap-3 rounded-md bg-sky-50/70 px-2 py-2 text-xs dark:bg-sky-950/30">
+              <span className="text-zinc-500 dark:text-zinc-400">
+                {messages.canvas.runEstimatedTotal}
+              </span>
+              <span className="font-mono font-medium text-sky-700 dark:text-sky-300">
+                {currencySymbol}
+                {runCostEstimate.total}
+              </span>
+            </div>
+          ) : null}
+          {runCostEstimate && runCostEstimate.unpriced > 0 ? (
+            <p className="text-[10px] text-zinc-400">
+              {messages.canvas.runEstimatedPartial}
+            </p>
+          ) : null}
+          <p className="text-[10px] leading-relaxed text-zinc-400">
+            {messages.canvas.runCostHint}
+          </p>
+        </div>
+      </Modal>
+      ) : null}
+
+      {runHistoryOpen ? (
+        <CanvasRunHistoryModal
+          open={runHistoryOpen}
+          onClose={() => setRunHistoryOpen(false)}
+          canvasId={canvasDocument.id}
+        />
+      ) : null}
+
+      {shortcutsOpen ? (
+      <CanvasShortcutsModal
+        open={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
+      />
+      ) : null}
+
+      {tasksOpen ? (
+      <CanvasRunningTasksModal
+        open={tasksOpen}
+        onClose={() => setTasksOpen(false)}
+        runActive={Boolean(activeRun)}
+        onCancelRun={cancelActiveRun}
+      />
+      ) : null}
+
+      {infoOpen ? (
+      <Modal
+        open={infoOpen}
+        onClose={closeCanvasInfo}
+        title={messages.canvas.canvasInfo}
+        description={messages.canvas.canvasInfoHint}
+        size="md"
+        as="form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          saveCanvasInfo();
+        }}
+        closeLabel={messages.close}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={closeCanvasInfo}
+            >
+              {messages.cancel}
+            </Button>
+            <Button type="submit" variant="primary" size="sm">
+              {messages.save}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+              {messages.canvas.thumbnail}
+            </p>
+            <button
+              type="button"
+              disabled={thumbnailBusy}
+              className="group relative aspect-[16/9] w-full overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50 transition-colors disabled:cursor-wait dark:border-zinc-700 dark:bg-zinc-900"
+              aria-label={
+                thumbnailBusy
+                  ? messages.canvas.thumbnailUploading
+                  : thumbnailUrl
+                    ? messages.canvas.thumbnailReplace
+                    : messages.canvas.thumbnailUpload
+              }
+              onClick={() => {
+                if (!thumbnailBusy) {
+                  thumbnailRef.current?.click();
+                }
+              }}
+            >
+              {thumbnailUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- canvas thumbnail preview
+                <img
+                  src={thumbnailUrl}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  draggable={false}
+                />
+              ) : (
+                <span className="flex h-full flex-col items-center justify-center gap-2 px-4">
+                  <Icon
+                    icon={UploadSimple}
+                    size={22}
+                    className="text-zinc-300 dark:text-zinc-600"
+                  />
+                  <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                    {messages.canvas.thumbnailUpload}
+                  </span>
+                </span>
+              )}
+              {thumbnailBusy ? (
+                <span className="absolute inset-0 flex items-center justify-center gap-2 bg-zinc-950/50">
+                  <Icon
+                    icon={CircleNotch}
+                    size={16}
+                    className="animate-spin text-white"
+                  />
+                  <span className="text-xs font-medium text-white">
+                    {messages.canvas.thumbnailUploading}
+                  </span>
+                </span>
+              ) : thumbnailUrl ? (
+                <span className="absolute inset-0 flex items-center justify-center bg-zinc-950/40 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
+                  <span className="rounded-md bg-white/95 px-2.5 py-1 text-[11px] font-medium text-zinc-700 shadow-sm dark:bg-zinc-900/95 dark:text-zinc-100">
+                    {messages.canvas.thumbnailReplace}
+                  </span>
+                </span>
+              ) : null}
+            </button>
+            <p className="text-[11px] leading-relaxed text-zinc-400">
+              {messages.canvas.thumbnailHint}
+            </p>
+          </div>
+
+          <FormField
+            name="canvas-info-title"
+            label={messages.canvas.canvasName}
+            value={titleDraft}
+            placeholder={messages.canvas.canvasNamePlaceholder}
+            maxLength={120}
+            autoFocus
+            onChange={setTitleDraft}
+          />
+
+          <div className="space-y-3 rounded-xl bg-zinc-50 px-3.5 py-3 dark:bg-zinc-900/60">
+            <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+              <span className="flex items-baseline gap-1.5">
+                <span className="text-base font-semibold tabular-nums text-zinc-800 dark:text-zinc-100">
+                  {nodes.length}
+                </span>
+                <span className="text-[11px] text-zinc-400">
+                  {messages.canvas.nodesLabel}
+                </span>
+              </span>
+              <span className="flex items-baseline gap-1.5">
+                <span className="text-base font-semibold tabular-nums text-zinc-800 dark:text-zinc-100">
+                  {edges.length}
+                </span>
+                <span className="text-[11px] text-zinc-400">
+                  {messages.canvas.edgesLabel}
+                </span>
+              </span>
+            </div>
+            <dl className="space-y-1.5 border-t border-zinc-200/80 pt-2.5 dark:border-zinc-800">
+              <div className="flex items-center justify-between gap-3">
+                <dt className="shrink-0 text-[11px] text-zinc-400">
+                  {messages.canvas.createdAt}
+                </dt>
+                <dd className="min-w-0 text-right text-[11px] tabular-nums text-zinc-600 dark:text-zinc-300">
+                  {formatDateTime(canvasDocument.createdAt)}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="shrink-0 text-[11px] text-zinc-400">
+                  {messages.canvas.updatedAt}
+                </dt>
+                <dd className="min-w-0 text-right text-[11px] tabular-nums text-zinc-600 dark:text-zinc-300">
+                  {formatDateTime(savedAt ?? canvasDocument.updatedAt)}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="flex justify-start">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-zinc-500"
+              onClick={exportJson}
+            >
+              <Icon icon={DownloadSimple} size={13} />
+              {messages.canvas.exportJson}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      ) : null}
+
+      <CanvasModelSettingsModal
+        open={modelSettingsOpen}
+        onClose={() => setModelSettingsOpen(false)}
+        onSaved={() => setByokRevision((current) => current + 1)}
+      />
+
+      {settingsOpen ? (
+      <Modal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        title={messages.canvas.canvasSettings}
+        size="5xl"
+        closeLabel={messages.close}
+        headerExtraLayout="below"
+        headerExtra={
+          <div className="inline-flex w-fit gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800/70">
+            <button
+              type="button"
+              className={`rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                settingsTab === "canvas"
+                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100"
+                  : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              }`}
+              onClick={() => setSettingsTab("canvas")}
+            >
+              {messages.canvas.settingsTabCanvas}
+            </button>
+            <button
+              type="button"
+              className={`rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                settingsTab === "generation"
+                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100"
+                  : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              }`}
+              onClick={() => setSettingsTab("generation")}
+            >
+              {messages.canvas.settingsTabGeneration}
+            </button>
+            <button
+              type="button"
+              className={`rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                settingsTab === "storage"
+                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100"
+                  : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              }`}
+              onClick={() => setSettingsTab("storage")}
+            >
+              {messages.canvas.settingsTabStorage}
+            </button>
+          </div>
+        }
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSettingsOpen(false)}
+            >
+              {messages.canvas.cancel}
+            </Button>
+            {settingsTab === "storage" ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={settingsSaving || storageTesting}
+                onClick={() => {
+                  void (async () => {
+                    const storageEndpoint = storageEndpointDraft.trim();
+                    const missingSecret =
+                      !storageSecretDraft.trim() &&
+                      !storageSecretConfigured &&
+                      storageSource !== "env";
+                    if (
+                      !storageEndpoint ||
+                      !storageBucketDraft.trim() ||
+                      !storageAccessKeyIdDraft.trim() ||
+                      !storagePublicBaseUrlDraft.trim() ||
+                      missingSecret
+                    ) {
+                      setStorageError(messages.canvas.storageRequired);
+                      return;
+                    }
+                    if (
+                      /:\/\/xxx\.|<account|accountid|example\.com|changeme/i.test(
+                        storageEndpoint,
+                      )
+                    ) {
+                      setStorageError(
+                        messages.canvas.storagePlaceholderEndpoint,
+                      );
+                      return;
+                    }
+
+                    setStorageTesting(true);
+                    setStorageError(null);
+                    try {
+                      await testStorageConfig({
+                        endpoint: storageEndpoint,
+                        region: storageRegionDraft.trim() || "auto",
+                        bucket: storageBucketDraft.trim(),
+                        accessKeyId: storageAccessKeyIdDraft.trim(),
+                        secretAccessKey:
+                          storageSecretDraft.trim() || undefined,
+                        publicBaseUrl: storagePublicBaseUrlDraft.trim(),
+                        forcePathStyle: storageForcePathStyleDraft,
+                      });
+                      toast.success(messages.canvas.storageTestOk);
+                    } catch (caught) {
+                      const message =
+                        caught instanceof Error ? caught.message : null;
+                      setStorageError(
+                        message ?? messages.canvas.storageTestFailed,
+                      );
+                      toast.danger(
+                        message ?? messages.canvas.storageTestFailed,
+                      );
+                    } finally {
+                      setStorageTesting(false);
+                    }
+                  })();
+                }}
+              >
+                {storageTesting
+                  ? messages.loading
+                  : messages.canvas.storageTest}
+              </Button>
+            ) : null}
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={settingsSaving || storageTesting}
+              onClick={() => {
+                void (async () => {
+                  const storageEndpoint = storageEndpointDraft.trim();
+                  if (settingsTab === "storage") {
+                    const missingSecret =
+                      !storageSecretDraft.trim() && !storageSecretConfigured;
+                    if (
+                      !storageEndpoint ||
+                      !storageBucketDraft.trim() ||
+                      !storageAccessKeyIdDraft.trim() ||
+                      !storagePublicBaseUrlDraft.trim() ||
+                      missingSecret
+                    ) {
+                      setStorageError(messages.canvas.storageRequired);
+                      return;
+                    }
+                    if (
+                      /:\/\/xxx\.|<account|accountid|example\.com|changeme/i.test(
+                        storageEndpoint,
+                      )
+                    ) {
+                      setStorageError(
+                        messages.canvas.storagePlaceholderEndpoint,
+                      );
+                      return;
+                    }
+                  }
+
+                  setSettingsSaving(true);
+                  setStorageError(null);
+                  try {
+                    if (settingsTab === "storage") {
+                      const saved = await writeStorageConfig({
+                        endpoint: storageEndpoint,
+                        region: storageRegionDraft.trim() || "auto",
+                        bucket: storageBucketDraft.trim(),
+                        accessKeyId: storageAccessKeyIdDraft.trim(),
+                        secretAccessKey: storageSecretDraft.trim() || undefined,
+                        publicBaseUrl: storagePublicBaseUrlDraft.trim(),
+                        forcePathStyle: storageForcePathStyleDraft,
+                      });
+                      setStorageConfigured(saved.configured);
+                      setStorageSource(saved.source);
+                      setStorageSecretConfigured(saved.secretConfigured);
+                      setStorageSecretDraft("");
+                    } else {
+                      setSettings(settingsDraft);
+                      setPreferences({
+                        ...preferencesDraft,
+                        snapToGrid: preferences.snapToGrid,
+                      });
+                    }
+                    setSettingsOpen(false);
+                  } catch (caught) {
+                    const message =
+                      caught instanceof Error ? caught.message : null;
+                    setStorageError(
+                      message ?? messages.canvas.storageSaveFailed,
+                    );
+                  } finally {
+                    setSettingsSaving(false);
+                  }
+                })();
+              }}
+            >
+              {settingsSaving ? messages.loading : messages.canvas.saveSettings}
+            </Button>
+          </div>
+        }
+      >
+        <FieldSurface>
+
+          {settingsTab === "canvas" ? (
+            <div className="space-y-5">
+              <PreferenceGroup title={messages.canvas.viewAppearance}>
+                <PreferenceRow
+                  label={messages.canvas.background}
+                  hint={messages.canvas.prefBackgroundHint}
+                >
+                  <PreferenceControl>
+                    <SelectField
+                      name="canvas-background"
+                      label={messages.canvas.background}
+                      value={preferencesDraft.background}
+                      onChange={(value) =>
+                        setPreferencesDraft((current) => ({
+                          ...current,
+                          background: value as CanvasPreferences["background"],
+                        }))
+                      }
+                    >
+                      <option value="dots">
+                        {messages.canvas.backgroundDots}
+                      </option>
+                      <option value="lines">
+                        {messages.canvas.backgroundLines}
+                      </option>
+                      <option value="cross">
+                        {messages.canvas.backgroundCross}
+                      </option>
+                      <option value="none">
+                        {messages.canvas.backgroundNone}
+                      </option>
+                    </SelectField>
+                  </PreferenceControl>
+                </PreferenceRow>
+                <PreferenceRow
+                  label={messages.canvas.backgroundGap}
+                  hint={messages.canvas.prefBackgroundGapHint}
+                >
+                  <PreferenceControl>
+                    <SelectField
+                      name="canvas-background-gap"
+                      label={messages.canvas.backgroundGap}
+                      value={String(preferencesDraft.backgroundGap)}
+                      onChange={(value) =>
+                        setPreferencesDraft((current) => ({
+                          ...current,
+                          backgroundGap: Number(value),
+                        }))
+                      }
+                    >
+                      <option value="12">12</option>
+                      <option value="18">18</option>
+                      <option value="24">24</option>
+                    </SelectField>
+                  </PreferenceControl>
+                </PreferenceRow>
+                <PreferenceRow
+                  label={messages.canvas.nodeStyle}
+                  hint={messages.canvas.prefNodeStyleHint}
+                >
+                  <PreferenceControl>
+                    <SelectField
+                      name="canvas-node-style"
+                      label={messages.canvas.nodeStyle}
+                      value={preferencesDraft.nodeStyle}
+                      onChange={(value) =>
+                        setPreferencesDraft((current) => ({
+                          ...current,
+                          nodeStyle: value as CanvasPreferences["nodeStyle"],
+                        }))
+                      }
+                    >
+                      <option value="card">
+                        {messages.canvas.nodeStyleCard}
+                      </option>
+                      <option value="soft">
+                        {messages.canvas.nodeStyleSoft}
+                      </option>
+                      <option value="outline">
+                        {messages.canvas.nodeStyleOutline}
+                      </option>
+                      <option value="glass">
+                        {messages.canvas.nodeStyleGlass}
+                      </option>
+                    </SelectField>
+                  </PreferenceControl>
+                </PreferenceRow>
+                <div className="px-4 py-3.5 sm:px-5">
+                  <SwitchField
+                    name="canvas-minimap"
+                    description={messages.canvas.prefMiniMapHint}
+                    label={messages.canvas.showMiniMap}
+                    isSelected={preferencesDraft.showMiniMap}
+                    onChange={(value) =>
+                      setPreferencesDraft((current) => ({
+                        ...current,
+                        showMiniMap: value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="px-4 py-3.5 sm:px-5">
+                  <SwitchField
+                    name="canvas-audio-border"
+                    description={messages.canvas.prefAudioBorderHint}
+                    label={messages.canvas.audioPlayerBorder}
+                    isSelected={preferencesDraft.audioPlayerBorder}
+                    onChange={(value) =>
+                      setPreferencesDraft((current) => ({
+                        ...current,
+                        audioPlayerBorder: value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="px-4 py-3.5 sm:px-5">
+                  <SwitchField
+                    name="canvas-node-resize"
+                    description={messages.canvas.prefNodeResizeHint}
+                    label={messages.canvas.nodeResizeEnabled}
+                    isSelected={preferencesDraft.nodeResizeEnabled}
+                    onChange={(value) =>
+                      setPreferencesDraft((current) => ({
+                        ...current,
+                        nodeResizeEnabled: value,
+                      }))
+                    }
+                  />
+                </div>
+                <PreferenceRow
+                  label={messages.canvas.toolbarPosition}
+                  hint={messages.canvas.toolbarPositionHint}
+                >
+                  <PreferenceControl>
+                    <SelectField
+                      name="canvas-toolbar-position"
+                      label={messages.canvas.toolbarPosition}
+                      value={preferencesDraft.toolbarPosition}
+                      onChange={(value) =>
+                        setPreferencesDraft((current) => ({
+                          ...current,
+                          toolbarPosition:
+                            value as CanvasPreferences["toolbarPosition"],
+                        }))
+                      }
+                    >
+                      <option value="left">
+                        {messages.canvas.toolbarPositionLeft}
+                      </option>
+                      <option value="right">
+                        {messages.canvas.toolbarPositionRight}
+                      </option>
+                      <option value="bottom">
+                        {messages.canvas.toolbarPositionBottom}
+                      </option>
+                    </SelectField>
+                  </PreferenceControl>
+                </PreferenceRow>
+                <PreferenceRow
+                  label={messages.canvas.autoLayoutMode}
+                  hint={messages.canvas.prefAutoLayoutHint}
+                >
+                  <PreferenceControl>
+                    <SelectField
+                      name="canvas-auto-layout-mode"
+                      label={messages.canvas.autoLayoutMode}
+                      value={preferencesDraft.autoLayoutMode}
+                      onChange={(value) =>
+                        setPreferencesDraft((current) => ({
+                          ...current,
+                          autoLayoutMode:
+                            value as CanvasPreferences["autoLayoutMode"],
+                        }))
+                      }
+                    >
+                      <option value="layered-lr">
+                        {messages.canvas.autoLayoutLayeredLr}
+                      </option>
+                      <option value="layered-tb">
+                        {messages.canvas.autoLayoutLayeredTb}
+                      </option>
+                      <option value="grid">
+                        {messages.canvas.autoLayoutGrid}
+                      </option>
+                    </SelectField>
+                  </PreferenceControl>
+                </PreferenceRow>
+                <PreferenceRow
+                  label={messages.canvas.generationDockPlacement}
+                  hint={messages.canvas.prefDockPlacementHint}
+                >
+                  <PreferenceControl>
+                    <SelectField
+                      name="canvas-dock-placement"
+                      label={messages.canvas.generationDockPlacement}
+                      value={preferencesDraft.generationDockPlacement}
+                      onChange={(value) =>
+                        setPreferencesDraft((current) => ({
+                          ...current,
+                          generationDockPlacement:
+                            value as CanvasPreferences["generationDockPlacement"],
+                        }))
+                      }
+                    >
+                      <option value="canvas">
+                        {messages.canvas.generationDockCanvas}
+                      </option>
+                      <option value="node">
+                        {messages.canvas.generationDockNode}
+                      </option>
+                    </SelectField>
+                  </PreferenceControl>
+                </PreferenceRow>
+              </PreferenceGroup>
+
+              <PreferenceGroup title={messages.canvas.connectionLines}>
+                <PreferenceRow
+                  label={messages.canvas.edgeType}
+                  hint={messages.canvas.prefEdgeTypeHint}
+                >
+                  <PreferenceControl>
+                    <SelectField
+                      name="canvas-edge-type"
+                      label={messages.canvas.edgeType}
+                      value={preferencesDraft.edgeType}
+                      onChange={(value) =>
+                        setPreferencesDraft((current) => ({
+                          ...current,
+                          edgeType: value as CanvasPreferences["edgeType"],
+                        }))
+                      }
+                    >
+                      <option value="smoothstep">
+                        {messages.canvas.edgeTypeSmooth}
+                      </option>
+                      <option value="bezier">
+                        {messages.canvas.edgeTypeBezier}
+                      </option>
+                      <option value="straight">
+                        {messages.canvas.edgeTypeStraight}
+                      </option>
+                    </SelectField>
+                  </PreferenceControl>
+                </PreferenceRow>
+                <PreferenceRow
+                  label={messages.canvas.edgeColor}
+                  hint={messages.canvas.prefEdgeColorHint}
+                >
+                  <CanvasColorPicker
+                    label={messages.canvas.edgeColor}
+                    value={preferencesDraft.edgeColor}
+                    options={EDGE_COLOR_OPTIONS}
+                    onChange={(value) =>
+                      setPreferencesDraft((current) => ({
+                        ...current,
+                        edgeColor: value,
+                      }))
+                    }
+                  />
+                </PreferenceRow>
+                <PreferenceRow
+                  label={messages.canvas.edgeWidth}
+                  hint={messages.canvas.prefEdgeWidthHint}
+                >
+                  <PreferenceControl>
+                    <SelectField
+                      name="canvas-edge-width"
+                      label={messages.canvas.edgeWidth}
+                      value={String(preferencesDraft.edgeWidth)}
+                      onChange={(value) =>
+                        setPreferencesDraft((current) => ({
+                          ...current,
+                          edgeWidth: Number(value),
+                        }))
+                      }
+                    >
+                      {[0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4].map((width) => (
+                        <option key={width} value={String(width)}>
+                          {width} px
+                        </option>
+                      ))}
+                    </SelectField>
+                  </PreferenceControl>
+                </PreferenceRow>
+                <PreferenceRow
+                  label={messages.canvas.edgeLineStyle}
+                  hint={messages.canvas.prefEdgeLineStyleHint}
+                >
+                  <PreferenceControl>
+                    <SelectField
+                      name="canvas-edge-line-style"
+                      label={messages.canvas.edgeLineStyle}
+                      value={preferencesDraft.edgeLineStyle}
+                      onChange={(value) =>
+                        setPreferencesDraft((current) => ({
+                          ...current,
+                          edgeLineStyle:
+                            value as CanvasPreferences["edgeLineStyle"],
+                        }))
+                      }
+                    >
+                      <option value="solid">
+                        {messages.canvas.edgeLineSolid}
+                      </option>
+                      <option value="dashed">
+                        {messages.canvas.edgeLineDashed}
+                      </option>
+                      <option value="dotted">
+                        {messages.canvas.edgeLineDotted}
+                      </option>
+                    </SelectField>
+                  </PreferenceControl>
+                </PreferenceRow>
+                <div className="px-4 py-3.5 sm:px-5">
+                  <SwitchField
+                    name="canvas-animate-edges"
+                    description={messages.canvas.prefAnimateEdgesHint}
+                    label={messages.canvas.animateEdges}
+                    isSelected={preferencesDraft.animateEdges}
+                    onChange={(value) =>
+                      setPreferencesDraft((current) => ({
+                        ...current,
+                        animateEdges: value,
+                      }))
+                    }
+                  />
+                </div>
+                <PreferenceRow
+                  label={messages.canvas.handleStyle}
+                  hint={messages.canvas.prefHandleStyleHint}
+                >
+                  <PreferenceControl>
+                    <SelectField
+                      name="canvas-handle-style"
+                      label={messages.canvas.handleStyle}
+                      value={preferencesDraft.handleStyle}
+                      onChange={(value) =>
+                        setPreferencesDraft((current) => ({
+                          ...current,
+                          handleStyle: value as CanvasPreferences["handleStyle"],
+                        }))
+                      }
+                    >
+                      <option value="plus">
+                        {messages.canvas.handleStylePlus}
+                      </option>
+                      <option value="dot">
+                        {messages.canvas.handleStyleDot}
+                      </option>
+                      <option value="ring">
+                        {messages.canvas.handleStyleRing}
+                      </option>
+                      <option value="arrow">
+                        {messages.canvas.handleStyleArrow}
+                      </option>
+                    </SelectField>
+                  </PreferenceControl>
+                </PreferenceRow>
+              </PreferenceGroup>
+
+              <PreferenceGroup title={messages.canvas.interaction}>
+                <div className="px-4 py-3.5 sm:px-5">
+                  <SwitchField
+                    name="canvas-helper-lines"
+                    description={messages.canvas.prefHelperLinesHint}
+                    label={messages.canvas.showHelperLines}
+                    isSelected={preferencesDraft.showHelperLines}
+                    onChange={(value) =>
+                      setPreferencesDraft((current) => ({
+                        ...current,
+                        showHelperLines: value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="px-4 py-3.5 sm:px-5">
+                  <SwitchField
+                    name="canvas-auto-connect"
+                    description={messages.canvas.prefAutoConnectHint}
+                    label={messages.canvas.autoConnect}
+                    isSelected={preferencesDraft.autoConnect}
+                    onChange={(value) =>
+                      setPreferencesDraft((current) => ({
+                        ...current,
+                        autoConnect: value,
+                      }))
+                    }
+                  />
+                </div>
+              </PreferenceGroup>
+            </div>
+          ) : settingsTab === "storage" ? (
+            <div className="space-y-5">
+              <PreferenceGroup title={messages.canvas.storageTitle}>
+                <p className="px-4 pt-3 text-xs text-zinc-500 sm:px-5 dark:text-zinc-400">
+                  {messages.canvas.storageHint}
+                  {storageSource === "env"
+                    ? ` (${messages.canvas.settingsTabStorage}: env)`
+                    : storageSource === "user"
+                      ? ` (${messages.canvas.settingsTabStorage}: user)`
+                      : ""}
+                </p>
+                <PreferenceRow
+                  label={messages.canvas.storageEndpoint}
+                  hint={messages.canvas.storageEndpointHint}
+                >
+                  <PreferenceControl>
+                    <FormField
+                      name="canvas-storage-endpoint"
+                      label={messages.canvas.storageEndpoint}
+                      value={storageEndpointDraft}
+                      placeholder="https://<ACCOUNT_ID>.r2.cloudflarestorage.com"
+                      onChange={setStorageEndpointDraft}
+                    />
+                  </PreferenceControl>
+                </PreferenceRow>
+                <PreferenceRow
+                  label={messages.canvas.storageRegion}
+                  hint={messages.canvas.storageRegionHint}
+                >
+                  <PreferenceControl>
+                    <FormField
+                      name="canvas-storage-region"
+                      label={messages.canvas.storageRegion}
+                      value={storageRegionDraft}
+                      placeholder="auto"
+                      onChange={setStorageRegionDraft}
+                    />
+                  </PreferenceControl>
+                </PreferenceRow>
+                <PreferenceRow label={messages.canvas.storageBucket}>
+                  <PreferenceControl>
+                    <FormField
+                      name="canvas-storage-bucket"
+                      label={messages.canvas.storageBucket}
+                      value={storageBucketDraft}
+                      placeholder="canvase-media"
+                      onChange={setStorageBucketDraft}
+                    />
+                  </PreferenceControl>
+                </PreferenceRow>
+                <PreferenceRow label={messages.canvas.storageAccessKeyId}>
+                  <PreferenceControl>
+                    <FormField
+                      name="canvas-storage-access-key"
+                      label={messages.canvas.storageAccessKeyId}
+                      value={storageAccessKeyIdDraft}
+                      placeholder="AKIA..."
+                      onChange={setStorageAccessKeyIdDraft}
+                    />
+                  </PreferenceControl>
+                </PreferenceRow>
+                <PreferenceRow
+                  label={messages.canvas.storageSecretAccessKey}
+                  hint={messages.canvas.storageSecretAccessKeyHint}
+                >
+                  <PreferenceControl>
+                    <FormField
+                      name="canvas-storage-secret"
+                      label={messages.canvas.storageSecretAccessKey}
+                      type="password"
+                      value={storageSecretDraft}
+                      placeholder={
+                        storageSecretConfigured ? "********" : undefined
+                      }
+                      onChange={setStorageSecretDraft}
+                    />
+                  </PreferenceControl>
+                </PreferenceRow>
+                <PreferenceRow
+                  label={messages.canvas.storagePublicBaseUrl}
+                  hint={messages.canvas.storagePublicBaseUrlHint}
+                >
+                  <PreferenceControl>
+                    <FormField
+                      name="canvas-storage-public-base-url"
+                      label={messages.canvas.storagePublicBaseUrl}
+                      value={storagePublicBaseUrlDraft}
+                      placeholder="https://cdn.example.com"
+                      onChange={setStoragePublicBaseUrlDraft}
+                    />
+                  </PreferenceControl>
+                </PreferenceRow>
+                <div className="px-4 py-3.5 sm:px-5">
+                  <SwitchField
+                    name="canvas-storage-force-path-style"
+                    description={messages.canvas.storageForcePathStyleHint}
+                    label={messages.canvas.storageForcePathStyle}
+                    isSelected={storageForcePathStyleDraft}
+                    onChange={setStorageForcePathStyleDraft}
+                  />
+                </div>
+              </PreferenceGroup>
+              {storageError ? (
+                <p className="px-1 text-xs text-red-600 dark:text-red-400">
+                  {storageError}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="space-y-5">
+            <PreferenceGroup title={messages.canvas.defaultImage}>
+              <PreferenceRow
+                  label={messages.canvas.defaultModel}
+                  hint={messages.canvas.prefDefaultModelHint}
+                >
+                <PreferenceControl>
+                  {imageModels.length > 0 ? (
+                    <PlaygroundModelSelect
+                      models={imageModels}
+                      value={settingsDraft.image?.model ?? ""}
+                      menuZIndex={90}
+                      className="w-full"
+                      onChange={(model) =>
+                        setSettingsDraft((current) => ({
+                          ...current,
+                          image: {
+                            ...current.image,
+                            model,
+                            vendor: imageModels.find((item) => item.id === model)
+                              ?.vendor,
+                          },
+                        }))
+                      }
+                    />
+                  ) : (
+                    <span className="text-xs text-zinc-400">
+                      {messages.canvas.noModel}
+                    </span>
+                  )}
+                </PreferenceControl>
+              </PreferenceRow>
+              <PreferenceRow
+                  label={messages.canvas.defaultRatio}
+                  hint={messages.canvas.prefDefaultRatioHint}
+                >
+                <PreferenceControl>
+                  <SelectField
+                    name="canvas-image-default-ratio"
+                    label={messages.canvas.defaultRatio}
+                    value={(imageDefaultParams.aspectRatio as string) ?? "1:1"}
+                    onChange={(value) =>
+                      setSettingsDraft((current) => ({
+                        ...current,
+                        image: {
+                          ...current.image,
+                          params: {
+                            ...current.image?.params,
+                            aspectRatio: value,
+                          },
+                        },
+                      }))
+                    }
+                  >
+                    {["1:1", "16:9", "9:16", "4:3", "3:4"].map((ratio) => (
+                      <option key={ratio} value={ratio}>
+                        {ratio}
+                      </option>
+                    ))}
+                  </SelectField>
+                </PreferenceControl>
+              </PreferenceRow>
+            </PreferenceGroup>
+
+            <PreferenceGroup title={messages.canvas.defaultVideo}>
+              <PreferenceRow
+                  label={messages.canvas.defaultModel}
+                  hint={messages.canvas.prefDefaultModelHint}
+                >
+                <PreferenceControl>
+                  {videoModels.length > 0 ? (
+                    <PlaygroundModelSelect
+                      models={videoModels}
+                      value={settingsDraft.video?.model ?? ""}
+                      menuZIndex={90}
+                      className="w-full"
+                      onChange={(model) =>
+                        setSettingsDraft((current) => ({
+                          ...current,
+                          video: {
+                            ...current.video,
+                            model,
+                            vendor: videoModels.find((item) => item.id === model)
+                              ?.vendor,
+                          },
+                        }))
+                      }
+                    />
+                  ) : (
+                    <span className="text-xs text-zinc-400">
+                      {messages.canvas.noModel}
+                    </span>
+                  )}
+                </PreferenceControl>
+              </PreferenceRow>
+              <PreferenceRow
+                  label={messages.canvas.defaultRatio}
+                  hint={messages.canvas.prefDefaultRatioHint}
+                >
+                <PreferenceControl>
+                  <SelectField
+                    name="canvas-video-default-ratio"
+                    label={messages.canvas.defaultRatio}
+                    value={(videoDefaultParams.ratio as string) ?? "16:9"}
+                    onChange={(value) =>
+                      setSettingsDraft((current) => ({
+                        ...current,
+                        video: {
+                          ...current.video,
+                          params: {
+                            ...current.video?.params,
+                            ratio: value,
+                          },
+                        },
+                      }))
+                    }
+                  >
+                    {["16:9", "9:16", "1:1"].map((ratio) => (
+                      <option key={ratio} value={ratio}>
+                        {ratio}
+                      </option>
+                    ))}
+                  </SelectField>
+                </PreferenceControl>
+              </PreferenceRow>
+              <PreferenceRow
+                  label={messages.canvas.defaultDuration}
+                  hint={messages.canvas.prefDefaultDurationHint}
+                >
+                <PreferenceControl>
+                  <SelectField
+                    name="canvas-video-default-duration"
+                    label={messages.canvas.defaultDuration}
+                    value={(videoDefaultParams.duration as string) ?? "5"}
+                    onChange={(value) =>
+                      setSettingsDraft((current) => ({
+                        ...current,
+                        video: {
+                          ...current.video,
+                          params: {
+                            ...current.video?.params,
+                            duration: value,
+                          },
+                        },
+                      }))
+                    }
+                  >
+                    {["5", "10"].map((duration) => (
+                      <option key={duration} value={duration}>
+                        {duration}s
+                      </option>
+                    ))}
+                  </SelectField>
+                </PreferenceControl>
+              </PreferenceRow>
+            </PreferenceGroup>
+
+            <PreferenceGroup title={messages.canvas.defaultText}>
+              <PreferenceRow
+                  label={messages.canvas.defaultModel}
+                  hint={messages.canvas.prefDefaultModelHint}
+                >
+                <PreferenceControl>
+                  {chatModels.length > 0 ? (
+                    <PlaygroundModelSelect
+                      models={chatModels}
+                      value={settingsDraft.text?.model ?? ""}
+                      menuZIndex={90}
+                      className="w-full"
+                      onChange={(model) =>
+                        setSettingsDraft((current) => ({
+                          ...current,
+                          text: {
+                            ...current.text,
+                            model,
+                            vendor: chatModels.find((item) => item.id === model)
+                              ?.vendor,
+                          },
+                        }))
+                      }
+                    />
+                  ) : (
+                    <span className="text-xs text-zinc-400">
+                      {messages.canvas.noModel}
+                    </span>
+                  )}
+                </PreferenceControl>
+              </PreferenceRow>
+            </PreferenceGroup>
+
+            </div>
+          )}
+        </FieldSurface>
+      </Modal>
+      ) : null}
+      {nodeInfoOpen ? (
+      <Modal
+        open={nodeInfoOpen}
+        onClose={() => setNodeInfoOpen(false)}
+        title={messages.canvas.nodeInfo}
+        size="5xl"
+        closeLabel={messages.close}
+        footer={
+          <div className="flex justify-end">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setNodeInfoOpen(false)}
+            >
+              {messages.close}
+            </Button>
+          </div>
+        }
+      >
+        <div className="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">
+          <div className="max-h-[60vh] overflow-auto">
+            <table className="w-full border-collapse text-left text-xs">
+              <thead className="sticky top-0 z-10 bg-zinc-50 text-[10px] uppercase tracking-wide text-zinc-400 dark:bg-zinc-900">
+                <tr>
+                  <th className="px-3 py-2 font-medium">{messages.canvas.nodeName}</th>
+                  <th className="px-3 py-2 font-medium">{messages.canvas.nodeType}</th>
+                  <th className="px-3 py-2 font-medium">{messages.canvas.nodeStatus}</th>
+                  <th className="px-3 py-2 font-medium">{messages.canvas.nodeModel}</th>
+                  <th className="px-3 py-2 font-medium">{messages.canvas.nodeSize}</th>
+                  <th className="px-3 py-2 font-medium">{messages.canvas.nodeGroup}</th>
+                  <th className="px-3 py-2 font-medium">{messages.canvas.nodeId}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {infoRows.map(({ node, depth }) => {
+                  const typeName = nodeTypeName(node.type);
+                  const title = node.data.label?.trim() || typeName;
+                  const group = node.parentId
+                    ? infoNodes.get(node.parentId)
+                    : undefined;
+                  const groupName = group
+                    ? group.data.label?.trim() ||
+                      messages.canvas.groupNamePlaceholder
+                    : "—";
+                  const status =
+                    node.type === "group"
+                      ? "—"
+                      : nodeStatusName(node.data.status);
+                  const width = node.width ?? node.measured?.width;
+                  const height = node.height ?? node.measured?.height;
+                  const isGroup = node.type === "group";
+                  const expanded = !collapsedGroups.has(node.id);
+                  const childCount = childCounts.get(node.id) ?? 0;
+                  return (
+                    <tr
+                      key={node.id}
+                      className={
+                        isGroup
+                          ? "bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100/70 dark:bg-zinc-900/40 dark:text-zinc-300 dark:hover:bg-zinc-800/40"
+                          : "text-zinc-600 hover:bg-zinc-50/70 dark:text-zinc-300 dark:hover:bg-zinc-800/40"
+                      }
+                    >
+                      <td className="max-w-56 px-3 py-2 font-medium text-zinc-800 dark:text-zinc-100">
+                        <div
+                          className="flex min-w-0 items-center gap-1.5"
+                          style={{ paddingLeft: depth * 18 }}
+                        >
+                          {isGroup ? (
+                            <button
+                              type="button"
+                              className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
+                              aria-expanded={expanded}
+                              aria-label={
+                                expanded
+                                  ? messages.canvas.collapseGroup
+                                  : messages.canvas.expandGroup
+                              }
+                              onClick={() =>
+                                setCollapsedGroups((current) => {
+                                  const next = new Set(current);
+                                  if (next.has(node.id)) {
+                                    next.delete(node.id);
+                                  } else {
+                                    next.add(node.id);
+                                  }
+                                  return next;
+                                })
+                              }
+                            >
+                              <Icon
+                                icon={
+                                  expanded
+                                    ? CaretDown
+                                    : ArrowRight
+                                }
+                                size={11}
+                              />
+                            </button>
+                          ) : (
+                            <span className="h-4 w-4 shrink-0" />
+                          )}
+                          <span className="truncate">{title}</span>
+                          {isGroup ? (
+                            <span className="shrink-0 text-[10px] font-normal text-zinc-400">
+                              {childCount}
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">{typeName}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{status}</td>
+                      <td className="max-w-36 truncate px-3 py-2">
+                        {node.data.model || "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 tabular-nums">
+                        {width && height
+                          ? `${Math.round(width)} × ${Math.round(height)}`
+                          : "—"}
+                      </td>
+                      <td className="max-w-36 truncate px-3 py-2">
+                        {groupName}
+                      </td>
+                      <td
+                        className="max-w-28 truncate px-3 py-2 font-mono text-[10px] text-zinc-400"
+                        title={node.id}
+                      >
+                        {node.id}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <p className="mt-2 text-right text-[10px] tabular-nums text-zinc-400">
+          {messages.canvas.groupNodeCount.replace("{count}", String(nodes.length))}
+        </p>
+      </Modal>
+      ) : null}
+
+      {groupOpen ? (
+      <Modal
+        open={groupOpen}
+        onClose={() => setGroupOpen(false)}
+        title={messages.canvas.groupSelection}
+        size="md"
+        closeLabel={messages.close}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setGroupOpen(false)}
+            >
+              {messages.canvas.cancel}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                groupSelection(
+                  selectedNodes.map((node) => node.id),
+                  groupName,
+                );
+                setGroupOpen(false);
+              }}
+            >
+              {messages.canvas.createGroup}
+            </Button>
+          </div>
+        }
+      >
+        <FieldSurface>
+          <FormField
+            name="canvas-group-name"
+            label={messages.canvas.groupName}
+            value={groupName}
+            onChange={setGroupName}
+            autoFocus
+          />
+        </FieldSurface>
+      </Modal>
+      ) : null}
+    </>
+  );
+}
+
+export function CanvasEditor({ canvasId }: { canvasId: string }) {
+  const { push } = useLocaleRouter();
+  const query = usePortalQuery(`portal-canvas-${canvasId}`, () =>
+    getCanvas(canvasId),
+  );
+
+  if (query.loading) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-zinc-400">
+        {messages.loading}
+      </div>
+    );
+  }
+
+  if (query.error || !query.data) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+        <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+          {messages.canvas.notFound}
+        </p>
+        <p className="max-w-sm text-xs text-zinc-400">
+          {query.error ?? messages.canvas.notFoundBody}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={query.reload}>
+            {messages.canvas.reload}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => push("/canvas")}>
+            {messages.canvas.backToCanvas}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <ReactFlowProvider>
+      <CanvasEditorInner
+        key={`${query.data.id}:${query.data.version}`}
+        canvasDocument={query.data}
+        onReload={query.reload}
+      />
+    </ReactFlowProvider>
+  );
+}

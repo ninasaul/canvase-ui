@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: canvase
+      POSTGRES_PASSWORD: canvase
+      POSTGRES_DB: canvase
+    volumes:
+      - canvase_pg:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - canvase_redis:/data
+
+volumes:
+  canvase_pg:
+  canvase_redis:
