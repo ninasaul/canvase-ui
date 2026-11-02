@@ -167,10 +167,6 @@ import { useCanvasSettings } from "@/components/canvas/editor/workspace/use-canv
 import { useCanvasHistory } from "@/lib/canvas/use-canvas-history";
 import { useCanvasRunStatusStore } from "@/lib/canvas/canvas-run-status-store";
 import { formatDateTime } from "@/lib/format";
-import {
-  estimateCanvasGenerationCost,
-  formatCanvasCost,
-} from "@/lib/canvas/canvas-generation-cost";
 import { useLocaleRouter } from "@/lib/locale-navigation";
 import { messages } from "@/messages";
 import { loadGenerationModels } from "@/lib/generation/local-models";
@@ -198,7 +194,12 @@ import {
   CANVAS_SNAP_DISTANCE,
   NODE_TYPE_COLORS,
 } from "@/components/canvas/editor/lib/constants";
-import { costToCents } from "@/components/canvas/editor/lib/cost";
+import {
+  buildRunPlanRows,
+  estimateRunCost,
+  orderRunPlanNodes,
+  summarizeRunPlan,
+} from "@/components/canvas/editor/lib/run-plan-view";
 import { nodeTypeLabel } from "@/components/canvas/editor/lib/node-display";
 import { isCanvasConnectionValid } from "@/components/canvas/editor/lib/geometry";
 
@@ -1653,116 +1654,27 @@ function CanvasEditorInner({
     [configNodeId, nodes],
   );
 
-  const runSummary = useMemo(() => {
-    if (!runConfirm) {
-      return null;
-    }
-    let overwrite = 0;
-    const byType: Record<string, number> = {};
-    // A selected group stands for its children: they are not "upstream".
-    const selected = new Set(runConfirm.selectedNodeIds);
-    for (const node of nodes) {
-      if (node.parentId && selected.has(node.parentId)) {
-        selected.add(node.id);
-      }
-    }
-    // "Upstream" only means something when the plan pulled extra nodes in.
-    const trackUpstream =
-      runConfirm.mode === "selected" && runConfirm.includeUpstream;
-    let upstream = 0;
-    for (const nodeId of runConfirm.plan.nodeIds) {
-      const node = nodes.find((item) => item.id === nodeId);
-      if (!node) {
-        continue;
-      }
-      if (node.data.url?.trim() || node.data.status === "succeeded") {
-        overwrite += 1;
-      }
-      byType[node.type] = (byType[node.type] ?? 0) + 1;
-      if (trackUpstream && !selected.has(nodeId)) {
-        upstream += 1;
-      }
-    }
-    return {
-      count: runConfirm.plan.nodeIds.length,
-      overwrite,
-      upstream,
-      byType,
-    };
-  }, [nodes, runConfirm]);
+  const runSummary = useMemo(
+    () => (runConfirm ? summarizeRunPlan(runConfirm, nodes) : null),
+    [nodes, runConfirm],
+  );
 
   /** Execution order, but spatial within a layer (top-left first). */
-  const runDisplayOrder = useMemo(() => {
-    if (!runConfirm) {
-      return [] as string[];
-    }
-    const position = new Map(nodes.map((node) => [node.id, node.position]));
-    const order = new Map<string, number>();
-    let index = 0;
-    for (const layer of runConfirm.plan.layers) {
-      const sorted = [...layer].sort((a, b) => {
-        const pa = position.get(a);
-        const pb = position.get(b);
-        return (pa?.y ?? 0) - (pb?.y ?? 0) || (pa?.x ?? 0) - (pb?.x ?? 0);
-      });
-      for (const id of sorted) {
-        order.set(id, index);
-        index += 1;
-      }
-    }
-    return [...runConfirm.plan.nodeIds].sort(
-      (a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0),
-    );
-  }, [nodes, runConfirm]);
+  const runDisplayOrder = useMemo(
+    () => (runConfirm ? orderRunPlanNodes(runConfirm, nodes) : []),
+    [nodes, runConfirm],
+  );
 
   /** Rows shown in the run dialog (limited when collapsed). */
   const runRows = useMemo(() => {
     if (!runConfirm) {
       return [];
     }
-    const selectedIds = new Set(runConfirm.selectedNodeIds);
-    for (const candidate of nodes) {
-      if (candidate.parentId && selectedIds.has(candidate.parentId)) {
-        selectedIds.add(candidate.id);
-      }
-    }
-    const trackUpstream =
-      runConfirm.mode === "selected" && runConfirm.includeUpstream;
-    const visible = runListExpanded
-      ? runDisplayOrder
-      : runDisplayOrder.slice(0, 8);
-    return visible.flatMap((nodeId) => {
-      const node = nodes.find((item) => item.id === nodeId);
-      if (!node) {
-        return [];
-      }
-      const params = node.data.params ?? {};
-      const size =
-        typeof params.size === "string"
-          ? params.size
-          : typeof params.aspectRatio === "string"
-            ? params.aspectRatio
-            : "";
-      const duration =
-        typeof params.duration === "string" ||
-        typeof params.duration === "number"
-          ? `${params.duration}s`
-          : "";
-      const meta = [node.data.model, duration || size]
-        .filter((value): value is string => Boolean(value))
-        .join(" · ");
-      return [
-        {
-          id: nodeId,
-          label: node.data.label?.trim() || nodeTypeLabel(node.type),
-          type: node.type ?? "text",
-          meta: meta || messages.canvas.noModel,
-          hasResult: Boolean(
-            node.data.url?.trim() || node.data.status === "succeeded",
-          ),
-          isUpstream: trackUpstream && !selectedIds.has(nodeId),
-        },
-      ];
+    return buildRunPlanRows({
+      runConfirm,
+      nodes,
+      order: runDisplayOrder,
+      limit: runListExpanded ? runDisplayOrder.length : 8,
     });
   }, [nodes, runConfirm, runDisplayOrder, runListExpanded]);
 
@@ -1787,39 +1699,13 @@ function CanvasEditorInner({
       (withUpstream?.nodeIds.length ?? 0) > (without?.nodeIds.length ?? 0)
     );
   }, [runConfirm, toGraph]);
-  const runCostEstimate = useMemo(() => {
-    if (!runConfirm) {
-      return null;
-    }
-    let cents = BigInt(0);
-    let priced = 0;
-    let unpriced = 0;
-    for (const nodeId of runConfirm.plan.nodeIds) {
-      const node = nodes.find((item) => item.id === nodeId);
-      if (!node || (node.type !== "image" && node.type !== "video")) {
-        unpriced += 1;
-        continue;
-      }
-      const modelId = node.data.model?.trim() ?? "";
-      const model = models.find(
-        (item) =>
-          item.id === modelId &&
-          (!node.data.vendor || item.vendor === node.data.vendor),
-      ) ?? models.find((item) => item.id === modelId);
-      const estimate = estimateCanvasGenerationCost(
-        model?.pricing,
-        node.type,
-        node.data.params as Record<string, unknown> | undefined,
-      );
-      if (estimate === null) {
-        unpriced += 1;
-        continue;
-      }
-      cents += costToCents(estimate);
-      priced += 1;
-    }
-    return { total: formatCanvasCost(cents * 10_000n), priced, unpriced };
-  }, [models, nodes, runConfirm]);
+  const runCostEstimate = useMemo(
+    () =>
+      runConfirm
+        ? estimateRunCost({ runConfirm, nodes, models })
+        : null,
+    [models, nodes, runConfirm],
+  );
 
   const runStatusById = useCanvasRunStatusStore((state) => state.statusById);
   const runningTaskCount = useMemo(
