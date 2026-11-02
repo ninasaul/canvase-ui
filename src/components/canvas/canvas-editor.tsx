@@ -14,9 +14,7 @@ import {
   Check,
   CircleNotch,
   Clock,
-  CornersOut,
   Cursor,
-  DotsNine,
   DownloadSimple,
   FolderPlus,
   GearSix,
@@ -25,12 +23,7 @@ import {
   Images,
   Info,
   Keyboard,
-  Lock,
-  LockOpen,
-  MapTrifold,
-  Minus,
   Play,
-  Plus,
   Plugs,
   Pulse,
   StopCircle,
@@ -70,7 +63,6 @@ import { canvasEdgeTypes } from "@/components/canvas/canvas-edge";
 import { CanvasImageGenerationDock } from "@/components/canvas/canvas-image-generation-dock";
 import { CanvasNodeLabels } from "@/components/canvas/canvas-node-labels";
 import { CanvasNodeDockLayer } from "@/components/canvas/canvas-node-dock-layer";
-import { CanvasZoomLabel } from "@/components/canvas/canvas-zoom-label";
 import {
   CanvasRunningTasksModal,
   type CanvasTasksTab,
@@ -93,6 +85,7 @@ import {
 import { CanvasDetailProvider } from "@/components/canvas/canvas-detail-context";
 import { CanvasGroupModal } from "@/components/canvas/editor/panels/canvas-group-modal";
 import { CanvasInfoModal } from "@/components/canvas/editor/panels/canvas-info-modal";
+import { CanvasBottomDock } from "@/components/canvas/editor/chrome/canvas-bottom-dock";
 import { CanvasConflictBanner } from "@/components/canvas/editor/chrome/canvas-conflict-banner";
 import { CanvasRunConfirmModal } from "@/components/canvas/editor/panels/canvas-run-confirm-modal";
 import { CanvasSettingsModal } from "@/components/canvas/editor/panels/canvas-settings-modal";
@@ -2438,126 +2431,27 @@ function CanvasEditorInner({
                   </Tooltip>
                 </div>
               </Panel>
-              <Panel position="bottom-left" className="!m-3">
-                <div className="nodrag flex items-center gap-0.5 rounded-lg border border-zinc-200 bg-white/95 p-1 shadow-lg backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95">
-                    <Tooltip content={`${messages.canvas.zoomOut} · -`}>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={messages.canvas.zoomOut}
-                        onClick={() => void zoomOut({ duration: 150 })}
-                      >
-                        <Icon icon={Minus} size={14} />
-                      </Button>
-                    </Tooltip>
-                    <CanvasZoomLabel />
-                    <Tooltip content={`${messages.canvas.zoomIn} · +`}>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={messages.canvas.zoomIn}
-                        onClick={() => void zoomIn({ duration: 150 })}
-                      >
-                        <Icon icon={Plus} size={14} />
-                      </Button>
-                    </Tooltip>
-                    <Tooltip content={`${messages.canvas.fitView} · F`}>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={messages.canvas.fitView}
-                        onClick={() => void fitView({ padding: 0.2, duration: 250 })}
-                      >
-                        <Icon icon={CornersOut} size={14} />
-                      </Button>
-                    </Tooltip>
-                    <Tooltip
-                      content={`${
-                        viewportLocked
-                          ? messages.canvas.unlockViewport
-                          : messages.canvas.lockViewport
-                      } · L`}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className={
-                          viewportLocked
-                            ? "text-sky-600 dark:text-sky-400"
-                            : undefined
-                        }
-                        aria-label={
-                          viewportLocked
-                            ? messages.canvas.unlockViewport
-                            : messages.canvas.lockViewport
-                        }
-                        onClick={() => setViewportLocked((locked) => !locked)}
-                      >
-                        <Icon
-                          icon={viewportLocked ? Lock : LockOpen}
-                          size={14}
-                        />
-                      </Button>
-                    </Tooltip>
-                    <Tooltip content={messages.canvas.snapToGrid}>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className={
-                          preferences.snapToGrid
-                            ? "text-sky-600 dark:text-sky-400"
-                            : undefined
-                        }
-                        aria-label={messages.canvas.snapToGrid}
-                        aria-pressed={preferences.snapToGrid}
-                        onClick={() =>
-                          setPreferences((current) => ({
-                            ...current,
-                            snapToGrid: !current.snapToGrid,
-                          }))
-                        }
-                      >
-                        <Icon
-                          icon={
-                            preferences.snapToGrid ? DotsNine : BoundingBox
-                          }
-                          size={14}
-                        />
-                      </Button>
-                    </Tooltip>
-                    <Tooltip
-                      content={
-                        preferences.showMiniMap
-                          ? messages.canvas.hideMiniMap
-                          : messages.canvas.showMiniMap
-                      }
-                    >
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className={
-                          preferences.showMiniMap
-                            ? "text-sky-600 dark:text-sky-400"
-                            : undefined
-                        }
-                        aria-label={
-                          preferences.showMiniMap
-                            ? messages.canvas.hideMiniMap
-                            : messages.canvas.showMiniMap
-                        }
-                        aria-pressed={preferences.showMiniMap}
-                        onClick={() =>
-                          setPreferences((current) => ({
-                            ...current,
-                            showMiniMap: !current.showMiniMap,
-                          }))
-                        }
-                      >
-                        <Icon icon={MapTrifold} size={14} />
-                      </Button>
-                    </Tooltip>
-                </div>
-              </Panel>
+              <CanvasBottomDock
+                onZoomIn={() => void zoomIn({ duration: 150 })}
+                onZoomOut={() => void zoomOut({ duration: 150 })}
+                onFitView={() => void fitView({ padding: 0.2, duration: 250 })}
+                viewportLocked={viewportLocked}
+                onToggleLock={() => setViewportLocked((locked) => !locked)}
+                snapToGrid={preferences.snapToGrid}
+                onToggleSnap={() =>
+                  setPreferences((current) => ({
+                    ...current,
+                    snapToGrid: !current.snapToGrid,
+                  }))
+                }
+                showMiniMap={preferences.showMiniMap}
+                onToggleMiniMap={() =>
+                  setPreferences((current) => ({
+                    ...current,
+                    showMiniMap: !current.showMiniMap,
+                  }))
+                }
+              />
               </ReactFlow>
               </CanvasDetailProvider>
             </CanvasPreferencesProvider>
