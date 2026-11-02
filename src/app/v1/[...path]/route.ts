@@ -8,6 +8,7 @@ import {
   normalizeGenerationBaseUrl,
 } from "@/lib/generation/byok-url";
 import { resolveUserGenerationApiKey } from "@/lib/generation/generation-config-server";
+import { assertSafeRemoteUrl, UnsafeUrlError } from "@/lib/shared/url-safety";
 import { requireUser } from "@/lib/session";
 
 export const runtime = "nodejs";
@@ -73,6 +74,13 @@ async function proxyRequest(request: Request, context: RouteContext) {
     return Response.json({ error: "Missing path" }, { status: 400 });
   }
 
+  // Same-origin proxy for signed-in editors only. Server-side callers
+  // (agent runs / agent chat) call the gateway directly instead.
+  const user = await requireUser();
+  if (!user) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const headerBase = resolveClientBaseUrl(request);
   const envBase = process.env.GENERATION_BASE_URL ?? "";
   const baseUrl = normalizeGenerationBaseUrl(headerBase || envBase);
@@ -91,6 +99,17 @@ async function proxyRequest(request: Request, context: RouteContext) {
     path,
     new URL(request.url).search,
   );
+
+  // Block SSRF: the base URL comes from a request header, so it must not be
+  // able to reach loopback / private / link-local addresses.
+  try {
+    await assertSafeRemoteUrl(upstreamUrl);
+  } catch (error) {
+    if (error instanceof UnsafeUrlError) {
+      return Response.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
 
   const headers = new Headers();
   const apiKey = await resolveUpstreamApiKey(request);

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { UnsafeUrlError, assertSafeRemoteUrl } from "@/lib/shared/url-safety";
 import { decryptSecret, encryptSecret } from "@/lib/storage/secret-crypto";
 import {
   CUSTOM_VENDOR_GATEWAY_ID,
@@ -386,6 +387,31 @@ export type ServerGenerationConnection = {
  * (Agent runs, workers). Prefers vendorId, then active profile, then env.
  */
 export async function resolveUserGenerationConnection(
+  userId: string,
+  hints?: {
+    vendorId?: string | null;
+    baseUrl?: string | null;
+    modelId?: string | null;
+  },
+): Promise<ServerGenerationConnection> {
+  const connection = await resolveUserGenerationConnectionUnsafe(userId, hints);
+  if (connection.baseUrl) {
+    // Server-side callers fetch the gateway directly, bypassing the /v1 guard,
+    // so validate the (user-configured) base URL here as well.
+    try {
+      await assertSafeRemoteUrl(connection.baseUrl);
+    } catch (error) {
+      const detail =
+        error instanceof UnsafeUrlError ? error.message : "unsupported URL";
+      throw new Error(
+        `Generation gateway blocked (${detail}). Set GENERATION_ALLOW_PRIVATE_HOSTS=true for local gateways such as Ollama or MinIO.`,
+      );
+    }
+  }
+  return connection;
+}
+
+async function resolveUserGenerationConnectionUnsafe(
   userId: string,
   hints?: {
     vendorId?: string | null;
