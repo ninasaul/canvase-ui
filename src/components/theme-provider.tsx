@@ -16,7 +16,7 @@ export type Theme = "light" | "dark";
 
 const STORAGE_KEY = "canvase.theme";
 
-const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem("${STORAGE_KEY}");if(t==="dark"){document.documentElement.classList.add("dark")}else if(t==="light"){document.documentElement.classList.remove("dark")}}catch(e){}})()`;
+const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem("${STORAGE_KEY}");if(t!=="dark"&&t!=="light"){t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}if(t==="dark"){document.documentElement.classList.add("dark")}else{document.documentElement.classList.remove("dark")}}catch(e){}})()`;
 
 type ThemeContextValue = {
   theme: Theme;
@@ -35,6 +35,15 @@ function readStoredTheme(): Theme {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     if (stored === "dark" || stored === "light") {
       return stored;
+    }
+  } catch {
+    // ignore
+  }
+
+  // No explicit choice yet: follow the OS.
+  try {
+    if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      return "dark";
     }
   } catch {
     // ignore

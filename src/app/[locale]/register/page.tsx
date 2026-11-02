@@ -1,27 +1,39 @@
 import { notFound, redirect } from "next/navigation";
+
 import { AuthForm } from "@/components/auth/auth-form";
+import { AuthShell } from "@/components/auth/auth-shell";
 import { hasLocale } from "@/i18n/get-dictionary";
 import { withLocale } from "@/lib/i18n-path";
 import { getSession } from "@/lib/session";
+import { tenantSignInRedirectPath } from "@/lib/tenant-login-redirect";
 
 type RegisterPageProps = {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ next?: string }>;
 };
 
-export default async function RegisterPage({ params }: RegisterPageProps) {
+export default async function RegisterPage({
+  params,
+  searchParams,
+}: RegisterPageProps) {
   const { locale } = await params;
   if (!hasLocale(locale)) {
     notFound();
   }
 
+  const query = await searchParams;
+  const nextPath = query.next
+    ? tenantSignInRedirectPath(query.next, locale)
+    : undefined;
+
   const session = await getSession();
   if (session?.user) {
-    redirect(withLocale(locale, "/canvas"));
+    redirect(withLocale(locale, nextPath ?? "/canvas"));
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-zinc-50 px-4">
-      <AuthForm mode="sign-up" />
-    </main>
+    <AuthShell>
+      <AuthForm mode="sign-up" next={nextPath} />
+    </AuthShell>
   );
 }

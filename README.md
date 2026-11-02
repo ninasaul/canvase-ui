@@ -131,6 +131,12 @@ Canvas cover uploads (`purpose=canvas_thumbnail`) are skipped by the worker. Unt
 
 Editor image nodes prefer `node.data.thumbnailUrl` over `url`. On canvas load (and MCP read tools), missing `thumbnailUrl` is hydrated from `MediaAsset` when `assetId` / `assetIds` are present. After agent `canvas_run`, the server writes `thumbnailUrl` if the asset already has one, otherwise enqueues a job.
 
+## Authentication
+
+Email + password through Better Auth. The forms validate on submit (email shape, 8-character minimum), surface field-level errors, map upstream messages to localized copy, and keep the `?next=` target so a deep link survives the login detour (only same-origin paths are accepted).
+
+Server-side: passwords are limited to 8–128 characters, sessions last 30 days and refresh daily, and the credential endpoints are rate limited (10 sign-ins per minute, 5 sign-ups per 5 minutes). Theme follows the OS until the user picks one.
+
 ## Connect Agent (MCP)
 
 Agents can edit and run a single canvas through scoped tokens.
