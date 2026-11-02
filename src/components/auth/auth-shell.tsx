@@ -3,6 +3,8 @@
 import type { ReactNode } from "react";
 import { ImageSquare, Sparkle, SquaresFour } from "@phosphor-icons/react";
 
+import { BrandLogo } from "@/components/brand-logo";
+
 import { LocaleToggle } from "@/components/locale-toggle";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Icon } from "@/components/ui/icon";
@@ -14,6 +16,8 @@ import { useFeatureMessages } from "@/hooks/use-feature-messages";
  */
 export function AuthShell({ children }: { children: ReactNode }) {
   const auth = useFeatureMessages("auth");
+  const common = useFeatureMessages("common");
+  const appName = common.appName;
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
@@ -33,12 +37,10 @@ export function AuthShell({ children }: { children: ReactNode }) {
 
       <div className="relative mx-auto grid min-h-screen w-full max-w-6xl items-center gap-12 px-6 py-16 lg:grid-cols-[1.05fr_minmax(0,26rem)] lg:gap-16">
         <section className="hidden flex-col gap-8 lg:flex">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900">
-              <Icon icon={Sparkle} size={18} weight="fill" />
-            </span>
-            <span className="text-lg font-semibold tracking-tight">
-              Canvase
+          <div className="flex items-center gap-3">
+            <BrandLogo size={40} alt={appName} priority />
+            <span className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500 dark:text-zinc-400">
+              {appName}
             </span>
           </div>
 
@@ -69,11 +71,9 @@ export function AuthShell({ children }: { children: ReactNode }) {
 
         <section className="w-full">
           <div className="mb-6 flex items-center gap-2.5 lg:hidden">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900">
-              <Icon icon={Sparkle} size={16} weight="fill" />
-            </span>
+            <BrandLogo size={32} alt={appName} priority />
             <div className="min-w-0">
-              <p className="text-sm font-semibold leading-tight">Canvase</p>
+              <p className="text-sm font-semibold leading-tight">{appName}</p>
               <p className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
                 {auth.brandShort}
               </p>
