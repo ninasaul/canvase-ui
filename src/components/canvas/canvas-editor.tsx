@@ -34,9 +34,6 @@ import {
   Waveform,
 } from "@phosphor-icons/react";
 import {
-  Background,
-  BackgroundVariant,
-  MiniMap,
   Panel,
   ReactFlow,
   ReactFlowProvider,
@@ -85,6 +82,7 @@ import {
 import { CanvasDetailProvider } from "@/components/canvas/canvas-detail-context";
 import { CanvasGroupModal } from "@/components/canvas/editor/panels/canvas-group-modal";
 import { CanvasInfoModal } from "@/components/canvas/editor/panels/canvas-info-modal";
+import { CanvasBackdrop } from "@/components/canvas/editor/chrome/canvas-backdrop";
 import { CanvasBottomDock } from "@/components/canvas/editor/chrome/canvas-bottom-dock";
 import { CanvasConflictBanner } from "@/components/canvas/editor/chrome/canvas-conflict-banner";
 import { CanvasRunConfirmModal } from "@/components/canvas/editor/panels/canvas-run-confirm-modal";
@@ -174,7 +172,6 @@ import {
   CANVAS_MAX_ZOOM,
   CANVAS_MIN_ZOOM,
   CANVAS_SNAP_DISTANCE,
-  NODE_TYPE_COLORS,
 } from "@/components/canvas/editor/lib/constants";
 import type { RunConfirmState } from "@/components/canvas/editor/lib/run-plan-view";
 import { nodeTypeLabel } from "@/components/canvas/editor/lib/node-display";
@@ -2135,30 +2132,13 @@ function CanvasEditorInner({
                     );
                   })()
                 : null}
-              {preferences.background !== "none" ? (
-                <Background
-                  variant={
-                    preferences.background === "lines"
-                      ? BackgroundVariant.Lines
-                      : preferences.background === "cross"
-                        ? BackgroundVariant.Cross
-                        : BackgroundVariant.Dots
-                  }
-                  gap={preferences.backgroundGap}
-                  size={backgroundPatternSize}
-                  color={backgroundPatternColor}
-                />
-              ) : null}
-              {preferences.showMiniMap && nodes.length <= 150 && !draggingNode ? (
-                <MiniMap
-                  className="canvas-minimap"
-                  pannable
-                  zoomable
-                  nodeColor={(node) =>
-                    NODE_TYPE_COLORS[node.type ?? "text"] ?? "#a1a1aa"
-                  }
-                />
-              ) : null}
+              <CanvasBackdrop
+                preferences={preferences}
+                patternSize={backgroundPatternSize}
+                patternColor={backgroundPatternColor}
+                nodeCount={nodes.length}
+                draggingNode={draggingNode}
+              />
               <Panel position={toolbarPanelPosition} className="!m-3">
                 <div className={`nodrag relative flex items-center gap-1 rounded-lg border border-zinc-200 bg-white/95 p-1 shadow-lg backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95 ${
                   toolbarVertical
