@@ -19,7 +19,7 @@ Optional for generation runs and thumbnails:
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `CANVASE_BASE_URL` | yes | App origin, no trailing slash (e.g. `http://localhost:3000`) |
+| `CANVASE_BASE_URL` | yes | App origin, no trailing slash (e.g. `http://localhost:3917`) |
 | `CANVASE_TOKEN` | yes | Agent token (`cvs_...`) shown once when issued |
 | `CANVASE_CANVAS_ID` | yes | Target canvas id (token is also bound to this canvas) |
 
@@ -49,7 +49,7 @@ From the Canvase **Connect Agent** dialog, copy the generated `mcpServers` snipp
       "command": "node",
       "args": ["./packages/canvase-mcp/src/cli.js"],
       "env": {
-        "CANVASE_BASE_URL": "http://localhost:3000",
+        "CANVASE_BASE_URL": "http://localhost:3917",
         "CANVASE_TOKEN": "cvs_...",
         "CANVASE_CANVAS_ID": "canvas_id"
       }
@@ -68,7 +68,7 @@ Default Connect Agent issue includes:
 
 | Scope | Tools |
 | --- | --- |
-| `canvas:read` | `canvas_get`, `canvas_get_node`, `canvas_search_nodes` |
+| `canvas:read` | `canvas_get`, `canvas_get_node`, `canvas_search_nodes`, `skills_list`, `skills_read` |
 | `canvas:edit` | add / update / delete / connect / disconnect / set_selection |
 | `canvas:run` | `canvas_run`, `canvas_run_status`, `canvas_run_cancel` |
 
@@ -96,6 +96,8 @@ Image/video summaries include `url`, `thumbnailUrl`, and `assetId` when availabl
 | `canvas_connect` | Typed edge role between two nodes |
 | `canvas_disconnect` | By `edgeId` or `source`+`target`(+`role`) |
 | `canvas_set_selection` | Logical selection used by run modes |
+| `canvas_group_nodes` | Wrap root nodes in a group (bbox computed server-side) |
+| `canvas_ungroup` | Dissolve a group, children return to absolute positions |
 
 All edit tools require `expectedVersion` from the latest `canvas_get` (optimistic concurrency). On conflict the host returns 409 — refresh with `canvas_get` and retry.
 
@@ -107,11 +109,19 @@ For image/video nodes, `data` may include:
 
 If you pass `assetId` without `thumbnailUrl`, the gateway fills `thumbnailUrl` when the asset already has one, otherwise enqueues a thumbnail job.
 
+### Generation params (`canvas:read` / `canvas:edit`)
+
+| Tool | Notes |
+| --- | --- |
+| `canvas_generation_options` | Allowed sizes / aspect ratios / quality (image), ratios / resolutions / duration (video), plus current values |
+
+Pass params through `canvas_update_node`'s `data.params`; keys are **merged**, so partial updates keep the rest.
+
 ### Generation (`canvas:run`)
 
 | Tool | Notes |
 | --- | --- |
-| `canvas_run` | `mode`: `all` \| `selected` \| `from` \| `retry-failed`; `nodeIds` required for `selected` / `from` |
+| `canvas_run` | `mode`: `all` \| `selected` \| `node` \| `from` \| `retry-failed`; `nodeIds` required for `selected` / `node` / `from` (a group id expands to its children) |
 | `canvas_run_status` | By `runId`, or latest run on this canvas |
 | `canvas_run_cancel` | Cancel queued / running agent run |
 
@@ -135,9 +145,21 @@ After a successful image/video node, if the output `MediaAsset` already has a th
 | 401 on tools | Token revoked, expired, or wrong `CANVASE_TOKEN` |
 | 403 Missing scope | Token issued without the required scope |
 | 404 Canvas not found | Wrong `CANVASE_CANVAS_ID` or canvas archived |
+| 404 Unknown skill | `skills_read` name not found; run `skills_list` |
 | 409 Version conflict | Stale `expectedVersion`; call `canvas_get` again |
 | Run fails generation | Owner has no usable Base URL / API key |
 | Nodes show full-size images only | Thumbnail worker not running, or asset has no `assetId` / broken source URL |
+
+## Skills
+
+`skills_list` and `skills_read` expose instruction packs hosted by the Canvase app
+(`./skills/<id>/SKILL.md`, or `CANVASE_SKILLS_DIR`). Read-only, available with `canvas:read`.
+
+- `skills_list` → `{ count, skills: [{ id, name, description, tags }] }`
+- `skills_read({ name })` → `{ id, name, description, tags, files, content }`
+- `skills_read({ name, file })` → same shape with one resource file's `content`
+
+Reads are confined to the skill folder; `..`, absolute paths, and non-text files are rejected.
 
 ## Related
 

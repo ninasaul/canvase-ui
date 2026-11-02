@@ -37,7 +37,7 @@ Auth uses [Better Auth](https://www.better-auth.com/) (email/password). Canvas a
 cp .env.example .env
 # Edit DATABASE_URL, BETTER_AUTH_SECRET, and optional S3_*/GENERATION_* vars
 
-# Postgres + Redis
+# Postgres only (Redis: use a local install, see REDIS_URL)
 docker compose up -d
 
 # Align DATABASE_URL with compose if needed, e.g.
@@ -48,13 +48,18 @@ pnpm db:migrate
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000), register, then create a canvas.
+Open [http://localhost:3917](http://localhost:3917), register, then create a canvas.
 
-In a second terminal (thumbnails for new uploads):
+`pnpm dev` starts **everything**: the Next.js server (port 3917) and the asset thumbnail
+worker, with `[app]` / `[worker]` prefixed logs. Redis must be running for thumbnails
+(`REDIS_URL`, default `redis://127.0.0.1:6379/1`); if it is down the app still starts and
+the launcher prints a warning.
+
+Need only one of them?
 
 ```bash
-# REDIS_URL=redis://127.0.0.1:6379
-pnpm worker:dev
+pnpm dev:app      # Next.js only
+pnpm dev:worker   # thumbnail worker only
 ```
 
 ## Configuration
@@ -81,7 +86,7 @@ Configure gateways and models in the canvas **Model settings** UI (Base URL, enc
 
 Uploads use **presign → browser PUT → complete**. Credentials stay on the server (encrypted user config or env).
 
-Bucket **CORS** must allow `PUT` (and typically `GET` / `HEAD`) from your app origin, e.g. `http://localhost:3000`. Without CORS, the client shows a network / CORS upload error even when server credentials are valid.
+Bucket **CORS** must allow `PUT` (and typically `GET` / `HEAD`) from your app origin, e.g. `http://localhost:3917`. Without CORS, the client shows a network / CORS upload error even when server credentials are valid.
 
 Examples:
 
@@ -141,14 +146,53 @@ Agents can edit and run a single canvas through scoped tokens.
 | Tool gateway | `/api/agent/tools` (+ `/api/agent/tools/[toolName]`) |
 | `@canvase/mcp` | stdio MCP server; forwards tool calls to the gateway |
 | Runs | Server-side DAG via `canvas_run` / status / cancel; editor polls active runs for node overlays |
+| Grouping | `canvas_group_nodes` / `canvas_ungroup`; node summaries expose `parentId` + group `childIds` |
+| Params | `canvas_generation_options` lists model-allowed values; `canvas_update_node` merges `data.params` |
+
+Agent chat turns are persisted server-side (`canvas_chat_message`, append-only, last 400 per canvas) so history survives reloads and devices. Messages carry a `sessionId`: **New conversation** starts a fresh model context, while earlier sessions stay visible in the same timeline behind a divider. The editor keeps a local cache for instant paint; the server transcript wins when available. `GET/DELETE /api/canvases/[id]/chat` reads or clears it.
 
 Edit tools use optimistic concurrency (`expectedVersion` from `canvas_get`). Details, tool list, and troubleshooting: [`packages/canvase-mcp/README.md`](packages/canvase-mcp/README.md).
+
+## Agent skills
+
+Skills are reusable instruction packs the agent loads on demand (progressive disclosure):
+only `name` + `description` go into the prompt, and the full text is fetched with a tool.
+
+```
+skills/
+  canvas-graph-workflow/
+    SKILL.md                    # YAML frontmatter + instructions
+    references/example.md       # optional resources, read on demand
+```
+
+`SKILL.md` frontmatter:
+
+```markdown
+---
+name: canvas-graph-workflow
+description: How to compose, edit and run Canvase canvas graphs safely.
+tags: canvas, graph
+---
+```
+
+| Piece | Role |
+| --- | --- |
+| Discovery | `skills_list` → `{ id, name, description, tags }` |
+| Loading | `skills_read({ name })` → full body + sibling `files`; `skills_read({ name, file })` for a resource |
+| Prompt | The catalog is appended to the canvas-agent system prompt; chat and MCP share the same tools |
+| Scope | Read-only; any actor with `canvas:read` may use them |
+| Location | `./skills` by default, override with `CANVASE_SKILLS_DIR` |
+
+Folder names must match `^[a-z0-9][a-z0-9._-]*$`. Reads are confined to the skill folder
+(no `..`, no absolute paths, text files only, 256 KB per file). Calls are audited in
+`canvas_command_log`. Drop in a folder with a `SKILL.md` — no restart needed (5s cache).
 
 ## Scripts
 
 | Command | Description |
 | --- | --- |
-| `pnpm dev` | Next.js development server |
+| `pnpm dev` / `pnpm dev:all` | Next.js (3917) **+** thumbnail worker, one command |
+| `pnpm dev:app` / `pnpm dev:worker` | Run just one side of the dev stack |
 | `pnpm build` / `pnpm start` | Production build and server |
 | `pnpm lint` | ESLint |
 | `pnpm db:migrate` | Create / apply Prisma migrations |
