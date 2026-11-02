@@ -17,9 +17,14 @@ const BOOTSTRAP_LIMIT = 200;
 
 function redisConnectionFromUrl(url: string) {
   const parsed = new URL(url);
+  // Honour the database suffix (`redis://host:6379/1`). BullMQ otherwise
+  // defaults to db 0 and silently shares queues with other local apps.
+  const rawDb = parsed.pathname.replace(/^\//, "").trim();
+  const parsedDb = rawDb ? Number(rawDb) : 0;
   return {
     host: parsed.hostname || "127.0.0.1",
     port: Number(parsed.port || "6379") || 6379,
+    db: Number.isInteger(parsedDb) && parsedDb >= 0 ? parsedDb : 0,
     username: parsed.username ? decodeURIComponent(parsed.username) : undefined,
     password: parsed.password
       ? decodeURIComponent(parsed.password)
