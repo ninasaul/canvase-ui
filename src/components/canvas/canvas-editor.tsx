@@ -1502,22 +1502,10 @@ function CanvasEditorInner({
         plan: pending.plan,
         signal: controller.signal,
         concurrency: 2,
-        // Mirror the live status into the overlay store as well: it survives
-        // graph swaps (agent writes) where node data alone would not.
-        update: (nodeId, patch) => {
-          updateNodeData(nodeId, patch);
-          if (patch.status) {
-            useCanvasRunStatusStore
-              .getState()
-              .setNode(
-                nodeId,
-                patch.status,
-                patch.error,
-                patch.requestId,
-                patch.taskId,
-              );
-          }
-        },
+        // The runner updates node data directly; the snapshot merge keeps those
+        // live fields alive across agent writes, so no separate mirror is needed
+        // (and mirroring only the plan-level "queued" made the overlay stick).
+        update: updateNodeData,
         runNode: (nodeId, signal) => executeNode(nodeId, signal),
       });
       if (controller.signal.aborted) {

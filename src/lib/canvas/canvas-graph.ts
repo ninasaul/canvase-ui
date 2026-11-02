@@ -111,6 +111,48 @@ export type CanvasGraph = {
 
 export const CANVAS_GRAPH_SCHEMA_VERSION = 1 as const;
 
+/**
+ * Session-only run markers. They live in the editor's memory (and the
+ * run-status store) but must never reach the persisted graph: whoever loads
+ * the canvas later has no way to finish them.
+ */
+export const TRANSIENT_NODE_DATA_KEYS = [
+  "requestId",
+  "taskId",
+  "runId",
+  "startedAt",
+] as const;
+
+const IN_FLIGHT_RUN_STATUSES = new Set(["running", "queued"]);
+
+/**
+ * Strip in-flight run markers before a node is saved or exported.
+ *
+ * An in-flight node is rewritten as `interrupted` so a reload shows an honest
+ * "this was running" state the user can retry, instead of a zombie `running`
+ * that nothing will ever complete. Terminal outcomes (succeeded / failed /
+ * cancelled), `error`, `finishedAt` and result fields are kept.
+ */
+export function normalizeNodeDataForPersistence(
+  data: CanvasNodeData,
+): CanvasNodeData {
+  const status = data.status;
+  const inFlight =
+    typeof status === "string" && IN_FLIGHT_RUN_STATUSES.has(status);
+  const hasTransient = TRANSIENT_NODE_DATA_KEYS.some((key) => key in data);
+  if (!inFlight && !hasTransient) {
+    return data;
+  }
+  const next: CanvasNodeData = { ...data };
+  for (const key of TRANSIENT_NODE_DATA_KEYS) {
+    delete next[key];
+  }
+  if (inFlight) {
+    next.status = "interrupted";
+  }
+  return next;
+}
+
 export const CANVAS_GRAPH_LIMITS = {
   maxNodes: 200,
   maxEdges: 400,
@@ -205,7 +247,7 @@ function readNode(value: unknown, index: number, errors: string[]): CanvasGraphN
     id,
     type: value.type,
     position: { x, y },
-    data: value.data as CanvasNodeData,
+    data: normalizeNodeDataForPersistence(value.data as CanvasNodeData),
     ...(isFiniteNumber(value.width) ? { width: value.width } : {}),
     ...(isFiniteNumber(value.height) ? { height: value.height } : {}),
     ...(typeof value.parentId === "string" && value.parentId.trim()
@@ -408,7 +450,7 @@ export function parseCanvasGraph(value: unknown): CanvasGraph {
       id: node.id,
       type: node.type,
       position: { x: node.position.x, y: node.position.y },
-      data: node.data,
+      data: normalizeNodeDataForPersistence(node.data),
       ...(node.width !== undefined ? { width: node.width } : {}),
       ...(node.height !== undefined ? { height: node.height } : {}),
       ...(node.parentId !== undefined ? { parentId: node.parentId } : {}),

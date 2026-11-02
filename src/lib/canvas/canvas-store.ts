@@ -19,6 +19,7 @@ import {
   type CanvasNodeType,
   type CanvasSettings,
 } from "@/lib/tu-shared-browser";
+import { normalizeNodeDataForPersistence } from "./canvas-graph";
 import { create } from "zustand";
 import { messages } from "@/messages";
 import { canvasNodeSizeFromData } from "./canvas-node-size";
@@ -198,7 +199,7 @@ function graphFromState(
       id: node.id,
       type: node.type,
       position: { x: node.position.x, y: node.position.y },
-      data: node.data,
+      data: normalizeNodeDataForPersistence(node.data),
       ...(node.width !== undefined
         ? { width: node.width }
         : styleDimension(node.style?.width) !== undefined

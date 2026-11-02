@@ -11,6 +11,7 @@ import {
 } from "@/lib/canvas/canvas-graph";
 import { defaultEdgeRole, edgeRoleOptions } from "@/lib/canvas/canvas-edge-roles";
 import { canvasNodeSizeFromData } from "@/lib/canvas/canvas-node-size";
+import { normalizeNodeDataForPersistence } from "@/lib/canvas/canvas-graph";
 
 export class CanvasToolMutationError extends Error {
   constructor(message: string) {
@@ -35,6 +36,11 @@ function isCanvasEdgeRole(value: unknown): value is CanvasEdgeRole {
     typeof value === "string" &&
     (canvasEdgeRoles as readonly string[]).includes(value)
   );
+}
+
+/** Tool responses mirror what actually gets stored (no in-flight markers). */
+function persistedNode(node: CanvasGraphNode): CanvasGraphNode {
+  return { ...node, data: normalizeNodeDataForPersistence(node.data) };
 }
 
 function assertValidGraph(graph: CanvasGraph): void {
@@ -353,7 +359,7 @@ export function addCanvasNode(
       ]),
     };
     assertValidGraph(next);
-    return { graph: next, node };
+    return { graph: next, node: persistedNode(node) };
   }
 
   const next: CanvasGraph = {
@@ -361,7 +367,7 @@ export function addCanvasNode(
     nodes: [...graph.nodes, node],
   };
   assertValidGraph(next);
-  return { graph: next, node };
+  return { graph: next, node: persistedNode(node) };
 }
 
 export function updateCanvasNode(
@@ -468,7 +474,7 @@ export function updateCanvasNode(
   });
   const next: CanvasGraph = { ...graph, nodes: withParentsFirst(nodes) };
   assertValidGraph(next);
-  return { graph: next, node };
+  return { graph: next, node: persistedNode(node) };
 }
 
 /** Wrap the given nodes in a new group sized to their bounding box. */
