@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { getNodeById } from "@/lib/canvas/canvas-node-index";
 import { useCanvasStore } from "@/lib/canvas/canvas-store";
 import { messages } from "@/messages";
 
@@ -51,10 +52,10 @@ export function CanvasNodeInfoModal({
   onClose: () => void;
 }) {
   const node = useCanvasStore((state) =>
-    state.nodes.find((item) => item.id === nodeId),
+    getNodeById(state.nodes, nodeId),
   );
   const parent = useCanvasStore((state) =>
-    state.nodes.find((item) => item.id === node?.parentId),
+    node?.parentId ? getNodeById(state.nodes, node.parentId) : undefined,
   );
 
   if (!node) {

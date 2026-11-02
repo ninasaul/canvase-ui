@@ -32,6 +32,7 @@ import {
   PLAYGROUND_VIDEO_ACCEPT,
   uploadPlaygroundAssetWithMeta,
 } from "@/lib/playground-media";
+import { getNodeById } from "@/lib/canvas/canvas-node-index";
 import { useCanvasStore } from "@/lib/canvas/canvas-store";
 import { messages } from "@/messages";
 
@@ -49,9 +50,7 @@ export function CanvasNodeHeaderActions({
   mediaType?: PlaygroundUploadKind;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const node = useCanvasStore((state) =>
-    state.nodes.find((item) => item.id === nodeId),
-  );
+  const node = useCanvasStore((state) => getNodeById(state.nodes, nodeId));
   const {
     canvasId,
     runNode,

@@ -165,6 +165,14 @@ Read and ordinary edit tools run automatically (they are undoable). Tools that c
 
 Long conversations are folded rather than truncated: before a turn whose transcript exceeds the window, the client sends the oldest slice to `POST /api/agent/summarize`, the model writes a dense briefing, and the result is stored in `canvas_chat_summary` (`coveredCount` records how many messages it stands for). Later turns send that briefing plus the recent tail instead of the whole history, and the summary survives reloads and devices. When a second compaction runs, the previous summary is folded into the new one so nothing is lost between slices.
 
+### Large canvases
+
+Three guards keep big graphs usable (verified on a 164-node / 203-edge canvas):
+
+- edge flow animation is capped at 80 edges — each animated edge repaints every frame
+- below 35% zoom node media and edge labels stop painting (`canvas-far`), since they are illegible at that scale
+- node components look up their node through a cached index instead of `nodes.find`, and viewport-derived state updates when a pan/zoom gesture ends rather than on every frame
+
 ### Run cards and history budget
 
 Agent-triggered `canvas_run` renders as a live card in the transcript (mode, `done/total`, failures, cancel) that polls `GET /api/canvases/[id]/runs/[runId]` every two seconds until the run settles. Chat history sent to the model is capped by characters (`MAX_API_HISTORY_CHARS`, 24k) rather than messages alone: tool notes are truncated to 420 characters and the oldest turns collapse into an `[earlier conversation omitted]` note, while the last six messages always stay verbatim.

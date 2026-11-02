@@ -384,3 +384,14 @@ body {
   z-index: 30;
 }
 
+/* Zoomed out: media and edge labels are illegible, so stop painting them.
+   This keeps large canvases (100+ nodes) smooth while panning. */
+.canvas-far .canvas-lod-hide {
+  display: none !important;
+}
+
+/* Panning moves this layer every frame; promote it so the browser composites
+   instead of repainting every node. */
+.react-flow__viewport {
+  will-change: transform;
+}

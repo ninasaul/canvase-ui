@@ -117,7 +117,7 @@ export function CanvasEdge({
           >
             <button
               type="button"
-              className={`rounded-full border px-1.5 py-0.5 text-[9px] font-medium shadow-sm transition-colors ${
+              className={`canvas-lod-hide rounded-full border px-1.5 py-0.5 text-[9px] font-medium shadow-sm transition-colors ${
                 selected
                   ? "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-950 dark:text-sky-200"
                   : "border-zinc-200 bg-white/95 text-zinc-500 hover:text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-400 dark:hover:text-zinc-100"

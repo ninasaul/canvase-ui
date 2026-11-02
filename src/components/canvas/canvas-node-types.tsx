@@ -16,6 +16,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { Icon } from "@/components/ui/icon";
+import { getNodeById } from "@/lib/canvas/canvas-node-index";
 import { useCanvasStore, type CanvasFlowNode } from "@/lib/canvas/canvas-store";
 import {
   useCanvasRunStatus,
@@ -134,9 +135,7 @@ function NodeShell({
   const uploadProgress = useCanvasStore(
     (state) => state.uploadProgressById[nodeId],
   );
-  const node = useCanvasStore((state) =>
-    state.nodes.find((item) => item.id === nodeId),
-  );
+  const node = useCanvasStore((state) => getNodeById(state.nodes, nodeId));
   const runStatus = useCanvasRunStatus(nodeId);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const [querying, setQuerying] = useState(false);
@@ -556,6 +555,7 @@ export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selecte
       >
         <div className="h-full overflow-hidden">
           {data.url ? (
+            <div className="canvas-lod-hide h-full">
             <MediaPreview
               type="image"
               url={data.thumbnailUrl || data.url}
@@ -564,6 +564,7 @@ export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selecte
                 setNodeSize(id, size.width, size.height);
               }}
             />
+            </div>
           ) : uploading ? null : (
             <EmptyMedia
               icon={<Icon icon={ImageSquare} size={18} weight="fill" />}
@@ -608,6 +609,7 @@ export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selecte
       >
         <div className="h-full overflow-hidden">
           {data.url ? (
+            <div className="canvas-lod-hide h-full">
             <MediaPreview
             type="video"
             url={data.url}
@@ -625,6 +627,7 @@ export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selecte
               updateNodeData(id, { aspectRatio: ratio });
             }}
           />
+            </div>
           ) : uploading ? null : (
             <EmptyMedia
               icon={<Icon icon={VideoCamera} size={18} weight="fill" />}
@@ -665,7 +668,9 @@ export const AudioCanvasNode = memo(function AudioCanvasNode({ id, data, selecte
         selected={Boolean(selected)}
       >
         {data.url ? (
-          <CanvasAudioPlayer key={data.url} src={data.url} />
+          <div className="canvas-lod-hide">
+            <CanvasAudioPlayer key={data.url} src={data.url} />
+          </div>
         ) : uploading ? null : (
           <EmptyMedia
             icon={<Icon icon={Waveform} size={18} weight="fill" />}

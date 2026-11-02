@@ -57,7 +57,6 @@ import {
   type OnNodeDrag,
   useReactFlow,
   useStore,
-  useViewport,
   ViewportPortal,
 } from "@xyflow/react";
 import {
@@ -271,6 +270,12 @@ function sameGraphObservation(
   }
   return true;
 }
+/** Below this zoom node media is illegible, so it is hidden to keep paint cheap. */
+const CANVAS_LOD_ZOOM = 0.35;
+
+/** Animated edges repaint every frame; past this many the canvas crawls. */
+const CANVAS_ANIMATED_EDGE_LIMIT = 80;
+
 const CANVAS_DEFAULT_FIT_VIEW_OPTIONS = {
   minZoom: CANVAS_MIN_ZOOM,
   maxZoom: CANVAS_DEFAULT_ZOOM,
@@ -542,30 +547,39 @@ function CanvasEditorInner({
    * Run planning needs every selected node, including group containers (their
    * children get expanded) and nodes nested inside a group.
    */
-  const agentViewport = useViewport();
+  // Viewport changes every frame while panning; keep only what we need as
+  // state, refreshed when the gesture ends (a re-render per frame is costly).
   const agentFlowWidth = useStore((state) => state.width);
   const agentFlowHeight = useStore((state) => state.height);
-  /** Nodes the user can actually see — cheap proxy for "these ones". */
-  const visibleNodeIds = useMemo(() => {
-    const zoom = agentViewport.zoom || 1;
-    const width = (agentFlowWidth || 1200) / zoom;
-    const height = (agentFlowHeight || 800) / zoom;
-    const left = -agentViewport.x / zoom;
-    const top = -agentViewport.y / zoom;
-    return nodes
-      .filter((node) => {
-        const nodeWidth = node.width ?? 240;
-        const nodeHeight = node.height ?? 240;
-        return (
-          node.position.x + nodeWidth >= left &&
-          node.position.x <= left + width &&
-          node.position.y + nodeHeight >= top &&
-          node.position.y <= top + height
-        );
-      })
-      .slice(0, 40)
-      .map((node) => node.id);
-  }, [agentFlowHeight, agentFlowWidth, agentViewport, nodes]);
+  const [viewportZoom, setViewportZoom] = useState(1);
+  const [visibleNodeIds, setVisibleNodeIds] = useState<string[]>([]);
+  const syncViewport = useCallback(
+    (viewport: { x: number; y: number; zoom: number }) => {
+      setViewportZoom(viewport.zoom || 1);
+      const zoom = viewport.zoom || 1;
+      const width = (agentFlowWidth || 1200) / zoom;
+      const height = (agentFlowHeight || 800) / zoom;
+      const left = -viewport.x / zoom;
+      const top = -viewport.y / zoom;
+      const store = useCanvasStore.getState();
+      setVisibleNodeIds(
+        store.nodes
+          .filter((node) => {
+            const nodeWidth = node.width ?? 240;
+            const nodeHeight = node.height ?? 240;
+            return (
+              node.position.x + nodeWidth >= left &&
+              node.position.x <= left + width &&
+              node.position.y + nodeHeight >= top &&
+              node.position.y <= top + height
+            );
+          })
+          .slice(0, 40)
+          .map((node) => node.id),
+      );
+    },
+    [agentFlowHeight, agentFlowWidth],
+  );
 
   const selectedRunNodeIds = useMemo(
     () => nodes.filter((node) => node.selected).map((node) => node.id),
@@ -600,12 +614,12 @@ function CanvasEditorInner({
       const height = node.height ?? 240;
       if (!visibleNodeIds.includes(nodeId)) {
         setCenter(x + width / 2, y + height / 2, {
-          zoom: agentViewport.zoom || 1,
+          zoom: viewportZoom || 1,
           duration: 450,
         });
       }
     },
-    [agentViewport.zoom, setCenter, visibleNodeIds],
+    [viewportZoom, setCenter, visibleNodeIds],
   );
 
   const selectionChips = useMemo(
@@ -2237,14 +2251,33 @@ function CanvasEditorInner({
     }),
     [edgeDash, edgeStroke, preferences.edgeWidth],
   );
+  const animateEdges = useMemo(
+    () =>
+      preferences.animateEdges && edges.length <= CANVAS_ANIMATED_EDGE_LIMIT,
+    [edges.length, preferences.animateEdges],
+  );
   const defaultEdgeOptions = useMemo(
     () => ({
       type: "canvas" as const,
-      animated: preferences.animateEdges,
+      animated: animateEdges,
       style: connectionLineStyle,
     }),
-    [connectionLineStyle, preferences.animateEdges],
+    [animateEdges, connectionLineStyle],
   );
+
+  // React Flow animates an edge when `edge.animated` is set, so the cap has to
+  // be applied at render time for edges that were created earlier.
+  const renderedEdges = useMemo(() => {
+    const needsNormalisation = edges.some(
+      (edge) => Boolean(edge.animated) !== animateEdges,
+    );
+    if (!needsNormalisation) {
+      return edges;
+    }
+    return edges.map((edge) =>
+      edge.animated === animateEdges ? edge : { ...edge, animated: animateEdges },
+    );
+  }, [animateEdges, edges]);
 
   const nodeDock =
     preferences.generationDockPlacement === "node" &&
@@ -3093,8 +3126,11 @@ function CanvasEditorInner({
 
             <CanvasPreferencesProvider value={preferences}>
               <ReactFlow
+                className={
+                  viewportZoom < CANVAS_LOD_ZOOM ? "canvas-far" : undefined
+                }
                 nodes={nodes}
-              edges={edges}
+              edges={renderedEdges}
               nodeTypes={canvasNodeTypes}
               edgeTypes={canvasEdgeTypes}
               onNodesChange={handleNodesChange}
@@ -3143,6 +3179,7 @@ function CanvasEditorInner({
                   }),
                 });
               }}
+              onMoveEnd={(_, viewport) => syncViewport(viewport)}
               fitView
               proOptions={{ hideAttribution: true }}
               onlyRenderVisibleElements
