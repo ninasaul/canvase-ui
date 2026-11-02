@@ -216,6 +216,7 @@ import {
   type CanvasSettingsTab,
 } from "@/components/canvas/editor/lib/constants";
 import { costToCents } from "@/components/canvas/editor/lib/cost";
+import { nodeTypeLabel } from "@/components/canvas/editor/lib/node-display";
 import { isCanvasConnectionValid } from "@/components/canvas/editor/lib/geometry";
 import {
   sameGraphObservation,
@@ -453,7 +454,7 @@ function CanvasEditorInner({
         .slice(0, 6)
         .map((node) => ({
           id: node.id,
-          label: node.data.label?.trim() || nodeTypeName(node.type),
+          label: node.data.label?.trim() || nodeTypeLabel(node.type),
         })),
     [nodes],
   );
@@ -1961,7 +1962,7 @@ function CanvasEditorInner({
       return [
         {
           id: nodeId,
-          label: node.data.label?.trim() || nodeTypeName(node.type),
+          label: node.data.label?.trim() || nodeTypeLabel(node.type),
           type: node.type ?? "text",
           meta: meta || messages.canvas.noModel,
           hasResult: Boolean(
@@ -2162,21 +2163,6 @@ function CanvasEditorInner({
       configNode.type === "text")
       ? configNode
       : null;
-  function nodeTypeName(type: string | undefined): string {
-    switch (type) {
-      case "image":
-        return messages.canvas.imageNode;
-      case "video":
-        return messages.canvas.videoNode;
-      case "audio":
-        return messages.canvas.audioNode;
-      case "group":
-        return messages.canvas.groupSelection;
-      default:
-        return messages.canvas.textNode;
-    }
-  }
-
   function nodeStatusName(status: string | undefined): string {
     switch (status) {
       case "queued":
@@ -4673,7 +4659,7 @@ function CanvasEditorInner({
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                 {infoRows.map(({ node, depth }) => {
-                  const typeName = nodeTypeName(node.type);
+                  const typeName = nodeTypeLabel(node.type);
                   const title = node.data.label?.trim() || typeName;
                   const group = node.parentId
                     ? infoNodes.get(node.parentId)
