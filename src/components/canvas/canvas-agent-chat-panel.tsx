@@ -10,6 +10,7 @@ import {
   Paperclip,
   PaperPlaneTilt,
   Plus,
+  ShieldWarning,
   Stop,
   Trash,
   WarningCircle,
@@ -32,6 +33,7 @@ import { Icon } from "@/components/ui/icon";
 import { toast } from "@/components/ui/toast";
 import { useMessages } from "@/hooks/use-feature-messages";
 import {
+  resolveAgentApproval,
   streamCanvasAgentChat,
   type CanvasAgentChatSseEvent,
   type CanvasChatHistoryMessage,
@@ -90,6 +92,15 @@ type UiMessage =
       status: "running" | "done" | "failed";
       summary?: string;
       expanded?: boolean;
+    }
+  | {
+      id: string;
+      kind: "approval";
+      tool: string;
+      summary: string;
+      details?: Record<string, unknown>;
+      status: "pending" | "allowed" | "denied";
+      scope?: "once" | "session";
     }
   | { id: string; kind: "error"; content: string };
 
@@ -240,6 +251,26 @@ function savePanelWidth(width: number): void {
   window.localStorage.setItem(WIDTH_STORAGE_KEY, String(clampPanelWidth(width)));
 }
 
+/** First node id a tool call is about, if it names one. */
+function readToolFocusNodeId(args: unknown): string | null {
+  if (!args || typeof args !== "object") {
+    return null;
+  }
+  const record = args as Record<string, unknown>;
+  if (typeof record.nodeId === "string" && record.nodeId.trim()) {
+    return record.nodeId.trim();
+  }
+  if (Array.isArray(record.nodeIds)) {
+    const first = record.nodeIds.find(
+      (id): id is string => typeof id === "string" && id.trim().length > 0,
+    );
+    if (first) {
+      return first.trim();
+    }
+  }
+  return null;
+}
+
 function newId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID()}`;
 }
@@ -249,7 +280,7 @@ type MessageGroup =
   | {
       key: string;
       type: "assistant-turn";
-      items: Array<Extract<UiMessage, { kind: "assistant" | "tool" }>>;
+      items: Array<Extract<UiMessage, { kind: "assistant" | "tool" | "approval" }>>;
     }
   | { key: string; type: "error"; item: Extract<UiMessage, { kind: "error" }> }
   | { key: string; type: "divider"; sessionId: string; at?: string };
@@ -391,6 +422,10 @@ function buildApiHistory(
       history.push({ role: "assistant", content });
       continue;
     }
+    if (item.kind === "approval") {
+      // UI-only: the decision is already reflected in the tool result.
+      continue;
+    }
     if (item.kind === "tool" && item.status !== "running") {
       const summary = (item.summary ?? "").trim();
       const toolName =
@@ -411,6 +446,72 @@ function buildApiHistory(
   return history.slice(-MAX_API_HISTORY_MESSAGES);
 }
 
+function ApprovalCard({
+  item,
+  onDecide,
+}: {
+  item: Extract<UiMessage, { kind: "approval" }>;
+  onDecide: (decision: "allow_once" | "allow_session" | "deny") => void;
+}) {
+  const messages = useMessages();
+  const pending = item.status === "pending";
+  return (
+    <div className="rounded-xl border border-amber-300/70 bg-amber-50/80 p-2.5 dark:border-amber-500/30 dark:bg-amber-950/25">
+      <div className="flex items-start gap-2">
+        <Icon
+          icon={ShieldWarning}
+          size={14}
+          className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-medium text-amber-900 dark:text-amber-200">
+            {messages.canvas.agentChatApprovalTitle}
+          </p>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-amber-800/90 dark:text-amber-200/80">
+            {item.summary}
+          </p>
+          {pending ? (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <Button
+                type="button"
+                size="sm"
+                variant="primary"
+                onClick={() => onDecide("allow_once")}
+              >
+                {messages.canvas.agentChatApprovalOnce}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => onDecide("allow_session")}
+              >
+                {messages.canvas.agentChatApprovalSession}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => onDecide("deny")}
+              >
+                {messages.canvas.agentChatApprovalDeny}
+              </Button>
+            </div>
+          ) : (
+            <p className="mt-1 text-[10px] text-amber-700/80 dark:text-amber-300/70">
+              {item.status === "denied"
+                ? messages.canvas.agentChatApprovalDenied
+                : item.scope === "session"
+                  ? messages.canvas.agentChatApprovalAllowedSession
+                  : messages.canvas.agentChatApprovalAllowedOnce}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function CanvasAgentChatPanel({
   canvasId,
   chatModels,
@@ -419,6 +520,10 @@ export function CanvasAgentChatPanel({
   onOpenChange,
   onOpenModelSettings,
   onGraphMutated,
+  context,
+  selectionChips,
+  onRemoveSelection,
+  onAgentFocusNode,
 }: {
   canvasId: string;
   chatModels: PortalPublicModel[];
@@ -427,6 +532,18 @@ export function CanvasAgentChatPanel({
   onOpenChange: (open: boolean) => void;
   onOpenModelSettings: () => void;
   onGraphMutated: () => void;
+  /** Selection / focus / viewport snapshot passed to every turn. */
+  context?: {
+    version?: number;
+    selection?: string[];
+    focusNodeId?: string;
+    visibleNodeIds?: string[];
+  };
+  /** What the user has selected, shown as chips above the composer. */
+  selectionChips?: Array<{ id: string; label: string }>;
+  onRemoveSelection?: (nodeId: string) => void;
+  /** Reveal + flash a node the agent is touching. */
+  onAgentFocusNode?: (nodeId: string) => void;
 }) {
   const messages = useMessages();
   const [items, setItems] = useState<UiMessage[]>(() => loadMessages(canvasId));
@@ -818,6 +935,10 @@ export function CanvasAgentChatPanel({
         sawOutput = true;
         flushReveal();
         revealRef.current.messageId = null;
+        const focusId = readToolFocusNodeId(event.args);
+        if (focusId) {
+          onAgentFocusNode?.(focusId);
+        }
         setItems((current) => [
           ...current,
           {
@@ -828,6 +949,39 @@ export function CanvasAgentChatPanel({
             expanded: false,
           },
         ]);
+        return;
+      }
+      if (event.type === "approval_request") {
+        sawOutput = true;
+        flushReveal();
+        revealRef.current.messageId = null;
+        setItems((current) => [
+          ...current,
+          {
+            id: event.id,
+            kind: "approval" as const,
+            tool: event.tool,
+            summary: event.summary,
+            details: event.details,
+            status: "pending" as const,
+          },
+        ]);
+        return;
+      }
+      if (event.type === "approval_resolved") {
+        setItems((current) =>
+          current.map((item) =>
+            item.kind === "approval" && item.id === event.id
+              ? {
+                  ...item,
+                  status:
+                    event.decision === "deny"
+                      ? ("denied" as const)
+                      : ("allowed" as const),
+                }
+              : item,
+          ),
+        );
         return;
       }
       if (event.type === "tool_result") {
@@ -890,6 +1044,7 @@ export function CanvasAgentChatPanel({
         vendor: selectedModel?.vendor,
         messageId: userMessage.id,
         sessionId: activeSessionId(),
+        ...(context ? { context } : {}),
         signal: controller.signal,
         onEvent: applyEvent,
       });
@@ -923,6 +1078,36 @@ export function CanvasAgentChatPanel({
         abortRef.current = null;
       }
       setBusy(false);
+    }
+  }
+
+  /** Answer a blocked approval; the turn resumes as soon as this lands. */
+  async function handleApproval(
+    id: string,
+    decision: "allow_once" | "allow_session" | "deny",
+  ) {
+    setItems((current) =>
+      current.map((item) =>
+        item.kind === "approval" && item.id === id
+          ? {
+              ...item,
+              status: decision === "deny" ? ("denied" as const) : ("allowed" as const),
+              scope:
+                decision === "allow_session"
+                  ? ("session" as const)
+                  : ("once" as const),
+            }
+          : item,
+      ),
+    );
+    try {
+      await resolveAgentApproval(id, decision);
+    } catch (caught) {
+      toast.error(
+        caught instanceof Error
+          ? caught.message
+          : messages.canvas.agentChatApprovalFailed,
+      );
     }
   }
 
@@ -1215,6 +1400,18 @@ export function CanvasAgentChatPanel({
                     );
                   }
 
+                  if (item.kind === "approval") {
+                    return (
+                      <ApprovalCard
+                        key={item.id}
+                        item={item}
+                        onDecide={(decision) => {
+                          void handleApproval(item.id, decision);
+                        }}
+                      />
+                    );
+                  }
+
                   const statusLabel =
                     item.status === "running"
                       ? messages.canvas.agentChatToolRunning
@@ -1328,6 +1525,34 @@ export function CanvasAgentChatPanel({
             >
               {messages.canvas.agentChatOpenSettings}
             </Button>
+          </div>
+        ) : null}
+
+        {(selectionChips?.length ?? 0) > 0 ? (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {selectionChips?.map((chip) => (
+              <span
+                key={chip.id}
+                className="inline-flex max-w-full items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] text-sky-700 ring-1 ring-sky-200/70 dark:bg-sky-950/40 dark:text-sky-300 dark:ring-sky-800/70"
+                title={`${chip.label} (${chip.id})`}
+              >
+                <span className="truncate">{chip.label}</span>
+                {onRemoveSelection ? (
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-full px-0.5 text-sky-600/70 transition-colors hover:text-sky-800 disabled:opacity-50 dark:text-sky-300/70 dark:hover:text-sky-100"
+                    aria-label={messages.canvas.agentChatDeselect.replace(
+                      "{name}",
+                      chip.label,
+                    )}
+                    disabled={busy}
+                    onClick={() => onRemoveSelection(chip.id)}
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </span>
+            ))}
           </div>
         ) : null}
 

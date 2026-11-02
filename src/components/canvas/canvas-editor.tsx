@@ -57,6 +57,9 @@ import {
   type OnConnect,
   type OnNodeDrag,
   useReactFlow,
+  useStore,
+  useViewport,
+  ViewportPortal,
 } from "@xyflow/react";
 import {
   useCallback,
@@ -407,7 +410,8 @@ function CanvasEditorInner({
   const { push } = useLocaleRouter();
   const { resolvedTheme } = useTheme();
   const currencySymbol = useCurrencySymbol();
-  const { screenToFlowPosition, fitView, zoomTo, zoomIn, zoomOut } = useReactFlow();
+  const { screenToFlowPosition, fitView, zoomTo, zoomIn, zoomOut, setCenter } =
+    useReactFlow();
   const canvasSurfaceRef = useRef<HTMLDivElement>(null);
   const [configNodeId, setConfigNodeId] = useState<string | null>(null);
 
@@ -539,10 +543,102 @@ function CanvasEditorInner({
    * Run planning needs every selected node, including group containers (their
    * children get expanded) and nodes nested inside a group.
    */
+  const agentViewport = useViewport();
+  const agentFlowWidth = useStore((state) => state.width);
+  const agentFlowHeight = useStore((state) => state.height);
+  /** Nodes the user can actually see — cheap proxy for "these ones". */
+  const visibleNodeIds = useMemo(() => {
+    const zoom = agentViewport.zoom || 1;
+    const width = (agentFlowWidth || 1200) / zoom;
+    const height = (agentFlowHeight || 800) / zoom;
+    const left = -agentViewport.x / zoom;
+    const top = -agentViewport.y / zoom;
+    return nodes
+      .filter((node) => {
+        const nodeWidth = node.width ?? 240;
+        const nodeHeight = node.height ?? 240;
+        return (
+          node.position.x + nodeWidth >= left &&
+          node.position.x <= left + width &&
+          node.position.y + nodeHeight >= top &&
+          node.position.y <= top + height
+        );
+      })
+      .slice(0, 40)
+      .map((node) => node.id);
+  }, [agentFlowHeight, agentFlowWidth, agentViewport, nodes]);
+
   const selectedRunNodeIds = useMemo(
     () => nodes.filter((node) => node.selected).map((node) => node.id),
     [nodes],
   );
+  const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(
+    null,
+  );
+  const highlightTimerRef = useRef<number | null>(null);
+  /** Flash the node the agent is touching, and pan to it when off-screen. */
+  const highlightAgentNode = useCallback(
+    (nodeId: string) => {
+      const store = useCanvasStore.getState();
+      const node = store.nodes.find((item) => item.id === nodeId);
+      if (!node) {
+        return;
+      }
+      setHighlightedNodeId(nodeId);
+      if (highlightTimerRef.current !== null) {
+        window.clearTimeout(highlightTimerRef.current);
+      }
+      highlightTimerRef.current = window.setTimeout(() => {
+        setHighlightedNodeId(null);
+        highlightTimerRef.current = null;
+      }, 2600);
+      const parent = node.parentId
+        ? store.nodes.find((item) => item.id === node.parentId)
+        : undefined;
+      const x = node.position.x + (parent?.position.x ?? 0);
+      const y = node.position.y + (parent?.position.y ?? 0);
+      const width = node.width ?? 240;
+      const height = node.height ?? 240;
+      if (!visibleNodeIds.includes(nodeId)) {
+        setCenter(x + width / 2, y + height / 2, {
+          zoom: agentViewport.zoom || 1,
+          duration: 450,
+        });
+      }
+    },
+    [agentViewport.zoom, setCenter, visibleNodeIds],
+  );
+
+  const selectionChips = useMemo(
+    () =>
+      nodes
+        .filter((node) => node.selected)
+        .slice(0, 6)
+        .map((node) => ({
+          id: node.id,
+          label: node.data.label?.trim() || nodeTypeName(node.type),
+        })),
+    [nodes],
+  );
+  const removeSelection = useCallback((nodeId: string) => {
+    useCanvasStore.setState((state) => ({
+      nodes: state.nodes.map((node) =>
+        node.id === nodeId && node.selected
+          ? { ...node, selected: false }
+          : node,
+      ),
+    }));
+  }, []);
+
+  // Fresh on every render: `versionRef` changes without a state update.
+  const agentChatContext = {
+    version: versionRef.current,
+    ...(selectedRunNodeIds.length > 0
+      ? { selection: selectedRunNodeIds }
+      : {}),
+    ...(configNodeId ? { focusNodeId: configNodeId } : {}),
+    ...(visibleNodeIds.length > 0 ? { visibleNodeIds } : {}),
+  };
   const librarySelectedUrls = useMemo(
     () =>
       Array.from(
@@ -3049,6 +3145,40 @@ function CanvasEditorInner({
               defaultEdgeOptions={defaultEdgeOptions}
             >
               <CanvasHelperLinesOverlay lines={helperLines} />
+              {highlightedNodeId
+                ? (() => {
+                    const node = nodes.find(
+                      (item) => item.id === highlightedNodeId,
+                    );
+                    if (!node) {
+                      return null;
+                    }
+                    const parent = node.parentId
+                      ? nodes.find((item) => item.id === node.parentId)
+                      : undefined;
+                    const width = node.width ?? 240;
+                    const height = node.height ?? 240;
+                    return (
+                      <ViewportPortal>
+                        <div
+                          className="pointer-events-none rounded-xl ring-2 ring-amber-400 transition-opacity"
+                          style={{
+                            position: "absolute",
+                            transform: `translate(${
+                              node.position.x + (parent?.position.x ?? 0)
+                            }px, ${
+                              node.position.y + (parent?.position.y ?? 0)
+                            }px)`,
+                            width,
+                            height,
+                            zIndex: 999,
+                            boxShadow: "0 0 0 6px rgba(251, 191, 36, 0.18)",
+                          }}
+                        />
+                      </ViewportPortal>
+                    );
+                  })()
+                : null}
               {preferences.background !== "none" ? (
                 <Background
                   variant={
@@ -3557,6 +3687,10 @@ function CanvasEditorInner({
 
       <CanvasAgentChatPanel
         canvasId={canvasDocument.id}
+        context={agentChatContext}
+        selectionChips={selectionChips}
+        onRemoveSelection={removeSelection}
+        onAgentFocusNode={highlightAgentNode}
         chatModels={chatModels}
         defaultModelId={settings.text?.model}
         open={agentChatOpen}
