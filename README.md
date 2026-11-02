@@ -155,6 +155,10 @@ Agent chat turns are persisted server-side (`canvas_chat_message`, append-only, 
 
 Read and ordinary edit tools run automatically (they are undoable). Tools that cost money or delete in bulk do not: `canvas_run` and `canvas_delete_nodes` with more than five ids block the turn and emit an `approval_request` over the chat stream. The browser answers through `POST /api/agent/approvals/[id]` with `allow_once`, `allow_session` (30 minute grant for that conversation) or `deny`; a denial is fed back to the model as a tool result so it can propose a smaller step. Pending approvals are process-local — run a single app instance, or move the registry to Redis before scaling out.
 
+### Steering
+
+While a turn is streaming the composer stays editable: the send button becomes **Steer** and the message is queued instead of starting a new turn. The instruction is folded into the conversation as `[mid-turn instruction from the user] …` right before the agent's next step (and once more before the turn ends, so guidance that arrives during the final stream still gets answered). The endpoint is `POST /api/agent/steer`; a `409` means nothing was streaming, and the client falls back to a normal message. Queued instructions are persisted to the transcript, so history stays honest.
+
 ### Canvas context
 
 Every chat turn carries `context { version, selection, focusNodeId, visibleNodeIds }` from the editor. The server rebuilds a short canvas digest from the database (title, version, node/group counts, failures, groups, the user's selection, focus node, viewport ids, version drift) and injects it into the system prompt, so the agent no longer has to call `canvas_get` just to learn node ids. The composer shows the current selection as removable chips, and a tool call that targets a node flashes it on the canvas and pans it into view.

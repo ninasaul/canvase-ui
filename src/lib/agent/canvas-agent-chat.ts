@@ -19,6 +19,11 @@ import {
   buildCanvasAgentContextLines,
   type CanvasAgentContextInput,
 } from "@/lib/agent/canvas-agent-context";
+import {
+  beginAgentTurn,
+  drainSteers,
+  endAgentTurn,
+} from "@/lib/agent/canvas-steering";
 import { loadSkillCatalog, type CanvasSkill } from "@/lib/agent/skills";
 import { parseCanvasGraph } from "@/lib/canvas/canvas-graph";
 import { prisma } from "@/lib/prisma";
@@ -83,6 +88,8 @@ export type CanvasAgentChatSseEvent =
       details?: Record<string, unknown>;
     }
   | { type: "approval_resolved"; id: string; decision: string }
+  /** A mid-turn instruction was folded into the conversation. */
+  | { type: "steer_applied"; id: string; text: string }
   /** Soft pause after step budget; UI may offer Continue. Never an Agent error. */
   | { type: "step_budget" }
   | { type: "error"; message: string }
@@ -478,8 +485,31 @@ export async function runCanvasAgentChat(input: {
     return;
   }
 
+  // Steering: a turn stays steerable until it ends, so the user can add
+  // guidance while the agent is mid-flight (applied at the next step).
+  const turnKey = beginAgentTurn({
+    canvasId: input.canvasId,
+    sessionId: input.sessionId,
+  });
+  const applySteers = () => {
+    const steers = drainSteers(turnKey);
+    for (const steer of steers) {
+      thread.push({
+        role: "user",
+        content: `[mid-turn instruction from the user] ${steer.content}`,
+      });
+      input.emit({
+        type: "steer_applied",
+        id: steer.id,
+        text: steer.content,
+      });
+    }
+    return steers.length;
+  };
+
   // Primary exits (harness-like): model stops tools, or caller aborts.
   // Soft step budget only pauses the turn for Continue — never errors the session.
+  try {
   for (
     let step = 0;
     step < CANVAS_AGENT_CHAT_SOFT_STEP_BUDGET;
@@ -489,6 +519,9 @@ export async function runCanvasAgentChat(input: {
       input.emit({ type: "done" });
       return;
     }
+
+    // Guidance sent while the previous step was streaming applies here.
+    applySteers();
 
     let text = "";
     let toolCalls: V1ChatToolCall[] = [];
@@ -531,7 +564,12 @@ export async function runCanvasAgentChat(input: {
     if (toolCalls.length === 0) {
       if (text) {
         thread.push({ role: "assistant", content: text });
-      } else if (step === 0) {
+      }
+      // A message that arrived during this stream still deserves an answer.
+      if (applySteers() > 0) {
+        continue;
+      }
+      if (!text && step === 0) {
         // Upstream returned nothing usable — surface it so the UI is not blank.
         input.emit({
           type: "text_delta",
@@ -657,6 +695,9 @@ export async function runCanvasAgentChat(input: {
         });
       }
     }
+  }
+  } finally {
+    endAgentTurn(turnKey);
   }
 
   if (input.signal?.aborted) {

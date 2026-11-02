@@ -353,6 +353,7 @@ export type CanvasAgentChatSseEvent =
       details?: Record<string, unknown>;
     }
   | { type: "approval_resolved"; id: string; decision: string }
+  | { type: "steer_applied"; id: string; text: string }
   | { type: "step_budget" }
   | { type: "error"; message: string }
   | { type: "done" };
@@ -401,6 +402,43 @@ export async function resolveAgentApproval(
     const text = await response.text().catch(() => "");
     throw new Error(text.trim() || `HTTP ${response.status}`);
   }
+}
+
+/**
+ * Adds a mid-turn instruction. Returns "no-turn" (409) when nothing is
+ * streaming, so the caller can send a normal message instead.
+ */
+export async function steerCanvasAgentChat(input: {
+  canvasId: string;
+  sessionId?: string;
+  messageId?: string;
+  content: string;
+}): Promise<"queued" | "no-turn"> {
+  const response = await fetch("/api/agent/steer", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      canvasId: input.canvasId,
+      content: input.content,
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      ...(input.messageId ? { messageId: input.messageId } : {}),
+    }),
+  });
+  if (response.status === 409) {
+    return "no-turn";
+  }
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      message?: string;
+      error?: string;
+    } | null;
+    throw new ApiRequestError(
+      payload?.message || payload?.error || messages.requestFailed,
+      response.status,
+    );
+  }
+  return "queued";
 }
 
 export async function streamCanvasAgentChat(input: {

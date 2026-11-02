@@ -34,6 +34,7 @@ import { toast } from "@/components/ui/toast";
 import { useMessages } from "@/hooks/use-feature-messages";
 import {
   resolveAgentApproval,
+  steerCanvasAgentChat,
   streamCanvasAgentChat,
   type CanvasAgentChatSseEvent,
   type CanvasChatHistoryMessage,
@@ -72,6 +73,11 @@ type UiMessage =
       content: string;
       sessionId?: string;
       createdAt?: string;
+      /** Sent while the agent was mid-turn (queued for the next step). */
+      steering?: boolean;
+      /** The agent has folded this instruction into the conversation. */
+      delivered?: boolean;
+      failed?: boolean;
       attachments?: Array<{
         url: string;
         name?: string;
@@ -984,6 +990,16 @@ export function CanvasAgentChatPanel({
         );
         return;
       }
+      if (event.type === "steer_applied") {
+        setItems((current) =>
+          current.map((item) =>
+            item.kind === "user" && item.id === event.id
+              ? { ...item, delivered: true, failed: false }
+              : item,
+          ),
+        );
+        return;
+      }
       if (event.type === "tool_result") {
         setItems((current) =>
           current.map((item) =>
@@ -1111,10 +1127,63 @@ export function CanvasAgentChatPanel({
     }
   }
 
+  async function handleSteer(content: string) {
+    if (!content.trim()) {
+      return;
+    }
+    const id = newId("user");
+    const sessionId = activeSessionId();
+    const steeringMessage: UiMessage = {
+      id,
+      kind: "user",
+      content,
+      sessionId,
+      steering: true,
+    };
+    setItems((current) => [...current, steeringMessage]);
+    setDraft("");
+    try {
+      const result = await steerCanvasAgentChat({
+        canvasId,
+        sessionId,
+        messageId: id,
+        content,
+      });
+      if (result === "no-turn") {
+        // The turn already finished; send it as a normal message instead.
+        setItems((current) => current.filter((item) => item.id !== id));
+        const plain: UiMessage = { id, kind: "user", content, sessionId };
+        await runAgentTurn(plain, items);
+      }
+    } catch (caught) {
+      setItems((current) =>
+        current.map((item) =>
+          item.id === id && item.kind === "user"
+            ? { ...item, failed: true }
+            : item,
+        ),
+      );
+      toast.error(
+        caught instanceof Error
+          ? caught.message
+          : messages.canvas.agentChatSteerFailed,
+      );
+    }
+  }
+
   async function handleSend() {
     const content = draft.trim();
     const attachments = pendingAttachments;
-    if ((!content && attachments.length === 0) || busy || uploading) {
+    if ((!content && attachments.length === 0) || uploading) {
+      return;
+    }
+    if (busy) {
+      // The agent is working: add guidance at its next step instead of
+      // forcing the user to stop and start over.
+      if (attachments.length > 0) {
+        return;
+      }
+      await handleSteer(content);
       return;
     }
 
@@ -1159,7 +1228,6 @@ export function CanvasAgentChatPanel({
 
   const canSend =
     Boolean(modelId) &&
-    !busy &&
     !uploading &&
     (draft.trim().length > 0 || pendingAttachments.length > 0);
 
@@ -1348,6 +1416,23 @@ export function CanvasAgentChatPanel({
                     <div className="rounded-2xl rounded-br-md bg-zinc-900 px-3.5 py-2.5 text-[13px] leading-relaxed text-white dark:bg-zinc-100 dark:text-zinc-900">
                       {item.content}
                     </div>
+                  ) : null}
+                  {item.steering ? (
+                    <p
+                      className={`text-right text-[10px] ${
+                        item.failed
+                          ? "text-red-500 dark:text-red-400"
+                          : item.delivered
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-zinc-400"
+                      }`}
+                    >
+                      {item.failed
+                        ? messages.canvas.agentChatSteerFailed
+                        : item.delivered
+                          ? messages.canvas.agentChatSteerDelivered
+                          : messages.canvas.agentChatSteerQueued}
+                    </p>
                   ) : null}
                 </div>
               </div>
@@ -1587,7 +1672,6 @@ export function CanvasAgentChatPanel({
           <textarea
             value={draft}
             rows={2}
-            disabled={busy}
             placeholder={messages.canvas.agentChatPlaceholder}
             className="w-full resize-none bg-transparent px-1.5 py-1 text-[13px] leading-relaxed text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-100"
             onChange={(event) => setDraft(event.target.value)}
@@ -1614,6 +1698,11 @@ export function CanvasAgentChatPanel({
               }
             }}
           />
+          {busy ? (
+            <p className="mt-1 px-1.5 text-[10px] text-zinc-400">
+              {messages.canvas.agentChatSteerHint}
+            </p>
+          ) : null}
           <div className="mt-1 flex items-center gap-1.5">
             <input
               ref={fileInputRef}
@@ -1657,17 +1746,31 @@ export function CanvasAgentChatPanel({
               />
             ) : null}
             {busy ? (
-              <Button
-                type="button"
-                size="icon-circle-sm"
-                variant="danger"
-                className="ml-auto shrink-0"
-                aria-label={messages.canvas.agentChatStop}
-                title={messages.canvas.agentChatStop}
-                onClick={handleStop}
-              >
-                <Icon icon={Stop} size={15} weight="fill" />
-              </Button>
+              <>
+                <Button
+                  type="button"
+                  size="icon-circle-sm"
+                  variant="primary"
+                  className="ml-auto shrink-0"
+                  aria-label={messages.canvas.agentChatSteerAction}
+                  title={messages.canvas.agentChatSteerAction}
+                  disabled={!canSend}
+                  onClick={() => void handleSend()}
+                >
+                  <Icon icon={PaperPlaneTilt} size={15} weight="fill" />
+                </Button>
+                <Button
+                  type="button"
+                  size="icon-circle-sm"
+                  variant="danger"
+                  className="shrink-0"
+                  aria-label={messages.canvas.agentChatStop}
+                  title={messages.canvas.agentChatStop}
+                  onClick={handleStop}
+                >
+                  <Icon icon={Stop} size={15} weight="fill" />
+                </Button>
+              </>
             ) : (
               <Button
                 type="button"
