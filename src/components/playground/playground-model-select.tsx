@@ -47,6 +47,7 @@ type PlaygroundModelSelectProps = {
   disabled?: boolean;
   menuZIndex?: number;
   className?: string;
+  triggerClassName?: string;
   onChange: (modelId: string) => void;
 };
 
@@ -57,6 +58,7 @@ export function PlaygroundModelSelect({
   disabled,
   menuZIndex = 50,
   className,
+  triggerClassName,
   onChange,
 }: PlaygroundModelSelectProps) {
   const symbol = useCurrencySymbol();
@@ -103,7 +105,7 @@ export function PlaygroundModelSelect({
       emptySearchLabel={messages.playground.modelSearchEmpty}
       className={className}
       ariaLabel={messages.playground.model}
-      triggerClassName={PLAYGROUND_TOOLBAR_SELECT_TRIGGER}
+      triggerClassName={triggerClassName ?? PLAYGROUND_TOOLBAR_SELECT_TRIGGER}
       leading={selected ? modelLogoLeading(selected) : undefined}
       onChange={onChange}
     />

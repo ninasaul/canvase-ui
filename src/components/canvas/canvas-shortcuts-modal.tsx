@@ -49,6 +49,10 @@ export function CanvasShortcutsModal({
         { label: messages.canvas.lockViewport, keys: ["L"] },
         { label: messages.canvas.zoomIn, keys: ["+"] },
         { label: messages.canvas.zoomOut, keys: ["-"] },
+        {
+          label: messages.canvas.shortcutToggleAgent,
+          keys: [mod, "\\"],
+        },
       ],
     },
     {
@@ -102,6 +106,10 @@ export function CanvasShortcutsModal({
         {
           label: messages.canvas.shortcutSaveNow,
           keys: [mod, "S"],
+        },
+        {
+          label: messages.canvas.refreshCanvas,
+          keys: [shift, "R"],
         },
         {
           label: messages.canvas.shortcutClose,

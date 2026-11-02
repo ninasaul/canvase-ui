@@ -522,7 +522,7 @@ export async function readByokConfig(): Promise<GenerationProviderConfig> {
     return readCachedConfig();
   }
 
-  let view = await parseConfigResponse(response);
+  const view = await parseConfigResponse(response);
 
   // One-time migrate legacy plaintext localStorage keys into encrypted DB.
   if (!view.configured) {

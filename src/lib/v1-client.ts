@@ -60,7 +60,7 @@ function resolveAppOrigin(): string {
   if (fromEnv) {
     return fromEnv.replace(/\/$/, "");
   }
-  return "http://127.0.0.1:3000";
+  return "http://127.0.0.1:3917";
 }
 
 function buildUrl(path: string): string {
@@ -72,6 +72,23 @@ function buildUrl(path: string): string {
     return `${resolveAppOrigin()}${normalized}`;
   }
   return normalized;
+}
+
+/**
+ * Server-side callers already resolved the upstream base URL + key
+ * (`resolveUserGenerationConnection`). Call the gateway directly instead of
+ * looping through this app's own `/v1` proxy: no self-HTTP hop and no
+ * dependency on NEXT_PUBLIC_APP_URL. Browser callers keep the proxy path.
+ */
+function resolveGenerationUrl(
+  path: string,
+  generation?: V1GenerationConnection,
+): string {
+  const base = (generation?.baseUrl ?? "").trim().replace(/\/$/, "");
+  if (typeof window === "undefined" && base) {
+    return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+  }
+  return buildUrl(path);
 }
 
 function applyGenerationHeaders(
@@ -301,10 +318,17 @@ export async function v1Request<T>(
     vendorId: vendorIdOverride,
   });
 
-  const response = await fetch(buildUrl(path), {
-    ...requestInit,
-    headers,
-  });
+  const response = await fetch(
+    resolveGenerationUrl(path, {
+      baseUrl: baseUrlOverride,
+      apiKey: resolvedApiKey,
+      vendorId: vendorIdOverride,
+    }),
+    {
+      ...requestInit,
+      headers,
+    },
+  );
 
   const text = await response.text();
   let payload: unknown = null;
@@ -486,7 +510,9 @@ export async function generateImage(
     requestBody = JSON.stringify(body);
   }
 
-  const response = await fetch(buildUrl("/v1/images/generations"), {
+  const response = await fetch(
+    resolveGenerationUrl("/v1/images/generations", options.generation),
+    {
     method: "POST",
     headers,
     body: requestBody,
@@ -608,9 +634,11 @@ export async function generateVideo(
 
     const multipartHeaders = new Headers();
     applyRequestAuth(multipartHeaders, apiKey, options.generation);
-    response = await fetch(buildUrl("/v1/videos"), {
-      method: "POST",
-      headers: multipartHeaders,
+    response = await fetch(
+      resolveGenerationUrl("/v1/videos", options.generation),
+      {
+        method: "POST",
+        headers: multipartHeaders,
       body: form,
       signal: options.signal,
     });
@@ -619,9 +647,11 @@ export async function generateVideo(
       "Content-Type": "application/json",
     });
     applyRequestAuth(jsonHeaders, apiKey, options.generation);
-    response = await fetch(buildUrl("/v1/videos"), {
-      method: "POST",
-      headers: jsonHeaders,
+    response = await fetch(
+      resolveGenerationUrl("/v1/videos", options.generation),
+      {
+        method: "POST",
+        headers: jsonHeaders,
       body: JSON.stringify(body),
       signal: options.signal,
     });
@@ -677,7 +707,9 @@ export async function streamChatCompletion(
     "Content-Type": "application/json",
   });
   applyRequestAuth(chatHeaders, apiKey, options.generation);
-  const response = await fetch(buildUrl("/v1/chat/completions"), {
+  const response = await fetch(
+    resolveGenerationUrl("/v1/chat/completions", options.generation),
+    {
     method: "POST",
     headers: chatHeaders,
     body: JSON.stringify({ ...body, stream: true }),
@@ -716,12 +748,23 @@ export async function streamChatCompletion(
   options.onChunk(await response.text());
 }
 
+export type V1ChatToolCall = {
+  id?: string;
+  type?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+};
+
 export type V1ChatResponse = {
   id?: string;
   choices?: Array<{
     message?: {
-      content?: string | Array<{ type?: string; text?: string }>;
+      content?: string | Array<{ type?: string; text?: string }> | null;
+      tool_calls?: V1ChatToolCall[];
     };
+    finish_reason?: string | null;
   }>;
 };
 

@@ -3,6 +3,7 @@
 import type { CanvasGraph } from "@/lib/tu-shared-browser";
 import { ApiRequestError, portalRequest } from "@/lib/api";
 import { uploadPlaygroundAssetWithMeta } from "@/lib/playground-media";
+import { messages } from "@/messages";
 
 export type CanvasSummary = {
   id: string;
@@ -318,4 +319,148 @@ export async function cancelAgentRun(
     `/api/agent/runs/${encodeURIComponent(runId)}/cancel?canvasId=${encodeURIComponent(canvasId)}`,
     { method: "POST" },
   );
+}
+
+export type CanvasAgentChatMessageInput = {
+  role: "user" | "assistant" | "tool" | "system";
+  content: string;
+  attachments?: Array<{
+    url: string;
+    kind?: "image" | "video" | "audio";
+  }>;
+  /** @deprecated Prefer attachments. */
+  images?: Array<{ url: string; kind?: "image" | "video" | "audio" }>;
+  toolCallId?: string;
+  name?: string;
+};
+
+export type CanvasAgentChatSseEvent =
+  | { type: "text_delta"; text: string }
+  | { type: "tool_start"; tool: string; id: string; args?: unknown }
+  | {
+      type: "tool_result";
+      tool: string;
+      id: string;
+      ok: boolean;
+      summary: string;
+    }
+  | { type: "graph_mutated"; tool: string }
+  | { type: "step_budget" }
+  | { type: "error"; message: string }
+  | { type: "done" };
+
+export type CanvasChatHistoryMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  sessionId: string;
+  attachments: Array<{ url: string; kind?: string; name?: string }> | null;
+  createdAt: string;
+};
+
+/** Server-side transcript for the canvas agent (append-only). */
+export async function listCanvasChatMessages(
+  canvasId: string,
+  limit = 200,
+): Promise<CanvasChatHistoryMessage[]> {
+  const payload = await portalRequest<{ messages: CanvasChatHistoryMessage[] }>(
+    `/api/canvases/${canvasId}/chat?limit=${limit}`,
+  );
+  return Array.isArray(payload?.messages) ? payload.messages : [];
+}
+
+export async function clearCanvasChatMessages(canvasId: string): Promise<void> {
+  await portalRequest<{ deleted: number }>(`/api/canvases/${canvasId}/chat`, {
+    method: "DELETE",
+  });
+}
+
+export async function streamCanvasAgentChat(input: {
+  canvasId: string;
+  messages: CanvasAgentChatMessageInput[];
+  model: string;
+  vendor?: string;
+  /** Client id of this user turn; makes history persistence idempotent. */
+  messageId?: string;
+  /** Conversation boundary; keeps model context scoped to one session. */
+  sessionId?: string;
+  signal?: AbortSignal;
+  onEvent: (event: CanvasAgentChatSseEvent) => void;
+}): Promise<void> {
+  const response = await fetch("/api/agent/chat", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      canvasId: input.canvasId,
+      messages: input.messages,
+      model: input.model,
+      ...(input.messageId ? { messageId: input.messageId } : {}),
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      ...(typeof input.vendor === "string" && input.vendor.trim()
+        ? { vendor: input.vendor.trim() }
+        : {}),
+    }),
+    signal: input.signal,
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: string;
+      message?: string;
+    } | null;
+    throw new ApiRequestError(
+      payload?.message || payload?.error || messages.requestFailed,
+      response.status,
+    );
+  }
+
+  if (!response.body) {
+    throw new ApiRequestError(messages.requestFailed, 500);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const consumeSseChunk = (chunk: string) => {
+    const lines = chunk.split("\n");
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) {
+        continue;
+      }
+      const raw = trimmed.slice(5).trim();
+      if (!raw || raw === "[DONE]") {
+        continue;
+      }
+      try {
+        input.onEvent(JSON.parse(raw) as CanvasAgentChatSseEvent);
+      } catch {
+        // Ignore malformed SSE payloads.
+      }
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() ?? "";
+    for (const chunk of chunks) {
+      consumeSseChunk(chunk);
+    }
+  }
+  const tail = decoder.decode();
+  if (tail) {
+    buffer += tail;
+  }
+  // Flush trailing event if the stream closed without a final blank line.
+  if (buffer.trim()) {
+    consumeSseChunk(buffer);
+    buffer = "";
+  }
 }

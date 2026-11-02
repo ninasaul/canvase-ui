@@ -2,7 +2,7 @@ import { jsonError, jsonOk } from "@/lib/api";
 import { resolveAgentTokenFromBearer } from "@/lib/agent/agent-token";
 import {
   executeCanvasTool,
-  isCanvasToolName,
+  isAgentToolName,
 } from "@/lib/agent/canvas-tools";
 import { CanvasUpdateError } from "@/lib/canvas/apply-canvas-graph-update";
 
@@ -14,7 +14,7 @@ type RouteContext = {
 
 export async function POST(request: Request, context: RouteContext) {
   const { toolName } = await context.params;
-  if (!isCanvasToolName(toolName)) {
+  if (!isAgentToolName(toolName)) {
     return jsonError("Unknown tool", 404);
   }
 

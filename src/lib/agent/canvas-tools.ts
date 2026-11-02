@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import {
   type AgentScope,
@@ -10,6 +9,8 @@ import {
   addCanvasNode,
   connectCanvasNodes,
   deleteCanvasNodes,
+  groupCanvasNodes,
+  ungroupCanvasNode,
   disconnectCanvasNodes,
   getCanvasNodeDetail,
   searchCanvasNodes,
@@ -26,12 +27,28 @@ import {
   getCanvasAgentRun,
   startCanvasAgentRun,
 } from "@/lib/agent/canvas-agent-run-service";
+import { writeCommandLog } from "@/lib/agent/canvas-command-log";
+import {
+  SKILL_TOOL_NAMES,
+  executeSkillTool,
+  isSkillToolName,
+  skillToolSchemas,
+} from "@/lib/agent/skills-tools";
 import {
   CanvasUpdateError,
   applyCanvasGraphUpdate,
   getOwnedActiveCanvas,
   readCanvasGraph,
 } from "@/lib/canvas/apply-canvas-graph-update";
+import {
+  DEFAULT_IMAGE_PARAMS,
+  getImageCapabilityProfile,
+  toImagePlaygroundModel,
+} from "@canvase/generation-params/image";
+import {
+  DEFAULT_VIDEO_PARAMS,
+  getVideoCapabilityProfile,
+} from "@canvase/generation-params/video";
 import type { CanvasRunMode } from "@/lib/canvas/canvas-dag-runner";
 import {
   canvasNodeTypes,
@@ -39,7 +56,6 @@ import {
   type CanvasGraph,
   type CanvasNodeData,
 } from "@/lib/canvas/canvas-graph";
-import { prisma } from "@/lib/prisma";
 
 export const CANVAS_TOOL_NAMES = [
   "canvas_get",
@@ -54,6 +70,9 @@ export const CANVAS_TOOL_NAMES = [
   "canvas_run",
   "canvas_run_status",
   "canvas_run_cancel",
+  "canvas_group_nodes",
+  "canvas_ungroup",
+  "canvas_generation_options",
 ] as const;
 
 export type CanvasToolName = (typeof CANVAS_TOOL_NAMES)[number];
@@ -62,7 +81,19 @@ export function isCanvasToolName(value: string): value is CanvasToolName {
   return (CANVAS_TOOL_NAMES as readonly string[]).includes(value);
 }
 
-const TOOL_SCOPES: Record<CanvasToolName, AgentScope> = {
+/** Canvas tools plus filesystem-backed skill tools, in catalog order. */
+export const AGENT_TOOL_NAMES = [
+  ...CANVAS_TOOL_NAMES,
+  ...SKILL_TOOL_NAMES,
+] as const;
+
+export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number];
+
+export function isAgentToolName(value: string): value is AgentToolName {
+  return (AGENT_TOOL_NAMES as readonly string[]).includes(value);
+}
+
+const TOOL_SCOPES: Record<AgentToolName, AgentScope> = {
   canvas_get: "canvas:read",
   canvas_get_node: "canvas:read",
   canvas_search_nodes: "canvas:read",
@@ -75,12 +106,19 @@ const TOOL_SCOPES: Record<CanvasToolName, AgentScope> = {
   canvas_run: "canvas:run",
   canvas_run_status: "canvas:run",
   canvas_run_cancel: "canvas:run",
+  canvas_group_nodes: "canvas:edit",
+  canvas_ungroup: "canvas:edit",
+  canvas_generation_options: "canvas:read",
+  // Skills are read-only instructions; any canvas reader may load them.
+  skills_list: "canvas:read",
+  skills_read: "canvas:read",
 };
 
 export const canvasToolSchemas: Record<
-  CanvasToolName,
+  AgentToolName,
   { description: string; inputSchema: Record<string, unknown> }
 > = {
+  ...skillToolSchemas,
   canvas_get: {
     description:
       "Get canvas summary: nodes, edges, selection, version. Image/video nodes include url, thumbnailUrl, and assetId when available (thumbnailUrl is hydrated from MediaAsset).",
@@ -226,13 +264,13 @@ export const canvasToolSchemas: Record<
   },
   canvas_run: {
     description:
-      "Start a server-side generation run (all / selected / from / retry-failed). On success, writes thumbnailUrl onto image/video nodes when the MediaAsset already has one; otherwise enqueues thumbnail generation.",
+      "Start a server-side generation run (all / selected / node / from / retry-failed). `node` runs only the given nodes and skips upstream; a group id expands to its children. On success, writes thumbnailUrl onto image/video nodes when the MediaAsset already has one; otherwise enqueues thumbnail generation.",
     inputSchema: {
       type: "object",
       properties: {
         mode: {
           type: "string",
-          enum: ["all", "selected", "from", "retry-failed"],
+          enum: ["all", "selected", "node", "from", "retry-failed"],
         },
         nodeIds: {
           type: "array",
@@ -254,6 +292,46 @@ export const canvasToolSchemas: Record<
       additionalProperties: false,
     },
   },
+  canvas_group_nodes: {
+    description:
+      "Wrap existing root-level nodes in a new group sized to their bounding box. Children keep their on-screen position and become group-relative. Use canvas_get first for the current expectedVersion.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        expectedVersion: { type: "number" },
+        nodeIds: { type: "array", items: { type: "string" } },
+        label: { type: "string" },
+        id: { type: "string" },
+      },
+      required: ["expectedVersion", "nodeIds"],
+      additionalProperties: false,
+    },
+  },
+  canvas_ungroup: {
+    description:
+      "Dissolve a group: children are released back to absolute positions and the group node is removed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        expectedVersion: { type: "number" },
+        groupId: { type: "string" },
+      },
+      required: ["expectedVersion", "groupId"],
+      additionalProperties: false,
+    },
+  },
+  canvas_generation_options: {
+    description:
+      "Read the generation settings of an image/video node: current model, current params, defaults, and the allowed values (sizes/aspect ratios/quality for images; ratios/resolutions/duration for video). Call before canvas_update_node when changing params.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string" },
+      },
+      required: ["nodeId"],
+      additionalProperties: false,
+    },
+  },
   canvas_run_cancel: {
     description: "Cancel a queued or running agent generation run.",
     inputSchema: {
@@ -267,28 +345,20 @@ export const canvasToolSchemas: Record<
   },
 };
 
-async function writeCommandLog(input: {
-  canvasId: string;
-  actorType: "user" | "agent";
-  actorId: string;
-  tool: string;
-  args: unknown;
-  result: unknown;
-  versionBefore: number;
-  versionAfter: number;
-}) {
-  await prisma.canvasCommandLog.create({
-    data: {
-      canvasId: input.canvasId,
-      actorType: input.actorType,
-      actorId: input.actorId,
-      tool: input.tool,
-      input: input.args as Prisma.InputJsonValue,
-      result: input.result as Prisma.InputJsonValue,
-      versionBefore: input.versionBefore,
-      versionAfter: input.versionAfter,
-    },
-  });
+/** Reads dominate tool traffic; only persist audit rows for writes and skills. */
+const READ_ONLY_TOOLS = new Set<AgentToolName>([
+  "canvas_get",
+  "canvas_get_node",
+  "canvas_search_nodes",
+]);
+
+async function logToolCall(
+  input: Parameters<typeof writeCommandLog>[0],
+): Promise<void> {
+  if (READ_ONLY_TOOLS.has(input.tool as AgentToolName)) {
+    return;
+  }
+  await writeCommandLog(input);
 }
 
 async function commitGraphEdit(input: {
@@ -317,7 +387,7 @@ async function commitGraphEdit(input: {
     version: applied.versionAfter,
     ...(mutated.result as object),
   };
-  await writeCommandLog({
+  await logToolCall({
     canvasId: input.canvasId,
     actorType: input.actorType,
     actorId: input.actorId,
@@ -343,6 +413,7 @@ const addNodeSchema = z.object({
   width: z.number().finite().positive().optional(),
   height: z.number().finite().positive().optional(),
   id: z.string().trim().min(1).max(120).optional(),
+  parentId: z.string().trim().min(1).max(120).nullable().optional(),
 });
 
 const updateNodeSchema = z.object({
@@ -357,6 +428,7 @@ const updateNodeSchema = z.object({
     .optional(),
   width: z.number().finite().positive().optional(),
   height: z.number().finite().positive().optional(),
+  parentId: z.string().trim().min(1).max(120).nullable().optional(),
 });
 
 const deleteNodesSchema = z.object({
@@ -394,7 +466,7 @@ const searchSchema = z.object({
   labelIncludes: z.string().optional(),
 });
 
-const runModes = ["all", "selected", "from", "retry-failed"] as const;
+const runModes = ["all", "selected", "node", "from", "retry-failed"] as const;
 
 const runSchema = z.object({
   mode: z.enum(runModes),
@@ -405,16 +477,114 @@ const runStatusSchema = z.object({
   runId: z.string().trim().min(1).optional(),
 });
 
+const groupNodesSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  nodeIds: z.array(z.string().trim().min(1)).min(1),
+  label: z.string().trim().max(80).optional(),
+  id: z.string().trim().min(1).max(120).optional(),
+});
+
+const ungroupSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  groupId: z.string().trim().min(1),
+});
+
+const generationOptionsSchema = z.object({
+  nodeId: z.string().trim().min(1),
+});
+
 const runCancelSchema = z.object({
   runId: z.string().trim().min(1),
 });
+
+/**
+ * Compact description of what a media node can be told to generate, so the
+ * model does not have to guess param keys or enum values.
+ */
+function describeGenerationOptions(node: {
+  type: string;
+  data: CanvasNodeData;
+}): Record<string, unknown> {
+  if (node.type !== "image" && node.type !== "video") {
+    return {
+      supported: false,
+      hint: "Only image and video nodes accept generation params.",
+    };
+  }
+  const model = node.data.model?.trim() ?? "";
+  const vendor = node.data.vendor?.trim() ?? "";
+  const current =
+    node.data.params && typeof node.data.params === "object"
+      ? (node.data.params as Record<string, unknown>)
+      : {};
+  if (!model) {
+    return {
+      supported: true,
+      capability: node.type,
+      model: null,
+      current,
+      hint: "Set data.model (and data.vendor) on the node before setting params.",
+    };
+  }
+  if (node.type === "image") {
+    const profile = getImageCapabilityProfile(
+      toImagePlaygroundModel({ id: model, vendor }),
+    );
+    return {
+      supported: true,
+      capability: "image",
+      model,
+      vendor,
+      current,
+      defaults: DEFAULT_IMAGE_PARAMS,
+      allowed: {
+        size: profile.sizes,
+        aspectRatio: profile.aspectRatios,
+        count: { min: 1, max: profile.maxCount },
+        quality: profile.qualityOptions,
+        background: profile.backgroundOptions,
+        moderation: profile.moderationOptions,
+        responseFormat: ["url", "b64_json"],
+      },
+      notes: [
+        profile.allowCustomSize
+          ? "size may also be a custom token like 1024x1024"
+          : "use one of the allowed size tokens",
+        "Pass params through canvas_update_node data.params; keys are merged.",
+      ],
+    };
+  }
+  const profile = getVideoCapabilityProfile(model);
+  return {
+    supported: true,
+    capability: "video",
+    model,
+    vendor,
+    current,
+    defaults: DEFAULT_VIDEO_PARAMS,
+    allowed: {
+      ratio: profile.ratios,
+      resolution: profile.resolutions,
+      duration: profile.duration,
+      generateAudio: profile.showGenerateAudio,
+      watermark: profile.showWatermark,
+      cameraFixed: profile.showCameraFixed,
+      draftMode: profile.showDraftMode,
+      klingMode: profile.showKlingMode,
+    },
+    notes: [
+      "lockedResolution/lockedDuration mean the model ignores that param.",
+      "Pass params through canvas_update_node data.params; keys are merged.",
+    ],
+  };
+}
 
 export type ToolActor =
   | { kind: "agent"; token: ResolvedAgentToken }
   | { kind: "user"; userId: string; canvasId: string };
 
 export async function executeCanvasTool(input: {
-  tool: CanvasToolName;
+  tool: AgentToolName;
   args: unknown;
   actor: ToolActor;
 }): Promise<unknown> {
@@ -439,6 +609,28 @@ export async function executeCanvasTool(input: {
   const actorId =
     input.actor.kind === "agent" ? input.actor.token.id : input.actor.userId;
 
+  // Skill tools are canvas-independent: no graph read, no version bump.
+  if (isSkillToolName(input.tool)) {
+    const data = await executeSkillTool({
+      tool: input.tool,
+      args: input.args,
+    });
+    await logToolCall({
+      canvasId,
+      actorType,
+      actorId,
+      tool: input.tool,
+      args: input.args ?? {},
+      result:
+        input.tool === "skills_list"
+          ? { count: (data as { count?: number }).count ?? 0 }
+          : { id: (data as { id?: string }).id ?? null },
+      versionBefore: 0,
+      versionAfter: 0,
+    });
+    return data;
+  }
+
   try {
     switch (input.tool) {
       case "canvas_get": {
@@ -451,7 +643,7 @@ export async function executeCanvasTool(input: {
           readCanvasGraph(canvas),
         );
         const data = summarizeCanvasGraph(canvas.title, canvas.version, graph);
-        await writeCommandLog({
+        await logToolCall({
           canvasId,
           actorType,
           actorId,
@@ -477,7 +669,7 @@ export async function executeCanvasTool(input: {
           readCanvasGraph(canvas),
         );
         const data = getCanvasNodeDetail(graph, parsed.data.nodeId);
-        await writeCommandLog({
+        await logToolCall({
           canvasId,
           actorType,
           actorId,
@@ -504,7 +696,7 @@ export async function executeCanvasTool(input: {
         );
         const nodes = searchCanvasNodes(graph, parsed.data);
         const data = { nodes, version: canvas.version };
-        await writeCommandLog({
+        await logToolCall({
           canvasId,
           actorType,
           actorId,
@@ -549,6 +741,7 @@ export async function executeCanvasTool(input: {
               width: parsed.data.width,
               height: parsed.data.height,
               id: parsed.data.id,
+              parentId: parsed.data.parentId,
             });
             return { graph: next, result: { node } };
           },
@@ -585,10 +778,89 @@ export async function executeCanvasTool(input: {
               position: parsed.data.position,
               width: parsed.data.width,
               height: parsed.data.height,
+              parentId: parsed.data.parentId,
             });
             return { graph: next, result: { node } };
           },
         });
+      }
+      case "canvas_group_nodes": {
+        const parsed = groupNodesSchema.safeParse(input.args ?? {});
+        if (!parsed.success) {
+          throw new CanvasUpdateError(
+            parsed.error.issues[0]?.message ?? "Invalid request body",
+            400,
+          );
+        }
+        return commitGraphEdit({
+          canvasId,
+          ownerId,
+          actorType,
+          actorId,
+          tool: input.tool,
+          args: parsed.data,
+          expectedVersion: parsed.data.expectedVersion,
+          mutate: (graph) => {
+            const { graph: next, group } = groupCanvasNodes(graph, {
+              nodeIds: parsed.data.nodeIds,
+              label: parsed.data.label,
+              id: parsed.data.id,
+            });
+            return { graph: next, result: { group } };
+          },
+        });
+      }
+      case "canvas_ungroup": {
+        const parsed = ungroupSchema.safeParse(input.args ?? {});
+        if (!parsed.success) {
+          throw new CanvasUpdateError("Invalid request body", 400);
+        }
+        return commitGraphEdit({
+          canvasId,
+          ownerId,
+          actorType,
+          actorId,
+          tool: input.tool,
+          args: parsed.data,
+          expectedVersion: parsed.data.expectedVersion,
+          mutate: (graph) => {
+            const { graph: next, releasedNodeIds } = ungroupCanvasNode(
+              graph,
+              parsed.data.groupId,
+            );
+            return { graph: next, result: { releasedNodeIds } };
+          },
+        });
+      }
+      case "canvas_generation_options": {
+        const parsed = generationOptionsSchema.safeParse(input.args ?? {});
+        if (!parsed.success) {
+          throw new CanvasUpdateError("Invalid request body", 400);
+        }
+        const canvas = await getOwnedActiveCanvas(canvasId, ownerId);
+        if (!canvas) {
+          throw new CanvasUpdateError("Canvas not found", 404);
+        }
+        const graph = readCanvasGraph(canvas);
+        const node = graph.nodes.find((item) => item.id === parsed.data.nodeId);
+        if (!node) {
+          throw new CanvasUpdateError(
+            `Node not found: ${parsed.data.nodeId}`,
+            404,
+          );
+        }
+        const data = describeGenerationOptions(node);
+        await logToolCall({
+          canvasId,
+          actorType,
+          actorId,
+          tool: input.tool,
+          args: parsed.data,
+          result: { model: (data as { model?: string }).model ?? null },
+          versionBefore: canvas.version,
+          versionAfter: canvas.version,
+        });
+        return data;
       }
       case "canvas_delete_nodes": {
         const parsed = deleteNodesSchema.safeParse(input.args ?? {});
@@ -694,7 +966,7 @@ export async function executeCanvasTool(input: {
             mode: parsed.data.mode as CanvasRunMode,
             nodeIds: parsed.data.nodeIds,
           });
-          await writeCommandLog({
+          await logToolCall({
             canvasId,
             actorType,
             actorId,
@@ -725,7 +997,7 @@ export async function executeCanvasTool(input: {
         if (!data) {
           throw new CanvasUpdateError("Run not found", 404);
         }
-        await writeCommandLog({
+        await logToolCall({
           canvasId,
           actorType,
           actorId,
@@ -748,7 +1020,7 @@ export async function executeCanvasTool(input: {
             ownerId,
             runId: parsed.data.runId,
           });
-          await writeCommandLog({
+          await logToolCall({
             canvasId,
             actorType,
             actorId,

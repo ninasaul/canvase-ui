@@ -6,7 +6,7 @@ import { messages } from "@/messages";
 
 export const CANVAS_RUN_CONCURRENCY = 2;
 
-export type CanvasRunMode = "all" | "selected" | "from" | "retry-failed";
+export type CanvasRunMode = "all" | "selected" | "node" | "from" | "retry-failed";
 
 export type CanvasRunPlan = {
   mode: CanvasRunMode;
@@ -49,6 +49,48 @@ function executableId(
 ): boolean {
   const node = byId.get(id);
   return Boolean(node && executable(node));
+}
+
+/**
+ * A group is not executable itself: selecting one means "the nodes inside it".
+ * Nested groups are flattened; cycles are impossible (parentId is a tree).
+ */
+export function expandGroupSelection(
+  ids: string[],
+  graph: CanvasGraph,
+): string[] {
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+  const childrenByParent = new Map<string, CanvasGraphNode[]>();
+  for (const node of graph.nodes) {
+    if (!node.parentId) {
+      continue;
+    }
+    const list = childrenByParent.get(node.parentId) ?? [];
+    list.push(node);
+    childrenByParent.set(node.parentId, list);
+  }
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (id: string, node: CanvasGraphNode) => {
+    if (seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+    if (node.type === "group") {
+      for (const child of childrenByParent.get(id) ?? []) {
+        push(child.id, child);
+      }
+      return;
+    }
+    out.push(id);
+  };
+  for (const id of ids) {
+    const node = byId.get(id);
+    if (node) {
+      push(id, node);
+    }
+  }
+  return out;
 }
 
 function nodeMap(graph: CanvasGraph): Map<string, CanvasGraphNode> {
@@ -120,11 +162,12 @@ export function buildCanvasRunPlan(
   const byId = nodeMap(graph);
   const incoming = incomingMap(graph);
   const outgoing = outgoingMap(graph);
-  const selected = (options.selectedNodeIds ?? []).filter((id) =>
-    executableId(id, byId),
-  );
-  const from = (options.fromNodeIds ?? []).filter((id) =>
-    executableId(id, byId),
+  const selected = expandGroupSelection(
+    options.selectedNodeIds ?? [],
+    graph,
+  ).filter((id) => executableId(id, byId));
+  const from = expandGroupSelection(options.fromNodeIds ?? [], graph).filter(
+    (id) => executableId(id, byId),
   );
 
   let included: Set<string>;
@@ -132,6 +175,10 @@ export function buildCanvasRunPlan(
     included = new Set(graph.nodes.filter(executable).map((node) => node.id));
   } else if (options.mode === "selected") {
     included = collectAncestors(selected, incoming);
+  } else if (options.mode === "node") {
+    // Only the selected nodes: upstream generators are left untouched, so
+    // existing results (and money already spent) are preserved.
+    included = new Set(selected);
   } else if (options.mode === "from") {
     included = collectDescendants(from, outgoing);
   } else {

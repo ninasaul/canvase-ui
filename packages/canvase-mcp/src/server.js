@@ -126,9 +126,9 @@ const TOOLS = [
   {
     name: "canvas_run",
     description:
-      "Start a server-side generation run (all / selected / from / retry-failed). On success, writes thumbnailUrl when MediaAsset already has one; otherwise enqueues thumbnail generation.",
+      "Start a server-side generation run (all / selected / node / from / retry-failed). `node` runs only the given nodes and skips upstream; a group id expands to its children. On success, writes thumbnailUrl when MediaAsset already has one; otherwise enqueues thumbnail generation.",
     schema: z.object({
-      mode: z.enum(["all", "selected", "from", "retry-failed"]),
+      mode: z.enum(["all", "selected", "node", "from", "retry-failed"]),
       nodeIds: z.array(z.string().min(1)).optional(),
     }),
   },
@@ -144,6 +144,49 @@ const TOOLS = [
     description: "Cancel a queued or running agent generation run.",
     schema: z.object({
       runId: z.string().min(1),
+    }),
+  },
+  {
+    name: "canvas_group_nodes",
+    description:
+      "Wrap root-level nodes in a new group sized to their bounding box. Children keep on-screen position and become group-relative.",
+    schema: z.object({
+      expectedVersion: z.number().int().positive(),
+      nodeIds: z.array(z.string().min(1)).min(1),
+      label: z.string().optional(),
+      id: z.string().optional(),
+    }),
+  },
+  {
+    name: "canvas_ungroup",
+    description:
+      "Dissolve a group: children are released back to absolute positions and the group node is removed.",
+    schema: z.object({
+      expectedVersion: z.number().int().positive(),
+      groupId: z.string().min(1),
+    }),
+  },
+  {
+    name: "canvas_generation_options",
+    description:
+      "Read a media node's model, current params, defaults and allowed values (sizes / aspect ratios / quality, or ratios / resolutions / duration).",
+    schema: z.object({
+      nodeId: z.string().min(1),
+    }),
+  },
+  {
+    name: "skills_list",
+    description:
+      "List available skills (id, name, description, tags). Check this before improvising a non-trivial canvas workflow.",
+    schema: z.object({}),
+  },
+  {
+    name: "skills_read",
+    description:
+      "Read one skill's full SKILL.md instructions (optionally a resource file inside that skill). Follow the returned instructions.",
+    schema: z.object({
+      name: z.string().min(1),
+      file: z.string().min(1).optional(),
     }),
   },
 ];

@@ -16,6 +16,7 @@ import {
   runCanvasVideoNode,
 } from "@/lib/canvas/canvas-runner";
 import { resolveNodeThumbnailPatch } from "@/lib/agent/canvas-thumbnail-resolve";
+import { writeCommandLogSafe } from "@/lib/agent/canvas-command-log";
 import { resolveUserGenerationConnection } from "@/lib/generation/generation-config-server";
 import { prisma } from "@/lib/prisma";
 import { messages } from "@/messages";
@@ -37,6 +38,44 @@ export type AgentRunNodeState = {
 type NodeStatesMap = Record<string, AgentRunNodeState>;
 
 const activeControllers = new Map<string, AbortController>();
+
+/** Heartbeat cadence while a run executes in this process. */
+const RUN_HEARTBEAT_MS = 30_000;
+/** A run with no heartbeat for this long is considered abandoned. */
+const RUN_STALE_MS = 90_000;
+
+/**
+ * Runs execute in-process, so a restart (or another instance) leaves rows stuck
+ * in `queued` / `running` forever. Heartbeats keep `updatedAt` fresh; anything
+ * older than {@link RUN_STALE_MS} without a live controller is marked failed.
+ */
+export async function sweepStaleCanvasAgentRuns(input: {
+  canvasId: string;
+  ownerId: string;
+}): Promise<void> {
+  const cutoff = new Date(Date.now() - RUN_STALE_MS);
+  const stale = await prisma.canvasAgentRun.findMany({
+    where: {
+      canvasId: input.canvasId,
+      ownerId: input.ownerId,
+      status: { in: ["queued", "running"] },
+      updatedAt: { lt: cutoff },
+    },
+    select: { id: true },
+  });
+  const abandoned = stale.filter((row) => !activeControllers.has(row.id));
+  if (abandoned.length === 0) {
+    return;
+  }
+  await prisma.canvasAgentRun.updateMany({
+    where: { id: { in: abandoned.map((row) => row.id) } },
+    data: {
+      status: "failed",
+      error: "Run interrupted (server restarted or worker lost)",
+      finishedAt: new Date(),
+    },
+  });
+}
 
 function asNodeStates(value: unknown): NodeStatesMap {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -96,6 +135,7 @@ async function persistNodeStates(
 }
 
 async function persistGraphSnapshot(input: {
+  runId: string;
   canvasId: string;
   ownerId: string;
   graph: CanvasGraph;
@@ -105,11 +145,23 @@ async function persistGraphSnapshot(input: {
     return;
   }
   try {
-    await applyCanvasGraphUpdate({
+    const applied = await applyCanvasGraphUpdate({
       canvasId: input.canvasId,
       ownerId: input.ownerId,
       expectedVersion: canvas.version,
       graph: input.graph,
+    });
+    // Snapshots bump the canvas version outside of a tool call. Log them so an
+    // editor save conflict can always be traced back to a writer.
+    writeCommandLogSafe({
+      canvasId: input.canvasId,
+      actorType: "agent",
+      actorId: input.runId,
+      tool: "canvas_run_snapshot",
+      args: { runId: input.runId },
+      result: { snapshot: true },
+      versionBefore: applied.versionBefore,
+      versionAfter: applied.versionAfter,
     });
   } catch {
     // Version conflict while UI also saves — next node / final write retries.
@@ -245,6 +297,7 @@ async function executeAgentRun(input: {
     error: null,
   });
   await persistGraphSnapshot({
+    runId: input.runId,
     canvasId: input.canvasId,
     ownerId: input.ownerId,
     graph,
@@ -268,11 +321,24 @@ async function executeAgentRun(input: {
     };
     void persistNodeStates(input.runId, nodeStates);
     void persistGraphSnapshot({
+      runId: input.runId,
       canvasId: input.canvasId,
       ownerId: input.ownerId,
       graph,
     });
   };
+
+  // Keep `updatedAt` fresh so the stale-run sweeper can tell a live run from
+  // an abandoned one after a restart.
+  const heartbeat = setInterval(() => {
+    void prisma.canvasAgentRun
+      .update({
+        where: { id: input.runId },
+        data: { updatedAt: new Date() },
+      })
+      .catch(() => undefined);
+  }, RUN_HEARTBEAT_MS);
+  heartbeat.unref?.();
 
   try {
     const result = await runCanvasPlan({
@@ -372,6 +438,7 @@ async function executeAgentRun(input: {
       error: input.signal.aborted ? messages.canvas.runCancelled : null,
     });
     await persistGraphSnapshot({
+      runId: input.runId,
       canvasId: input.canvasId,
       ownerId: input.ownerId,
       graph,
@@ -385,10 +452,13 @@ async function executeAgentRun(input: {
       finishedAt: new Date(),
     });
     await persistGraphSnapshot({
+      runId: input.runId,
       canvasId: input.canvasId,
       ownerId: input.ownerId,
       graph,
     });
+  } finally {
+    clearInterval(heartbeat);
   }
 }
 
@@ -397,6 +467,7 @@ export async function getCanvasAgentRun(input: {
   canvasId: string;
   ownerId: string;
 }) {
+  await sweepStaleCanvasAgentRuns(input).catch(() => undefined);
   if (input.runId) {
     const row = await prisma.canvasAgentRun.findFirst({
       where: {
@@ -421,6 +492,7 @@ export async function getActiveCanvasAgentRun(input: {
   canvasId: string;
   ownerId: string;
 }) {
+  await sweepStaleCanvasAgentRuns(input).catch(() => undefined);
   const row = await prisma.canvasAgentRun.findFirst({
     where: {
       canvasId: input.canvasId,

@@ -6,6 +6,8 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
     "types": ["node"]
   },
   "include": ["src/**/*.ts", "src/**/*.js"]

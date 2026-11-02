@@ -21,7 +21,8 @@ import {
   useCanvasRunStatus,
   useCanvasRunStatusStore,
 } from "@/lib/canvas/canvas-run-status-store";
-import { recoverCanvasNode } from "@/lib/canvas/canvas-task-recovery";
+import { queryCanvasNodeTask } from "@/lib/canvas/canvas-task-recovery";
+import { toast } from "@/components/ui/toast";
 import { useCanvasPreferences } from "./canvas-preferences-context";
 import {
   NODE_SELECTED_CLASS,
@@ -157,20 +158,32 @@ function NodeShell({
     if (!taskId || querying) {
       return;
     }
+    const mediaKind =
+      node?.type === "video"
+        ? "video"
+        : node?.type === "image"
+          ? "image"
+          : null;
+    if (!mediaKind) {
+      toast.danger(messages.canvas.taskRecoveryFailed);
+      return;
+    }
     queryControllerRef.current?.abort();
     const controller = new AbortController();
     queryControllerRef.current = controller;
     setQuerying(true);
-    const currentRun = useCanvasRunStatusStore.getState().statusById[nodeId];
-    if (currentRun) {
-      useCanvasRunStatusStore
-        .getState()
-        .setNode(nodeId, "running", undefined, taskId, runStatus?.taskId);
-    }
+    useCanvasRunStatusStore
+      .getState()
+      .setNode(nodeId, "running", undefined, taskId, runStatus?.taskId);
+    updateNodeData(nodeId, {
+      status: "running",
+      error: undefined,
+    });
     try {
-      await recoverCanvasNode({
+      await queryCanvasNodeTask({
         nodeId,
         requestId: taskId,
+        mediaKind,
         fallbackUrl,
         signal: controller.signal,
         update: (id, patch) => {
@@ -188,6 +201,31 @@ function NodeShell({
           }
         },
       });
+      if (controller.signal.aborted) {
+        return;
+      }
+      const latest = useCanvasStore
+        .getState()
+        .nodes.find((item) => item.id === nodeId);
+      if (latest?.data.status === "succeeded") {
+        toast.success(messages.canvas.statusSucceeded);
+      } else if (latest?.data.status === "failed") {
+        toast.danger(
+          latest.data.error?.trim() || messages.canvas.generationFailed,
+        );
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : messages.canvas.taskRecoveryFailed;
+        toast.danger(message);
+        updateNodeData(nodeId, {
+          status: "interrupted",
+          error: message,
+        });
+      }
     } finally {
       if (queryControllerRef.current === controller) {
         queryControllerRef.current = null;
@@ -235,9 +273,11 @@ function NodeShell({
               </span>
               <button
                 type="button"
-                className="shrink-0 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-[9px] font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-wait disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                className="nodrag nopan shrink-0 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-[9px] font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-wait disabled:opacity-60 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
                 disabled={querying}
+                onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
+                  event.preventDefault();
                   event.stopPropagation();
                   void queryTask();
                 }}
@@ -408,6 +448,9 @@ function MediaPreview({
   onAspectRatio?: (ratio: number) => void;
 }) {
   if (type === "image") {
+    if (!url) {
+      return null;
+    }
     return (
       // eslint-disable-next-line @next/next/no-img-element -- canvas media preview
       <img
@@ -515,7 +558,7 @@ export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selecte
           {data.url ? (
             <MediaPreview
               type="image"
-              url={data.thumbnailUrl ?? data.url}
+              url={data.thumbnailUrl || data.url}
               onAspectRatio={(ratio) => {
                 const size = canvasMediaNodeSize("image", ratio);
                 setNodeSize(id, size.width, size.height);
@@ -568,7 +611,7 @@ export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selecte
             <MediaPreview
             type="video"
             url={data.url}
-            poster={data.thumbnailUrl}
+            poster={data.thumbnailUrl || undefined}
             preload={selected ? "metadata" : "none"}
             onAspectRatio={(ratio) => {
               const current = useCanvasStore

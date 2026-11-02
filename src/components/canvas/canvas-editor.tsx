@@ -10,6 +10,7 @@ import {
   BoundingBox,
   Brain,
   CaretDown,
+  ChatCircle,
   Check,
   CircleNotch,
   Clock,
@@ -37,6 +38,7 @@ import {
   TreeStructure,
   UploadSimple,
   VideoCamera,
+  WarningCircle,
   Waveform,
 } from "@phosphor-icons/react";
 import {
@@ -70,8 +72,10 @@ import { CanvasImageGenerationDock } from "@/components/canvas/canvas-image-gene
 import { CanvasNodeLabels } from "@/components/canvas/canvas-node-labels";
 import { CanvasNodeDockLayer } from "@/components/canvas/canvas-node-dock-layer";
 import { CanvasZoomLabel } from "@/components/canvas/canvas-zoom-label";
-import { CanvasRunningTasksModal } from "@/components/canvas/canvas-running-tasks";
-import { CanvasRunHistoryModal } from "@/components/canvas/canvas-run-history";
+import {
+  CanvasRunningTasksModal,
+  type CanvasTasksTab,
+} from "@/components/canvas/canvas-running-tasks";
 import { CanvasShortcutsModal } from "@/components/canvas/canvas-shortcuts-modal";
 import {
   buildCanvasRunPlan,
@@ -86,6 +90,10 @@ import { uploadPlaygroundAssetWithMeta } from "@/lib/playground-media";
 import { CanvasVideoGenerationDock } from "@/components/canvas/canvas-video-generation-dock";
 import { CanvasHelperLinesOverlay } from "@/components/canvas/canvas-helper-lines";
 import { CanvasConnectAgentModal } from "@/components/canvas/canvas-connect-agent-modal";
+import {
+  CanvasAgentChatPanel,
+  loadCanvasAgentChatOpenPreference,
+} from "@/components/canvas/canvas-agent-chat-panel";
 import { CanvasModelSettingsModal } from "@/components/canvas/canvas-model-settings-modal";
 import { canvasNodeTypes } from "@/components/canvas/canvas-node-types";
 import {
@@ -107,6 +115,7 @@ import {
 import { LocaleToggle } from "@/components/locale-toggle";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Icon } from "@/components/ui/icon";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Popover } from "@/components/ui/popover";
@@ -130,6 +139,12 @@ import {
   type CanvasDetail,
 } from "@/lib/canvas/canvas-api";
 import type { CanvasNodeRunStatus } from "@/lib/tu-shared-browser";
+import {
+  applyTransientNodeState,
+  captureTransientNodeState,
+} from "@/lib/canvas/canvas-transient-state";
+import { mergeRemoteSnapshot } from "@/lib/canvas/canvas-snapshot-merge";
+import type { CanvasGraph } from "@/lib/canvas/canvas-graph";
 import {
   CANVAS_EDGE_COLORS,
   DEFAULT_CANVAS_PREFERENCES,
@@ -386,10 +401,8 @@ function costToCents(value: string): bigint {
 
 function CanvasEditorInner({
   canvasDocument,
-  onReload,
 }: {
   canvasDocument: CanvasDetail;
-  onReload: () => void;
 }) {
   const { push } = useLocaleRouter();
   const { resolvedTheme } = useTheme();
@@ -416,6 +429,9 @@ function CanvasEditorInner({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
   const [connectAgentOpen, setConnectAgentOpen] = useState(false);
+  const [agentChatOpen, setAgentChatOpen] = useState(() =>
+    loadCanvasAgentChatOpenPreference(),
+  );
   const [agentTokenActive, setAgentTokenActive] = useState(false);
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
   const agentRunSeenRef = useRef(false);
@@ -449,6 +465,7 @@ function CanvasEditorInner({
   const [groupName, setGroupName] = useState("");
   const [nodeInfoOpen, setNodeInfoOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const [tasksTab, setTasksTab] = useState<CanvasTasksTab>("running");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [titleDraft, setTitleDraft] = useState(canvasDocument.title);
@@ -459,11 +476,13 @@ function CanvasEditorInner({
     null,
   );
   const [runMenuOpen, setRunMenuOpen] = useState(false);
-  const [runHistoryOpen, setRunHistoryOpen] = useState(false);
+  const [runListExpanded, setRunListExpanded] = useState(false);
   const runMenuButtonRef = useRef<HTMLButtonElement>(null);
   const [runConfirm, setRunConfirm] = useState<{
     mode: CanvasRunMode;
     plan: CanvasRunPlan;
+    selectedNodeIds: string[];
+    includeUpstream: boolean;
   } | null>(null);
   const [activeRun, setActiveRun] = useState<{
     mode: CanvasRunMode;
@@ -501,8 +520,10 @@ function CanvasEditorInner({
   const retryCountRef = useRef(0);
   const conflictRef = useRef(false);
   const dirtyRef = useRef(false);
+  const rebaseAttemptsRef = useRef(0);
+  const activeRunRef = useRef(false);
   const initialAutosaveSkippedRef = useRef(false);
-  const flushSaveRef = useRef<() => void>(() => undefined);
+  const flushSaveRef = useRef<() => Promise<void>>(async () => undefined);
   const activeRunsRef = useRef<Map<string, AbortController>>(new Map());
 
   const nodes = useCanvasStore((state) => state.nodes);
@@ -512,6 +533,14 @@ function CanvasEditorInner({
       nodes.filter(
         (node) => node.selected && node.type !== "group" && !node.parentId,
       ),
+    [nodes],
+  );
+  /**
+   * Run planning needs every selected node, including group containers (their
+   * children get expanded) and nodes nested inside a group.
+   */
+  const selectedRunNodeIds = useMemo(
+    () => nodes.filter((node) => node.selected).map((node) => node.id),
     [nodes],
   );
   const librarySelectedUrls = useMemo(
@@ -611,25 +640,254 @@ function CanvasEditorInner({
     };
   }, [canvasDocument.id]);
 
+  const markDirty = useCallback((value: boolean) => {
+    dirtyRef.current = value;
+    setDirty(value);
+  }, []);
+
+  /**
+   * Adopt a server snapshot in place (after an AI agent or another tab wrote).
+   * Doing this instead of a full reload keeps undo history, viewport and selection.
+   */
+  const applyRemoteSnapshot = useCallback(
+    (remote: CanvasDetail) => {
+      const store = useCanvasStore.getState();
+      // A local run lives only in memory until it finishes; keep those nodes
+      // looking busy instead of snapping back to idle after an agent write.
+      const liveNodes = captureTransientNodeState(store.nodes);
+
+      // Three-way merge: keep whatever the user changed locally (unsaved drags,
+      // edits made while the agent was working) instead of reverting it, and
+      // keep the current selection unless the agent explicitly changed it.
+      let base: CanvasGraph = remote.graph;
+      try {
+        base = JSON.parse(lastSavedRef.current.graph) as CanvasGraph;
+      } catch {
+        base = remote.graph;
+      }
+      const merged = mergeRemoteSnapshot({
+        base,
+        local: store.toGraph(),
+        remote: remote.graph,
+      });
+      store.reset(merged.graph);
+      if (liveNodes.size > 0) {
+        useCanvasStore.setState((state) => ({
+          nodes: applyTransientNodeState(state.nodes, liveNodes),
+        }));
+      }
+      const next = useCanvasStore.getState();
+      graphObservationRef.current = {
+        nodes: next.nodes,
+        edges: next.edges,
+        settings: next.settings,
+        title: remote.title,
+      };
+      lastSavedRef.current = {
+        title: remote.title,
+        graph: stableGraphJson(remote.graph),
+      };
+      versionRef.current = remote.version;
+      setVersion(remote.version);
+      setTitle(remote.title);
+      titleRef.current = remote.title;
+      setTitleDraft(remote.title);
+      setSavedAt(remote.updatedAt);
+      conflictRef.current = false;
+      setConflict(false);
+      rebaseAttemptsRef.current = 0;
+      markDirty(merged.keptLocal > 0);
+      if (merged.keptLocal > 0 && !activeRunRef.current) {
+        // Re-apply the kept local edits on top of the new server version.
+        window.setTimeout(() => {
+          void flushSaveRef.current();
+        }, 0);
+      }
+    },
+    [markDirty],
+  );
+
+  /**
+   * Pull the latest server graph without remounting the editor. A remount
+   * (`query.reload()` + `key={id:version}`) resets the agent chat panel and its
+   * selected model, so background syncs go through here instead.
+   */
+  const syncFromServer = useCallback(async () => {
+    try {
+      if (dirtyRef.current && !activeRunRef.current) {
+        await flushSaveRef.current();
+      }
+      if (dirtyRef.current || conflictRef.current) {
+        return;
+      }
+      const remote = await getCanvas(canvasDocument.id);
+      if (remote.version >= versionRef.current) {
+        applyRemoteSnapshot(remote);
+      }
+    } catch {
+      // Background sync is best-effort.
+    }
+  }, [applyRemoteSnapshot, canvasDocument.id]);
+
+  /** Manual refresh (Shift+R): pull the server graph without remounting. */
+  const refreshCanvas = useCallback(() => {
+    void (async () => {
+      try {
+        // Mid-run the graph holds live "running" flags that the server does
+        // not know about; saving them would leave stale status behind.
+        if (dirtyRef.current && !activeRunRef.current) {
+          await flushSaveRef.current();
+        }
+        if (conflictRef.current) {
+          toast.info(messages.canvas.versionConflictBody);
+          return;
+        }
+        const remote = await getCanvas(canvasDocument.id);
+        if (remote.version > versionRef.current) {
+          applyRemoteSnapshot(remote);
+          toast.success(messages.canvas.canvasRefreshed);
+        } else {
+          toast.info(messages.canvas.canvasAlreadyLatest);
+        }
+      } catch (error) {
+        toast.danger(
+          error instanceof Error ? error.message : messages.canvas.saveFailed,
+        );
+      }
+    })();
+  }, [applyRemoteSnapshot, canvasDocument.id]);
+
+  const agentChatSyncTimerRef = useRef<number | null>(null);
+  const handleAgentChatGraphMutated = useCallback(() => {
+    if (agentChatSyncTimerRef.current !== null) {
+      window.clearTimeout(agentChatSyncTimerRef.current);
+    }
+    agentChatSyncTimerRef.current = window.setTimeout(() => {
+      agentChatSyncTimerRef.current = null;
+      void (async () => {
+        try {
+          // Persist local edits first: the agent snapshot is taken from an
+          // earlier version and would otherwise silently drop them.
+          if (dirtyRef.current && !activeRunRef.current) {
+            await flushSaveRef.current();
+          }
+          if (dirtyRef.current || conflictRef.current) {
+            // Still unsaved (user kept editing): leave it to the 409 rebase
+            // path, which either adopts silently or shows the conflict banner.
+            return;
+          }
+          const remote = await getCanvas(canvasDocument.id);
+          if (remote.version >= versionRef.current) {
+            applyRemoteSnapshot(remote);
+          }
+        } catch {
+          // Ignore transient sync failures during agent chat.
+        }
+      })();
+    }, 250);
+  }, [applyRemoteSnapshot, canvasDocument.id]);
+
+  useEffect(() => {
+    return () => {
+      if (agentChatSyncTimerRef.current !== null) {
+        window.clearTimeout(agentChatSyncTimerRef.current);
+      }
+    };
+  }, []);
+
+  /**
+   * A 409 only means the version moved. When the server graph is still exactly
+   * what we last saved, nothing diverged — adopt the new version and retry
+   * instead of locking the editor behind a banner until a reload.
+   */
+  const tryRebase = useCallback(async (): Promise<boolean> => {
+    if (rebaseAttemptsRef.current >= 2) {
+      return false;
+    }
+    rebaseAttemptsRef.current += 1;
+    try {
+      const latest = await getCanvas(canvasDocument.id);
+      if (
+        stableGraphJson(latest.graph) === lastSavedRef.current.graph &&
+        latest.title === lastSavedRef.current.title
+      ) {
+        versionRef.current = latest.version;
+        setVersion(latest.version);
+        setSavedAt(latest.updatedAt);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }, [canvasDocument.id]);
+
+  /** Conflict resolution: keep local edits and win the last write. */
+  const forceSaveMine = useCallback(() => {
+    void (async () => {
+      try {
+        const latest = await getCanvas(canvasDocument.id);
+        versionRef.current = latest.version;
+        setVersion(latest.version);
+      } catch (error) {
+        toast.danger(
+          error instanceof Error ? error.message : messages.canvas.saveFailed,
+        );
+        return;
+      }
+      rebaseAttemptsRef.current = 2;
+      conflictRef.current = false;
+      setConflict(false);
+      markDirty(true);
+      void flushSaveRef.current();
+    })();
+  }, [canvasDocument.id, markDirty]);
+
+  /** Conflict resolution: drop local edits and adopt the server graph in place. */
+  const discardAndLoadRemote = useCallback(() => {
+    void (async () => {
+      try {
+        const remote = await getCanvas(canvasDocument.id);
+        // applyRemoteSnapshot clears dirty/conflict and adopts the new version,
+        // so the editor (and the agent panel) is never remounted.
+        applyRemoteSnapshot(remote);
+        toast.info(messages.canvas.conflictLoadedRemote);
+      } catch (error) {
+        toast.danger(
+          error instanceof Error ? error.message : messages.canvas.saveFailed,
+        );
+      }
+    })();
+  }, [applyRemoteSnapshot, canvasDocument.id]);
+
+  useEffect(() => {
+    activeRunRef.current = Boolean(activeRun || serverRunId || agentRunId);
+  }, [activeRun, agentRunId, serverRunId]);
+
   useEffect(() => {
     if (!agentTokenActive) {
       return;
     }
     let cancelled = false;
     const tick = async () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
       try {
         const remote = await getCanvas(canvasDocument.id);
-        if (cancelled) {
+        if (cancelled || remote.version <= versionRef.current) {
           return;
         }
-        if (remote.version === versionRef.current) {
+        if (conflictRef.current || inFlightRef.current) {
           return;
         }
-        if (dirty) {
-          setConflict(true);
+        // Local edits or a run in progress: leave it to the save path, which
+        // rebases on 409 only when the server graph did not diverge.
+        if (dirtyRef.current || activeRunRef.current) {
           return;
         }
-        onReload();
+        applyRemoteSnapshot(remote);
+        toast.info(messages.canvas.externalUpdateApplied);
       } catch {
         // Ignore transient poll failures.
       }
@@ -642,7 +900,7 @@ function CanvasEditorInner({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [agentTokenActive, canvasDocument.id, dirty, onReload]);
+  }, [agentTokenActive, applyRemoteSnapshot, canvasDocument.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -666,9 +924,7 @@ function CanvasEditorInner({
           if (agentRunSeenRef.current) {
             agentRunSeenRef.current = false;
             setAgentRunId(null);
-            if (!dirty) {
-              onReload();
-            }
+            void syncFromServer();
           }
           return;
         }
@@ -719,7 +975,7 @@ function CanvasEditorInner({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [canvasDocument.id, dirty, onReload, updateNodeData]);
+  }, [canvasDocument.id, syncFromServer, updateNodeData]);
 
   useEffect(() => {
     void readStorageConfig()
@@ -783,11 +1039,6 @@ function CanvasEditorInner({
     conflictRef.current = conflict;
   }, [conflict]);
 
-  const markDirty = (value: boolean) => {
-    dirtyRef.current = value;
-    setDirty(value);
-  };
-
   const flushSave = useCallback(async () => {
     if (inFlightRef.current) {
       pendingRef.current = true;
@@ -826,6 +1077,7 @@ function CanvasEditorInner({
       setSavedAt(saved.updatedAt);
       setConflict(false);
       conflictRef.current = false;
+      rebaseAttemptsRef.current = 0;
       retryCountRef.current = 0;
       if (retryTimerRef.current) {
         window.clearTimeout(retryTimerRef.current);
@@ -838,6 +1090,12 @@ function CanvasEditorInner({
       markDirty(dirtyAfterSave);
     } catch (error: unknown) {
       if (isCanvasVersionConflict(error)) {
+        // Retry once the stale version is replaced, but only when the server
+        // content still matches what we last saved (no real divergence).
+        if (await tryRebase()) {
+          pendingRef.current = true;
+          return;
+        }
         conflictRef.current = true;
         setConflict(true);
         markDirty(true);
@@ -867,12 +1125,10 @@ function CanvasEditorInner({
         void flushSaveRef.current();
       }
     }
-  }, [canvasDocument.id, toGraph]);
+  }, [canvasDocument.id, markDirty, toGraph, tryRebase]);
 
   useEffect(() => {
-    flushSaveRef.current = () => {
-      void flushSave();
-    };
+    flushSaveRef.current = flushSave;
   }, [flushSave]);
 
   useEffect(() => {
@@ -920,7 +1176,7 @@ function CanvasEditorInner({
       saveTimerRef.current = null;
       void flushSaveRef.current();
     }, 800);
-  }, [activeRun, conflict, edges, nodes, serverRunId, settings, title]);
+  }, [activeRun, conflict, edges, markDirty, nodes, serverRunId, settings, title]);
 
   useEffect(() => {
     return () => {
@@ -976,6 +1232,7 @@ function CanvasEditorInner({
       void recoverCanvasNode({
         nodeId: node.id,
         requestId,
+        mediaKind: node.type === "video" ? "video" : "image",
         fallbackUrl: node.data.url ?? "",
         update: updateNodeData,
         signal: controller.signal,
@@ -1138,7 +1395,7 @@ function CanvasEditorInner({
   );
 
   const prepareRun = useCallback(
-    (mode: CanvasRunMode) => {
+    (mode: CanvasRunMode, nodeIds?: string[]) => {
       setRunMenuOpen(false);
       if (activeRun || activeRunsRef.current.size > 0) {
         toast.info(messages.canvas.runAlreadyRunning);
@@ -1149,9 +1406,9 @@ function CanvasEditorInner({
         openModelSettings();
         return;
       }
-      const selectedIds = selectedNodes.map((node) => node.id);
+      const selectedIds = nodeIds ?? selectedRunNodeIds;
       if (
-        (mode === "selected" || mode === "from") &&
+        (mode === "selected" || mode === "node" || mode === "from") &&
         selectedIds.length === 0
       ) {
         toast.info(messages.canvas.runSelectNode);
@@ -1172,9 +1429,48 @@ function CanvasEditorInner({
         );
         return;
       }
-      setRunConfirm({ mode, plan });
+      setRunListExpanded(false);
+      setRunConfirm({
+        mode,
+        plan,
+        selectedNodeIds: selectedIds,
+        includeUpstream: mode !== "node",
+      });
     },
-    [activeRun, openModelSettings, selectedNodes, toGraph],
+    [activeRun, openModelSettings, selectedRunNodeIds, toGraph],
+  );
+
+  /** Flip between "selected + upstream" and "selected only" inside the dialog. */
+  const setRunIncludeUpstream = useCallback(
+    (includeUpstream: boolean) => {
+      setRunConfirm((current) => {
+        if (!current) {
+          return current;
+        }
+        const mode: CanvasRunMode = includeUpstream ? "selected" : "node";
+        const plan =
+          buildCanvasRunPlan(toGraph(), {
+            mode,
+            selectedNodeIds: current.selectedNodeIds,
+          }) ?? current.plan;
+        return { ...current, mode, plan, includeUpstream };
+      });
+    },
+    [toGraph],
+  );
+
+  const cancelNodeRun = useCallback((nodeId: string) => {
+    const controller = activeRunsRef.current.get(nodeId);
+    if (controller) {
+      controller.abort();
+    }
+  }, []);
+
+  const prepareRunSelected = useCallback(
+    (nodeIds: string[]) => {
+      prepareRun("selected", nodeIds);
+    },
+    [prepareRun],
   );
 
   const startLocalPlanRun = useCallback(async () => {
@@ -1206,7 +1502,22 @@ function CanvasEditorInner({
         plan: pending.plan,
         signal: controller.signal,
         concurrency: 2,
-        update: updateNodeData,
+        // Mirror the live status into the overlay store as well: it survives
+        // graph swaps (agent writes) where node data alone would not.
+        update: (nodeId, patch) => {
+          updateNodeData(nodeId, patch);
+          if (patch.status) {
+            useCanvasRunStatusStore
+              .getState()
+              .setNode(
+                nodeId,
+                patch.status,
+                patch.error,
+                patch.requestId,
+                patch.taskId,
+              );
+          }
+        },
         runNode: (nodeId, signal) => executeNode(nodeId, signal),
       });
       if (controller.signal.aborted) {
@@ -1281,7 +1592,7 @@ function CanvasEditorInner({
           } else {
             toast.info(run.error ?? messages.canvas.runFailed);
           }
-          onReload();
+          await syncFromServer();
           return;
         }
         timer = window.setTimeout(() => void poll(), 1500);
@@ -1305,7 +1616,7 @@ function CanvasEditorInner({
         window.clearTimeout(timer);
       }
     };
-  }, [canvasDocument.id, onReload, serverRunId, updateNodeData]);
+  }, [canvasDocument.id, serverRunId, syncFromServer, updateNodeData]);
 
   const cancelActiveRun = useCallback(() => {
     setRunMenuOpen(false);
@@ -1388,6 +1699,18 @@ function CanvasEditorInner({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      const mod = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+
+      // Toggle Agent even while typing in the chat composer (Cmd/Ctrl+\).
+      if (mod && key === "\\" && !event.altKey && !event.shiftKey) {
+        if (!document.querySelector('[role="dialog"]')) {
+          event.preventDefault();
+          setAgentChatOpen((current) => !current);
+        }
+        return;
+      }
+
       const target = event.target;
       if (
         target instanceof HTMLElement &&
@@ -1399,11 +1722,9 @@ function CanvasEditorInner({
         return;
       }
 
-      const mod = event.metaKey || event.ctrlKey;
-      if (insertMenu && event.key.toLowerCase() !== "escape") {
+      if (insertMenu && key !== "escape") {
         return;
       }
-      const key = event.key.toLowerCase();
 
       if (mod) {
         if (key === "z") {
@@ -1446,6 +1767,12 @@ function CanvasEditorInner({
       if (event.shiftKey && key === "g") {
         event.preventDefault();
         addGroupAtCenter();
+        return;
+      }
+
+      if (event.shiftKey && key === "r") {
+        event.preventDefault();
+        refreshCanvas();
         return;
       }
 
@@ -1536,9 +1863,11 @@ function CanvasEditorInner({
     history,
     insertMenu,
     nodes,
+    refreshCanvas,
     selectedNodes,
     selectAll,
     selectMode,
+    setAgentChatOpen,
     setConfigNodeId,
     zoomTo,
     zoomIn,
@@ -1579,19 +1908,96 @@ function CanvasEditorInner({
     };
   }, []);
 
+  const isBatchRunActive = Boolean(activeRun || serverRunId || agentRunId);
+
   const actions = useMemo(
     () => ({
       runNode: (nodeId: string) => void runNode(nodeId),
+      cancelNodeRun,
+      prepareRunSelected,
+      cancelActiveRun,
+      isBatchRunActive,
       models,
       canvasId: canvasDocument.id,
     }),
-    [canvasDocument.id, models, runNode],
+    [
+      cancelActiveRun,
+      cancelNodeRun,
+      canvasDocument.id,
+      isBatchRunActive,
+      models,
+      prepareRunSelected,
+      runNode,
+    ],
   );
 
   const configNode = useMemo(
     () => nodes.find((node) => node.id === configNodeId),
     [configNodeId, nodes],
   );
+
+  const runSummary = useMemo(() => {
+    if (!runConfirm) {
+      return null;
+    }
+    let overwrite = 0;
+    for (const nodeId of runConfirm.plan.nodeIds) {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (!node) {
+        continue;
+      }
+      if (node.data.url?.trim() || node.data.status === "succeeded") {
+        overwrite += 1;
+      }
+    }
+    return { count: runConfirm.plan.nodeIds.length, overwrite };
+  }, [nodes, runConfirm]);
+
+  /** Execution order, but spatial within a layer (top-left first). */
+  const runDisplayOrder = useMemo(() => {
+    if (!runConfirm) {
+      return [] as string[];
+    }
+    const position = new Map(nodes.map((node) => [node.id, node.position]));
+    const order = new Map<string, number>();
+    let index = 0;
+    for (const layer of runConfirm.plan.layers) {
+      const sorted = [...layer].sort((a, b) => {
+        const pa = position.get(a);
+        const pb = position.get(b);
+        return (pa?.y ?? 0) - (pb?.y ?? 0) || (pa?.x ?? 0) - (pb?.x ?? 0);
+      });
+      for (const id of sorted) {
+        order.set(id, index);
+        index += 1;
+      }
+    }
+    return [...runConfirm.plan.nodeIds].sort(
+      (a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0),
+    );
+  }, [nodes, runConfirm]);
+
+  /** Only offer the upstream switch when it actually changes the plan. */
+  const runHasUpstream = useMemo(() => {
+    if (
+      !runConfirm ||
+      (runConfirm.mode !== "selected" && runConfirm.mode !== "node")
+    ) {
+      return false;
+    }
+    const graph = toGraph();
+    const withUpstream = buildCanvasRunPlan(graph, {
+      mode: "selected",
+      selectedNodeIds: runConfirm.selectedNodeIds,
+    });
+    const without = buildCanvasRunPlan(graph, {
+      mode: "node",
+      selectedNodeIds: runConfirm.selectedNodeIds,
+    });
+    return (
+      (withUpstream?.nodeIds.length ?? 0) > (without?.nodeIds.length ?? 0)
+    );
+  }, [runConfirm, toGraph]);
   const runCostEstimate = useMemo(() => {
     if (!runConfirm) {
       return null;
@@ -1741,6 +2147,19 @@ function CanvasEditorInner({
       configNode.type === "text")
       ? configNode
       : null;
+  function nodeTypeIcon(type: string | undefined) {
+    switch (type) {
+      case "image":
+        return ImageSquare;
+      case "video":
+        return VideoCamera;
+      case "audio":
+        return Waveform;
+      default:
+        return TextT;
+    }
+  }
+
   function nodeTypeName(type: string | undefined): string {
     switch (type) {
       case "image":
@@ -2216,7 +2635,8 @@ function CanvasEditorInner({
 
   return (
     <>
-      <div className="flex h-full min-h-0 flex-col bg-zinc-50 dark:bg-zinc-950">
+      <div className="flex h-full min-h-0 bg-zinc-50 dark:bg-zinc-950">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <input
           ref={thumbnailRef}
           type="file"
@@ -2393,6 +2813,26 @@ function CanvasEditorInner({
                     />
                   </Button>
                 </Tooltip>
+                <Tooltip
+                  content={`${messages.canvas.agentChat} (${modLabel}+\\)`}
+                >
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={messages.canvas.agentChat}
+                    onClick={() => setAgentChatOpen((current) => !current)}
+                  >
+                    <Icon
+                      icon={ChatCircle}
+                      size={15}
+                      className={
+                        agentChatOpen
+                          ? "text-sky-500"
+                          : "text-zinc-500 dark:text-zinc-300"
+                      }
+                    />
+                  </Button>
+                </Tooltip>
                 <span className="h-5 w-px bg-zinc-200/80 dark:bg-zinc-700/80" />
                 <div className="flex items-center gap-0.5">
                   <Tooltip
@@ -2467,7 +2907,8 @@ function CanvasEditorInner({
                           className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                           onClick={() => {
                             setRunMenuOpen(false);
-                            setRunHistoryOpen(true);
+                            setTasksTab("history");
+                            setTasksOpen(true);
                           }}
                         >
                           <Icon icon={Clock} size={13} />
@@ -2486,12 +2927,15 @@ function CanvasEditorInner({
             </div>
 
             {conflict ? (
-              <div className="pointer-events-auto absolute left-1/2 top-16 z-30 flex w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 items-center gap-3 rounded-xl border border-amber-200/80 bg-amber-50/90 px-3 py-2 text-[11px] text-amber-800 shadow-lg backdrop-blur-xl dark:border-amber-900/60 dark:bg-amber-950/80 dark:text-amber-200">
+              <div className="pointer-events-auto absolute left-1/2 top-16 z-30 flex w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 items-center gap-2 rounded-xl border border-amber-200/80 bg-amber-50/90 px-3 py-2 text-[11px] text-amber-800 shadow-lg backdrop-blur-xl dark:border-amber-900/60 dark:bg-amber-950/80 dark:text-amber-200">
                 <span className="min-w-0 flex-1 truncate">
                   {messages.canvas.versionConflictBody}
                 </span>
-                <Button variant="secondary" size="sm" onClick={onReload}>
-                  {messages.canvas.reload}
+                <Button variant="secondary" size="sm" onClick={forceSaveMine}>
+                  {messages.canvas.versionConflictKeepMine}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={discardAndLoadRemote}>
+                  {messages.canvas.conflictLoadRemote}
                 </Button>
               </div>
             ) : null}
@@ -2878,7 +3322,10 @@ function CanvasEditorInner({
                       size="icon-sm"
                       className="relative"
                       aria-label={messages.canvas.runningTasks}
-                      onClick={() => setTasksOpen(true)}
+                      onClick={() => {
+                        setTasksTab("running");
+                        setTasksOpen(true);
+                      }}
                     >
                       <Icon icon={Pulse} size={14} />
                       {runningTaskCount > 0 ? (
@@ -3120,6 +3567,17 @@ function CanvasEditorInner({
         </CanvasActionsContext.Provider>
       </div>
 
+      <CanvasAgentChatPanel
+        canvasId={canvasDocument.id}
+        chatModels={chatModels}
+        defaultModelId={settings.text?.model}
+        open={agentChatOpen}
+        onOpenChange={setAgentChatOpen}
+        onOpenModelSettings={openModelSettings}
+        onGraphMutated={handleAgentChatGraphMutated}
+      />
+      </div>
+
       {assetLibraryOpen ? (
       <PlaygroundMediaLibraryPicker
         open={assetLibraryOpen}
@@ -3192,52 +3650,108 @@ function CanvasEditorInner({
               size="sm"
               onClick={() => void startPlanRun()}
             >
-              {messages.canvas.runConfirm}
+              {messages.canvas.runStartWithCount.replace(
+                "{count}",
+                String(runConfirm?.plan.nodeIds.length ?? 0),
+              )}
             </Button>
           </div>
         }
       >
         <div className="space-y-3">
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            {messages.canvas.runConfirmBody}
-          </p>
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="text-[13px] font-medium text-zinc-800 dark:text-zinc-100">
+              {messages.canvas.runSummaryNodes.replace(
+                "{count}",
+                String(runSummary?.count ?? runConfirm?.plan.nodeIds.length ?? 0),
+              )}
+            </span>
+            {runCostEstimate && runCostEstimate.priced > 0 ? (
+              <span className="rounded-full bg-sky-50 px-2 py-0.5 font-mono text-[11px] text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
+                {messages.canvas.runEstimatedTotal} {currencySymbol}
+                {runCostEstimate.total}
+              </span>
+            ) : null}
+          </div>
+
+          {runSummary && runSummary.overwrite > 0 ? (
+            <div className="flex items-start gap-2 rounded-md bg-amber-50/80 px-2.5 py-2 text-[11px] leading-relaxed text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+              <Icon icon={WarningCircle} size={13} className="mt-0.5 shrink-0" />
+              <span>
+                {messages.canvas.runOverwriteWarning.replace(
+                  "{count}",
+                  String(runSummary.overwrite),
+                )}
+              </span>
+            </div>
+          ) : null}
+
+          {runHasUpstream ? (
+            <div className="rounded-md border border-zinc-200/80 px-2.5 py-2 dark:border-zinc-700/80">
+              <Switch
+                id="run-include-upstream"
+                checked={Boolean(runConfirm?.includeUpstream)}
+                onChange={setRunIncludeUpstream}
+                label={messages.canvas.runIncludeUpstream}
+                layout="between"
+              />
+              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+                {messages.canvas.runIncludeUpstreamHint}
+              </p>
+            </div>
+          ) : null}
+
           <div className="space-y-1">
-            {runConfirm?.plan.nodeIds.slice(0, 8).map((nodeId) => {
+            {(runListExpanded
+              ? runDisplayOrder
+              : runDisplayOrder.slice(0, 6)
+            ).map((nodeId) => {
               const node = nodes.find((item) => item.id === nodeId);
               if (!node) {
                 return null;
               }
+              const hasResult = Boolean(
+                node.data.url?.trim() || node.data.status === "succeeded",
+              );
               return (
                 <div
                   key={nodeId}
-                  className="flex items-center justify-between gap-3 rounded-md bg-zinc-50 px-2 py-1.5 text-xs dark:bg-zinc-800/60"
+                  className="flex items-center gap-2 rounded-md bg-zinc-50 px-2 py-1.5 text-xs dark:bg-zinc-800/60"
                 >
-                  <span className="min-w-0 truncate text-zinc-700 dark:text-zinc-200">
+                  <Icon
+                    icon={nodeTypeIcon(node.type)}
+                    size={13}
+                    className="shrink-0 text-zinc-400"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-zinc-700 dark:text-zinc-200">
                     {node.data.label?.trim() || nodeTypeName(node.type)}
                   </span>
+                  {hasResult ? (
+                    <span className="shrink-0 rounded-full bg-zinc-200/70 px-1.5 py-0.5 text-[9px] text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300">
+                      {messages.canvas.runHasResult}
+                    </span>
+                  ) : null}
                   <span className="shrink-0 font-mono text-[10px] text-zinc-400">
                     {node.data.model || messages.canvas.noModel}
                   </span>
                 </div>
               );
             })}
-            {runConfirm && runConfirm.plan.nodeIds.length > 8 ? (
-              <p className="px-2 text-[10px] text-zinc-400">
-                +{runConfirm.plan.nodeIds.length - 8}
-              </p>
+            {runConfirm && runConfirm.plan.nodeIds.length > 6 ? (
+              <button
+                type="button"
+                className="w-full rounded-md px-2 py-1 text-left text-[10px] text-zinc-400 transition-colors hover:bg-zinc-50 hover:text-zinc-600 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-300"
+                onClick={() => setRunListExpanded((current) => !current)}
+              >
+                {runListExpanded
+                  ? messages.canvas.runCollapse
+                  : messages.canvas.runExpandAll.replace(
+                      "{count}",
+                      String(runConfirm.plan.nodeIds.length),
+                    )}
+              </button>
             ) : null}
           </div>
-          {runCostEstimate && runCostEstimate.priced > 0 ? (
-            <div className="flex items-center justify-between gap-3 rounded-md bg-sky-50/70 px-2 py-2 text-xs dark:bg-sky-950/30">
-              <span className="text-zinc-500 dark:text-zinc-400">
-                {messages.canvas.runEstimatedTotal}
-              </span>
-              <span className="font-mono font-medium text-sky-700 dark:text-sky-300">
-                {currencySymbol}
-                {runCostEstimate.total}
-              </span>
-            </div>
-          ) : null}
           {runCostEstimate && runCostEstimate.unpriced > 0 ? (
             <p className="text-[10px] text-zinc-400">
               {messages.canvas.runEstimatedPartial}
@@ -3248,14 +3762,6 @@ function CanvasEditorInner({
           </p>
         </div>
       </Modal>
-      ) : null}
-
-      {runHistoryOpen ? (
-        <CanvasRunHistoryModal
-          open={runHistoryOpen}
-          onClose={() => setRunHistoryOpen(false)}
-          canvasId={canvasDocument.id}
-        />
       ) : null}
 
       {shortcutsOpen ? (
@@ -3269,6 +3775,9 @@ function CanvasEditorInner({
       <CanvasRunningTasksModal
         open={tasksOpen}
         onClose={() => setTasksOpen(false)}
+        canvasId={canvasDocument.id}
+        tab={tasksTab}
+        onTabChange={setTasksTab}
         runActive={Boolean(activeRun || agentRunId)}
         onCancelRun={cancelActiveRun}
       />
@@ -4567,7 +5076,6 @@ export function CanvasEditor({ canvasId }: { canvasId: string }) {
       <CanvasEditorInner
         key={`${query.data.id}:${query.data.version}`}
         canvasDocument={query.data}
-        onReload={query.reload}
       />
     </ReactFlowProvider>
   );

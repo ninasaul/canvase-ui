@@ -105,18 +105,9 @@ async function apiRequest<T>(
 ): Promise<T> {
   const mapped = remapPortalPath(path);
 
-  // Endpoints not yet ported — return safe empty payloads so the editor UI mounts.
-  if (mapped.startsWith("/api/canvases/") && mapped.includes("/runs")) {
-    if (mapped.endsWith("/active")) {
-      return null as T;
-    }
-    if (init.method === "POST") {
-      throw new ApiRequestError("Canvas runs API not configured yet", 501);
-    }
-    return [] as T;
-  }
-  if (mapped.includes("/duplicate")) {
-    throw new ApiRequestError("Not implemented", 501);
+  // Editor-local runs never reach the server; the active-run probe is a no-op.
+  if (mapped.startsWith("/api/canvases/") && mapped.endsWith("/runs/active")) {
+    return null as T;
   }
   if (mapped.startsWith("/api/tasks/")) {
     throw new ApiRequestError("Task API not configured yet", 501);

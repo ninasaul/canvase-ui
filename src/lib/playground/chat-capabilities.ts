@@ -44,8 +44,13 @@ export function modelSupportsChatImages(
   ) {
     return true;
   }
-  // DeepSeek: only VL variants (not deepseek-v3 / deepseek-chat).
-  if (/deepseek-?vl|deepseek.*\bvl\b/.test(normalized)) {
+  // DeepSeek: VL + flash / vision chat ids that accept OpenAI image_url parts.
+  // deepseek-chat / deepseek-reasoner stay text-only unless tagged vl/vision/flash.
+  if (
+    /deepseek-?vl|deepseek.*\bvl\b|deepseek.*vision|deepseek-?flash|deepseek.*\bflash\b/.test(
+      normalized,
+    )
+  ) {
     return true;
   }
   // Kimi / Moonshot: VL or vision-tagged ids only.

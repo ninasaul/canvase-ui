@@ -8,6 +8,8 @@ import {
   Images,
   Info,
   PencilSimple,
+  Play,
+  StopCircle,
   Trash,
   UploadSimple,
 } from "@phosphor-icons/react";
@@ -50,7 +52,13 @@ export function CanvasNodeHeaderActions({
   const node = useCanvasStore((state) =>
     state.nodes.find((item) => item.id === nodeId),
   );
-  const { canvasId } = useCanvasActions();
+  const {
+    canvasId,
+    runNode,
+    cancelNodeRun,
+    cancelActiveRun,
+    isBatchRunActive,
+  } = useCanvasActions();
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const removeNode = useCanvasStore((state) => state.removeNode);
   const duplicateNode = useCanvasStore((state) => state.duplicateNode);
@@ -125,8 +133,52 @@ export function CanvasNodeHeaderActions({
     }
   }
 
+  const nodeBusy =
+    node?.data.status === "running" || node?.data.status === "queued";
+  const canRunNode =
+    node != null &&
+    node.type !== "group" &&
+    node.type !== "audio" &&
+    (node.type === "image" ||
+      node.type === "video" ||
+      node.type === "text");
+
   return (
     <div className="nodrag flex shrink-0 items-center gap-0.5">
+      {canRunNode ? (
+        <Tooltip
+          content={
+            nodeBusy ? messages.canvas.runCancel : messages.canvas.runThisNode
+          }
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className={
+              nodeBusy
+                ? "text-red-500 hover:text-red-600"
+                : "text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
+            }
+            aria-label={
+              nodeBusy ? messages.canvas.runCancel : messages.canvas.runThisNode
+            }
+            onClick={(event) => {
+              event.stopPropagation();
+              if (nodeBusy) {
+                cancelNodeRun(nodeId);
+                if (isBatchRunActive) {
+                  cancelActiveRun();
+                }
+                return;
+              }
+              runNode(nodeId);
+            }}
+          >
+            <Icon icon={nodeBusy ? StopCircle : Play} size={13} />
+          </Button>
+        </Tooltip>
+      ) : null}
       {node?.parentId ? (
         <Tooltip content={messages.canvas.removeFromGroup}>
           <Button

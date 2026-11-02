@@ -5,6 +5,10 @@ import type { PortalPublicModel } from "@/types/admin";
 
 export type CanvasActions = {
   runNode: (nodeId: string) => void;
+  cancelNodeRun: (nodeId: string) => void;
+  prepareRunSelected: (nodeIds: string[]) => void;
+  cancelActiveRun: () => void;
+  isBatchRunActive: boolean;
   models: PortalPublicModel[];
   canvasId: string;
 };

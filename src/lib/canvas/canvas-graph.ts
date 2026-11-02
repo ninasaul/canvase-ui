@@ -117,6 +117,21 @@ export const CANVAS_GRAPH_LIMITS = {
   maxBytes: 512 * 1024,
 } as const;
 
+/** Write-path guard: reject graphs above the byte budget before persisting. */
+export function assertCanvasGraphSize(graph: unknown): void {
+  let bytes = 0;
+  try {
+    bytes = Buffer.byteLength(JSON.stringify(graph ?? null), "utf8");
+  } catch {
+    throw new CanvasGraphValidationError(["画布数据无法序列化"]);
+  }
+  if (bytes > CANVAS_GRAPH_LIMITS.maxBytes) {
+    throw new CanvasGraphValidationError([
+      `画布数据不能超过 ${Math.floor(CANVAS_GRAPH_LIMITS.maxBytes / 1024)} KB`,
+    ]);
+  }
+}
+
 export class CanvasGraphValidationError extends Error {
   readonly errors: string[];
 

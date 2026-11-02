@@ -1,6 +1,7 @@
 export {
   CANVAS_GRAPH_LIMITS,
   CANVAS_GRAPH_SCHEMA_VERSION,
+  assertCanvasGraphSize,
   canvasEdgeRoles,
   canvasNodeTypes,
   createEmptyCanvasGraph,

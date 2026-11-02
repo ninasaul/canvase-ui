@@ -150,13 +150,17 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (parsed.data.version !== canvas.version) {
         return jsonError("Version conflict", 409);
       }
-      await prisma.canvas.update({
-        where: { id: canvas.id },
+      // Compare-and-swap so a concurrent writer cannot pass the same check.
+      const result = await prisma.canvas.updateMany({
+        where: { id: canvas.id, version: parsed.data.version },
         data: {
           ...(parsed.data.title ? { title: parsed.data.title } : {}),
           version: { increment: 1 },
         },
       });
+      if (result.count === 0) {
+        return jsonError("Version conflict", 409);
+      }
     }
   } catch (error) {
     if (error instanceof CanvasUpdateError) {

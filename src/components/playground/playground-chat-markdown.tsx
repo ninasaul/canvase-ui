@@ -50,16 +50,32 @@ const markdownComponents = {
     );
   },
   h1({ children }: { children?: ReactNode }) {
-    return <h1 className="mb-2 mt-3 text-base font-semibold first:mt-0">{children}</h1>;
+    return (
+      <h1 className="mb-2 mt-3 text-[15px] font-semibold tracking-tight text-zinc-900 first:mt-0 dark:text-zinc-50">
+        {children}
+      </h1>
+    );
   },
   h2({ children }: { children?: ReactNode }) {
-    return <h2 className="mb-2 mt-3 text-sm font-semibold first:mt-0">{children}</h2>;
+    return (
+      <h2 className="mb-2 mt-3 text-[14px] font-semibold tracking-tight text-zinc-900 first:mt-0 dark:text-zinc-50">
+        {children}
+      </h2>
+    );
   },
   h3({ children }: { children?: ReactNode }) {
-    return <h3 className="mb-1.5 mt-2.5 text-sm font-medium first:mt-0">{children}</h3>;
+    return (
+      <h3 className="mb-1.5 mt-2.5 text-[13px] font-semibold text-zinc-900 first:mt-0 dark:text-zinc-50">
+        {children}
+      </h3>
+    );
   },
   h4({ children }: { children?: ReactNode }) {
-    return <h4 className="mb-1.5 mt-2 text-sm font-medium first:mt-0">{children}</h4>;
+    return (
+      <h4 className="mb-1.5 mt-2 text-[13px] font-medium text-zinc-800 first:mt-0 dark:text-zinc-100">
+        {children}
+      </h4>
+    );
   },
   ul({ children }: { children?: ReactNode }) {
     return <ul className="mb-2 list-disc space-y-0.5 pl-4 last:mb-0">{children}</ul>;
@@ -72,7 +88,7 @@ const markdownComponents = {
   },
   blockquote({ children }: { children?: ReactNode }) {
     return (
-      <blockquote className="mb-2 border-l border-zinc-300 pl-3 text-zinc-500 last:mb-0 dark:border-zinc-600 dark:text-zinc-400">
+      <blockquote className="mb-2 rounded-md bg-zinc-100/80 px-3 py-2 text-zinc-500 last:mb-0 dark:bg-zinc-800/50 dark:text-zinc-400">
         {children}
       </blockquote>
     );
@@ -139,18 +155,32 @@ const markdownComponents = {
   },
 };
 
+/** Soften common model quirks so ATX headings parse (`#标题` → `# 标题`). */
+function normalizeChatMarkdown(content: string): string {
+  return content.replace(/^(#{1,6})([^\s#])/gm, "$1 $2");
+}
+
 export function PlaygroundChatMarkdown({
   content,
   streaming = false,
   compact = false,
+  className,
 }: {
   content: string;
   streaming?: boolean;
   compact?: boolean;
+  className?: string;
 }) {
-  const rootClass = `${PROSE_CLASS}${compact ? ` ${PROSE_COMPACT_CLASS}` : ""}`;
+  const rootClass = [
+    PROSE_CLASS,
+    compact ? PROSE_COMPACT_CLASS : "",
+    className ?? "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const normalized = normalizeChatMarkdown(content);
 
-  if (!content && streaming) {
+  if (!normalized && streaming) {
     return (
       <div className={rootClass}>
         <StreamingCursor />
@@ -158,7 +188,7 @@ export function PlaygroundChatMarkdown({
     );
   }
 
-  if (!content.trim()) {
+  if (!normalized.trim()) {
     return streaming ? (
       <div className={rootClass}>
         <StreamingCursor />
@@ -169,7 +199,7 @@ export function PlaygroundChatMarkdown({
   return (
     <div className={rootClass}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {content}
+        {normalized}
       </ReactMarkdown>
       {streaming ? <StreamingCursor /> : null}
     </div>

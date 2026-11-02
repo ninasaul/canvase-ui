@@ -75,10 +75,29 @@ export async function createAgentToken(input: {
   };
 }
 
+const TOKEN_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Drop tokens that expired or were revoked long ago. */
+async function pruneAgentTokens(ownerId: string): Promise<void> {
+  const cutoff = new Date(Date.now() - TOKEN_RETENTION_MS);
+  await prisma.agentToken
+    .deleteMany({
+      where: {
+        ownerId,
+        OR: [
+          { revokedAt: { lt: cutoff } },
+          { revokedAt: null, expiresAt: { lt: cutoff } },
+        ],
+      },
+    })
+    .catch(() => undefined);
+}
+
 export async function listAgentTokens(input: {
   ownerId: string;
   canvasId: string;
 }) {
+  void pruneAgentTokens(input.ownerId);
   const rows = await prisma.agentToken.findMany({
     where: {
       ownerId: input.ownerId,
@@ -143,10 +162,13 @@ export async function resolveAgentTokenFromBearer(
   if (!row || row.revokedAt || row.expiresAt.getTime() <= Date.now()) {
     return null;
   }
-  await prisma.agentToken.update({
-    where: { id: row.id },
-    data: { lastUsedAt: new Date() },
-  });
+  // Touch at most once a minute: MCP hosts call tools in tight loops.
+  const lastUsed = row.lastUsedAt?.getTime() ?? 0;
+  if (Date.now() - lastUsed > 60_000) {
+    void prisma.agentToken
+      .update({ where: { id: row.id }, data: { lastUsedAt: new Date() } })
+      .catch(() => undefined);
+  }
   return {
     id: row.id,
     ownerId: row.ownerId,

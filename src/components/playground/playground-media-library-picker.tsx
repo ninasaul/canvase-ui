@@ -63,7 +63,7 @@ function LibraryPreview({
     return (
       // eslint-disable-next-line @next/next/no-img-element -- library CDN URLs
       <img
-        src={item.thumbnailUrl ?? item.url}
+        src={item.thumbnailUrl || item.url}
         alt=""
         loading="lazy"
         decoding="async"

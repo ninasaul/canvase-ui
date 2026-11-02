@@ -94,10 +94,35 @@ model Canvas {
   agentTokens      AgentToken[]
   commandLogs      CanvasCommandLog[]
   agentRuns        CanvasAgentRun[]
+  chatMessages     CanvasChatMessage[]
 
   @@index([ownerId, updatedAt])
   @@index([thumbnailAssetId])
   @@map("canvas")
+}
+
+/// Agent chat transcript. Append-only: tabs never overwrite each other.
+model CanvasChatMessage {
+  id          String   @id @default(cuid())
+  canvasId    String
+  canvas      Canvas   @relation(fields: [canvasId], references: [id], onDelete: Cascade)
+  ownerId     String
+  /// "user" | "assistant"
+  role        String
+  content     String
+  /// Conversation boundary. A new session starts fresh model context while the
+  /// transcript keeps every earlier session for scrolling back.
+  sessionId   String
+  /// [{ url, kind, name? }] for user turns.
+  attachments Json?
+  /// Client message id; dedupes retries of the same user turn.
+  clientId    String?
+  createdAt   DateTime @default(now())
+
+  @@unique([canvasId, clientId])
+  @@index([canvasId, createdAt])
+  @@index([canvasId, sessionId, createdAt])
+  @@map("canvas_chat_message")
 }
 
 enum AgentTokenActorType {

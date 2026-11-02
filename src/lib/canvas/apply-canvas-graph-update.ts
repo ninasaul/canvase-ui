@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import {
+  assertCanvasGraphSize,
   isCanvasGraph,
   parseCanvasGraph,
   type CanvasGraph,
@@ -62,15 +63,32 @@ export async function applyCanvasGraphUpdate(input: {
   if (!isCanvasGraph(input.graph)) {
     throw new CanvasUpdateError("Invalid canvas graph", 400);
   }
+  try {
+    assertCanvasGraphSize(input.graph);
+  } catch (error) {
+    throw new CanvasUpdateError(
+      error instanceof Error ? error.message : "Canvas graph is too large",
+      413,
+    );
+  }
   // Re-parse to normalize / strip invalid optional fields.
   const graph = parseCanvasGraph(input.graph);
-  const updated = await prisma.canvas.update({
-    where: { id: canvas.id },
+  // Compare-and-swap: selecting the row and incrementing it in two statements
+  // lets two concurrent writers both pass the version check (observed with
+  // agent run snapshots). Guard the increment itself instead.
+  const result = await prisma.canvas.updateMany({
+    where: { id: canvas.id, version: input.expectedVersion },
     data: {
       ...(input.title ? { title: input.title } : {}),
       graph: graph as unknown as Prisma.InputJsonValue,
       version: { increment: 1 },
     },
+  });
+  if (result.count === 0) {
+    throw new CanvasUpdateError("Version conflict", 409);
+  }
+  const updated = await prisma.canvas.findUniqueOrThrow({
+    where: { id: canvas.id },
   });
   return {
     canvas: updated,

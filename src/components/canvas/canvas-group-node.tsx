@@ -8,13 +8,16 @@ import {
   FolderMinus,
   Info,
   PencilSimple,
+  Play,
   PlusCircle,
+  StopCircle,
   Trash,
 } from "@phosphor-icons/react";
 import { NodeToolbar, Position, type NodeProps } from "@xyflow/react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CanvasNodeInfoModal } from "./canvas-node-info";
+import { useCanvasActions } from "./canvas-actions";
 import {
   GROUP_STYLE_CLASS,
   GROUP_STYLE_HOVER_CLASS,
@@ -58,6 +61,12 @@ export const GroupCanvasNode = memo(function GroupCanvasNode({
   const addNodesToGroup = useCanvasStore((state) => state.addNodesToGroup);
   const duplicateNode = useCanvasStore((state) => state.duplicateNode);
   const nodes = useCanvasStore((state) => state.nodes);
+  const {
+    prepareRunSelected,
+    cancelNodeRun,
+    cancelActiveRun,
+    isBatchRunActive,
+  } = useCanvasActions();
   const dragOver = useCanvasStore(
     (state) => state.dragOverGroupId === id,
   );
@@ -76,6 +85,20 @@ export const GroupCanvasNode = memo(function GroupCanvasNode({
   const { nodeStyle } = useCanvasPreferences();
   const children = nodes.filter((node) => node.parentId === id);
   const childCount = children.length;
+  const runnableChildIds = children
+    .filter(
+      (node) =>
+        node.type === "image" ||
+        node.type === "video" ||
+        node.type === "text",
+    )
+    .map((node) => node.id);
+  const groupBusy =
+    isBatchRunActive ||
+    children.some(
+      (node) =>
+        node.data.status === "running" || node.data.status === "queued",
+    );
   const title = data.label?.trim() || messages.canvas.groupDefault;
   const titleAccent = dragOver || selected;
   const minWidth = Math.max(
@@ -162,6 +185,43 @@ export const GroupCanvasNode = memo(function GroupCanvasNode({
         offset={12}
       >
         <div className="nodrag nopan flex items-center gap-0.5 rounded-lg border border-zinc-200/80 bg-white/95 p-1 shadow-sm backdrop-blur dark:border-zinc-700/80 dark:bg-zinc-900/95">
+          <Tooltip
+            content={
+              groupBusy ? messages.canvas.runCancel : messages.canvas.runGroup
+            }
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className={
+                groupBusy
+                  ? "text-red-500 hover:text-red-600"
+                  : "text-sky-600 hover:text-sky-700 dark:text-sky-400 dark:hover:text-sky-300"
+              }
+              aria-label={
+                groupBusy
+                  ? messages.canvas.runCancel
+                  : messages.canvas.runGroup
+              }
+              disabled={!groupBusy && runnableChildIds.length === 0}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (groupBusy) {
+                  for (const childId of runnableChildIds) {
+                    cancelNodeRun(childId);
+                  }
+                  if (isBatchRunActive) {
+                    cancelActiveRun();
+                  }
+                  return;
+                }
+                prepareRunSelected(runnableChildIds);
+              }}
+            >
+              <Icon icon={groupBusy ? StopCircle : Play} size={13} />
+            </Button>
+          </Tooltip>
           <Tooltip content={messages.canvas.copyNode}>
             <Button
               type="button"
