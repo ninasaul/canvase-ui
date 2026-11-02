@@ -3,6 +3,7 @@ import {
   clearChatMessages,
   listChatMessages,
 } from "@/lib/agent/canvas-agent-chat-store";
+import { prisma } from "@/lib/prisma";
 import { getOwnedActiveCanvas } from "@/lib/canvas/apply-canvas-graph-update";
 import { requireUser } from "@/lib/session";
 
@@ -31,7 +32,12 @@ export async function GET(request: Request, context: RouteContext) {
     limit: Number.isFinite(limitParam) ? limitParam : 200,
   });
 
-  return jsonOk({ messages });
+  const summaries = await prisma.canvasChatSummary.findMany({
+    where: { canvasId: id },
+    select: { sessionId: true, summary: true, coveredCount: true },
+  });
+
+  return jsonOk({ messages, summaries });
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {

@@ -368,14 +368,50 @@ export type CanvasChatHistoryMessage = {
 };
 
 /** Server-side transcript for the canvas agent (append-only). */
+export type CanvasChatSummary = {
+  sessionId: string;
+  summary: string;
+  coveredCount: number;
+};
+
 export async function listCanvasChatMessages(
   canvasId: string,
   limit = 200,
-): Promise<CanvasChatHistoryMessage[]> {
-  const payload = await portalRequest<{ messages: CanvasChatHistoryMessage[] }>(
-    `/api/canvases/${canvasId}/chat?limit=${limit}`,
+): Promise<{
+  messages: CanvasChatHistoryMessage[];
+  summaries: CanvasChatSummary[];
+}> {
+  const payload = await portalRequest<{
+    messages: CanvasChatHistoryMessage[];
+    summaries?: CanvasChatSummary[];
+  }>(`/api/canvases/${canvasId}/chat?limit=${limit}`);
+  return {
+    messages: Array.isArray(payload?.messages) ? payload.messages : [],
+    summaries: Array.isArray(payload?.summaries) ? payload.summaries : [],
+  };
+}
+
+/** Folds the oldest slice of a conversation into a rolling summary. */
+export async function summarizeCanvasChat(input: {
+  canvasId: string;
+  sessionId: string;
+  model: string;
+  vendor?: string;
+  messages: Array<{ role: "user" | "assistant"; content: string }>;
+}): Promise<{ summary: string; coveredCount: number }> {
+  return portalRequest<{ summary: string; coveredCount: number }>(
+    "/api/agent/summarize",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        canvasId: input.canvasId,
+        sessionId: input.sessionId,
+        model: input.model,
+        ...(input.vendor ? { vendor: input.vendor } : {}),
+        messages: input.messages,
+      }),
+    },
   );
-  return Array.isArray(payload?.messages) ? payload.messages : [];
 }
 
 export async function clearCanvasChatMessages(canvasId: string): Promise<void> {

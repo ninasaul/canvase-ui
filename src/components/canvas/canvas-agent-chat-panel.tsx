@@ -39,6 +39,7 @@ import {
   resolveAgentApproval,
   steerCanvasAgentChat,
   streamCanvasAgentChat,
+  summarizeCanvasChat,
   type CanvasAgentChatSseEvent,
   type CanvasChatHistoryMessage,
   clearCanvasChatMessages,
@@ -430,10 +431,15 @@ const MAX_API_HISTORY_MESSAGES = 80;
 const MAX_API_HISTORY_CHARS = 24_000;
 /** Always keep the tail verbatim, even when it blows the budget. */
 const KEEP_RECENT_MESSAGES = 6;
+/** Start folding once this many messages sit outside the summary. */
+const COMPACT_TRIGGER = 40;
+/** Leave this many recent messages verbatim when folding. */
+const COMPACT_KEEP_RECENT = 24;
 
 /** Flatten UI transcript into API history (tools become assistant notes). */
 function buildApiHistory(
   items: UiMessage[],
+  summary?: { summary: string; coveredCount: number },
 ): Array<{
   role: "user" | "assistant";
   content: string;
@@ -504,10 +510,32 @@ function buildApiHistory(
       });
     }
   }
+  // Fold already-summarized turns away: the model gets the briefing instead.
+  const covered = summary ? Math.max(0, summary.coveredCount) : 0;
+  let base = history;
+  if (summary && covered > 0) {
+    let seen = 0;
+    let cut = 0;
+    while (cut < base.length && seen < covered) {
+      const entry = base[cut]!;
+      if (entry.role === "user" || entry.role === "assistant") {
+        seen += 1;
+      }
+      cut += 1;
+    }
+    base = [
+      {
+        role: "assistant" as const,
+        content: `[summary of the earlier conversation]\n${summary.summary}`,
+      },
+      ...base.slice(cut),
+    ];
+  }
+
   const trimmed =
-    history.length <= MAX_API_HISTORY_MESSAGES
-      ? history
-      : history.slice(-MAX_API_HISTORY_MESSAGES);
+    base.length <= MAX_API_HISTORY_MESSAGES
+      ? base
+      : base.slice(-MAX_API_HISTORY_MESSAGES);
 
   // Budget by characters: tool results dominate and are re-readable, so drop
   // the oldest turns first and tell the model they existed.
@@ -727,6 +755,10 @@ export function CanvasAgentChatPanel({
 }) {
   const messages = useMessages();
   const [items, setItems] = useState<UiMessage[]>(() => loadMessages(canvasId));
+  /** Rolling summaries per session, used to drop already-folded turns. */
+  const [summaries, setSummaries] = useState<
+    Record<string, { summary: string; coveredCount: number }>
+  >({});
   const [draft, setDraft] = useState("");
   const [modelId, setModelId] = useState(
     () => loadModelId(canvasId) || defaultModelId || chatModels[0]?.id || "",
@@ -854,12 +886,23 @@ export function CanvasAgentChatPanel({
     // Paint the local cache immediately, then adopt the server transcript.
     setItems(loadMessages(canvasId));
     void listCanvasChatMessages(canvasId)
-      .then((rows) => {
-        if (cancelled || rows.length === 0 || turnStartedRef.current) {
+      .then((payload) => {
+        if (cancelled || turnStartedRef.current) {
           return;
         }
-        setItems(mapHistoryToItems(rows));
-        setSessionId(rows[rows.length - 1]!.sessionId);
+        setSummaries(
+          Object.fromEntries(
+            payload.summaries.map((entry) => [
+              entry.sessionId,
+              { summary: entry.summary, coveredCount: entry.coveredCount },
+            ]),
+          ),
+        );
+        if (payload.messages.length === 0) {
+          return;
+        }
+        setItems(mapHistoryToItems(payload.messages));
+        setSessionId(payload.messages[payload.messages.length - 1]!.sessionId);
       })
       .catch(() => undefined);
     return () => {
@@ -1136,7 +1179,50 @@ export function CanvasAgentChatPanel({
         ("sessionId" in item ? item.sessionId : undefined) ===
         (userMessage.kind === "user" ? userMessage.sessionId : undefined),
     );
-    const historyForApi = buildApiHistory([...scoped, userMessage]);
+    const sessionMessages = [...scoped, userMessage];
+    const sessionIdForTurn = activeSessionId();
+    const summaryForSession = summaries[sessionIdForTurn];
+    let effectiveSummary = summaryForSession;
+    const foldable = sessionMessages.filter(
+      (item) => item.kind === "user" || item.kind === "assistant",
+    );
+    const coveredNow = summaryForSession?.coveredCount ?? 0;
+    if (
+      modelId &&
+      foldable.length - coveredNow > COMPACT_TRIGGER &&
+      foldable.length > COMPACT_KEEP_RECENT + 8
+    ) {
+      const foldCount = foldable.length - COMPACT_KEEP_RECENT;
+      const toFold = foldable
+        .slice(0, foldCount)
+        .map((item) => ({
+          role: (item.kind === "user" ? "user" : "assistant") as
+            | "user"
+            | "assistant",
+          content: String(item.content ?? "").slice(0, 2_000),
+        }))
+        .filter((entry) => entry.content.trim().length > 0)
+        .slice(0, 60);
+      if (toFold.length >= 8) {
+        try {
+          const compacted = await summarizeCanvasChat({
+            canvasId,
+            sessionId: sessionIdForTurn,
+            model: modelId,
+            vendor: selectedModel?.vendor,
+            messages: toFold,
+          });
+          effectiveSummary = compacted;
+          setSummaries((current) => ({
+            ...current,
+            [sessionIdForTurn]: compacted,
+          }));
+        } catch {
+          // Compaction is best effort; the turn still runs with full history.
+        }
+      }
+    }
+    const historyForApi = buildApiHistory(sessionMessages, effectiveSummary);
     if (historyForApi.length === 0) {
       setItems((current) => [
         ...current,

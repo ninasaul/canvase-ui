@@ -153,7 +153,11 @@ Agent chat turns are persisted server-side (`canvas_chat_message`, append-only, 
 
 ### Agent approvals
 
-Read and ordinary edit tools run automatically (they are undoable). Tools that cost money or delete in bulk do not: `canvas_run` and `canvas_delete_nodes` with more than five ids block the turn and emit an `approval_request` over the chat stream. The browser answers through `POST /api/agent/approvals/[id]` with `allow_once`, `allow_session` (30 minute grant for that conversation) or `deny`; a denial is fed back to the model as a tool result so it can propose a smaller step. Pending approvals are process-local — run a single app instance, or move the registry to Redis before scaling out.
+Read and ordinary edit tools run automatically (they are undoable). Tools that cost money or delete in bulk do not: `canvas_run` and `canvas_delete_nodes` with more than five ids block the turn and emit an `approval_request` over the chat stream. The browser answers through `POST /api/agent/approvals/[id]` with `allow_once`, `allow_session` (30 minute grant for that conversation) or `deny`; a denial is fed back to the model as a tool result so it can propose a smaller step. Pending approvals and their session grants are shared through Redis (`canvase:approval:<id>` + a `canvase:approval:decision` pub/sub channel), so any instance can answer a turn running elsewhere. Without `REDIS_URL` both fall back to process-local state, which only works for a single instance.
+
+### Memory compaction
+
+Long conversations are folded rather than truncated: before a turn whose transcript exceeds the window, the client sends the oldest slice to `POST /api/agent/summarize`, the model writes a dense briefing, and the result is stored in `canvas_chat_summary` (`coveredCount` records how many messages it stands for). Later turns send that briefing plus the recent tail instead of the whole history, and the summary survives reloads and devices. When a second compaction runs, the previous summary is folded into the new one so nothing is lost between slices.
 
 ### Run cards and history budget
 

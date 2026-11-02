@@ -95,6 +95,7 @@ model Canvas {
   commandLogs      CanvasCommandLog[]
   agentRuns        CanvasAgentRun[]
   chatMessages     CanvasChatMessage[]
+  chatSummaries    CanvasChatSummary[]
 
   @@index([ownerId, updatedAt])
   @@index([thumbnailAssetId])
@@ -102,6 +103,23 @@ model Canvas {
 }
 
 /// Agent chat transcript. Append-only: tabs never overwrite each other.
+/// Rolling summary of a long conversation: older turns are folded into
+/// `summary` so the model keeps continuity without re-reading everything.
+model CanvasChatSummary {
+  id           String   @id @default(cuid())
+  canvasId     String
+  canvas       Canvas   @relation(fields: [canvasId], references: [id], onDelete: Cascade)
+  sessionId    String
+  summary      String
+  /// How many user/assistant messages are covered by this summary.
+  coveredCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([canvasId, sessionId])
+  @@map("canvas_chat_summary")
+}
+
 model CanvasChatMessage {
   id          String   @id @default(cuid())
   canvasId    String
