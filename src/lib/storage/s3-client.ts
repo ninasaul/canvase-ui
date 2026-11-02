@@ -1,5 +1,6 @@
 import {
   DeleteObjectCommand,
+  GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -19,6 +20,11 @@ export function createS3Client(config: ResolvedStorageConfig): S3Client {
       accessKeyId: config.accessKeyId,
       secretAccessKey: config.secretAccessKey,
     },
+    // AWS SDK >= 3.729 adds `x-amz-checksum-*` params to presigned PUTs, which
+    // the browser cannot reproduce (the checksum is signed for the SDK's body).
+    // That yields SignatureDoesNotMatch on every upload to S3/R2/MinIO.
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
   });
 }
 
@@ -176,6 +182,45 @@ export async function putObjectBytes(input: {
     );
   } catch (error) {
     throw new Error(formatStorageError(error));
+  }
+}
+
+export async function getObjectBytes(input: {
+  config: ResolvedStorageConfig;
+  objectKey: string;
+  maxBytes?: number;
+  /** Abort hung downloads (default 20s). */
+  timeoutMs?: number;
+}): Promise<{ bytes: Buffer; contentType?: string } | null> {
+  const timeoutMs = input.timeoutMs ?? 20_000;
+  const timeout = AbortSignal.timeout(timeoutMs);
+  try {
+    const client = createS3Client(input.config);
+    const response = await client.send(
+      new GetObjectCommand({
+        Bucket: input.config.bucket,
+        Key: input.objectKey,
+      }),
+      { abortSignal: timeout },
+    );
+    const body = response.Body;
+    if (!body) {
+      return null;
+    }
+    const bytes = Buffer.from(await body.transformToByteArray());
+    if (
+      typeof input.maxBytes === "number" &&
+      input.maxBytes > 0 &&
+      bytes.byteLength > input.maxBytes
+    ) {
+      return null;
+    }
+    return {
+      bytes,
+      contentType: response.ContentType?.trim() || undefined,
+    };
+  } catch {
+    return null;
   }
 }
 
