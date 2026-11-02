@@ -151,6 +151,7 @@ import {
 import { recoverCanvasNode } from "@/lib/canvas/canvas-task-recovery";
 import { useCanvasDocument } from "@/components/canvas/editor/workspace/use-canvas-document";
 import { useCanvasRun } from "@/components/canvas/editor/workspace/use-canvas-run";
+import { useCanvasShortcuts } from "@/components/canvas/editor/workspace/use-canvas-shortcuts";
 import { useCanvasViewport } from "@/components/canvas/editor/workspace/use-canvas-viewport";
 import { useCanvasSettings } from "@/components/canvas/editor/workspace/use-canvas-settings";
 import { useCanvasHistory } from "@/lib/canvas/use-canvas-history";
@@ -1030,170 +1031,13 @@ function CanvasEditorInner({
     );
   }, [addNodeWithPreset, screenToFlowPosition]);
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      const mod = event.metaKey || event.ctrlKey;
-      const key = event.key.toLowerCase();
-
-      // Toggle Agent even while typing in the chat composer (Cmd/Ctrl+\).
-      if (mod && key === "\\" && !event.altKey && !event.shiftKey) {
-        if (!document.querySelector('[role="dialog"]')) {
-          event.preventDefault();
-          setAgentChatOpen((current) => !current);
-        }
-        return;
-      }
-
-      const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        target.closest("input, textarea, select, [contenteditable='true']")
-      ) {
-        return;
-      }
-      if (document.querySelector('[role="dialog"]')) {
-        return;
-      }
-
-      if (insertMenu && key !== "escape") {
-        return;
-      }
-
-      if (mod) {
-        if (key === "z") {
-          event.preventDefault();
-          if (event.shiftKey) {
-            history.redo();
-          } else {
-            history.undo();
-          }
-          return;
-        }
-        if (key === "y") {
-          event.preventDefault();
-          history.redo();
-          return;
-        }
-        if (key === "d") {
-          event.preventDefault();
-          for (const node of nodes.filter((item) => item.selected)) {
-            duplicateNode(node.id);
-          }
-          return;
-        }
-        if (key === "a") {
-          event.preventDefault();
-          selectAll();
-          return;
-        }
-        if (key === "s") {
-          event.preventDefault();
-          void flushSaveRef.current();
-        }
-        return;
-      }
-
-      if (event.altKey || event.repeat) {
-        return;
-      }
-
-      if (event.shiftKey && key === "g") {
-        event.preventDefault();
-        addGroupAtCenter();
-        return;
-      }
-
-      if (event.shiftKey && key === "r") {
-        event.preventDefault();
-        refreshCanvas();
-        return;
-      }
-
-      switch (key) {
-        case "t":
-          event.preventDefault();
-          addAtCenter("text");
-          return;
-        case "i":
-          event.preventDefault();
-          addAtCenter("image");
-          return;
-        case "m":
-          event.preventDefault();
-          addAtCenter("video");
-          return;
-        case "a":
-          event.preventDefault();
-          addAtCenter("audio");
-          return;
-        case "h":
-          event.preventDefault();
-          setSelectMode(false);
-          setViewportLocked(false);
-          return;
-        case "v":
-          event.preventDefault();
-          setSelectMode((value) => !value);
-          return;
-        case "g":
-          if (selectedNodes.length >= 2) {
-            event.preventDefault();
-            setGroupName(
-              `${messages.canvas.groupDefault} ${selectedNodes.length}`,
-            );
-            setGroupOpen(true);
-          }
-          return;
-        case "f":
-          event.preventDefault();
-          void fitView({ padding: 0.2, duration: 250 });
-          return;
-        case "l":
-          event.preventDefault();
-          setViewportLocked((locked) => !locked);
-          return;
-        case "escape":
-          if (insertMenu) {
-            event.preventDefault();
-            setInsertMenu(null);
-          } else if (configNodeId) {
-            event.preventDefault();
-            setConfigNodeId(null);
-          } else if (selectMode) {
-            event.preventDefault();
-            setSelectMode(false);
-          } else {
-            clearSelection();
-            setLayoutMenuOpen(false);
-          }
-          return;
-        case "1":
-          event.preventDefault();
-          void zoomTo(1, { duration: 150 });
-          return;
-        case "+":
-        case "=":
-          event.preventDefault();
-          void zoomIn({ duration: 150 });
-          return;
-        case "-":
-          event.preventDefault();
-          void zoomOut({ duration: 150 });
-          return;
-        default:
-          return;
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [
+  useCanvasShortcuts({
     addAtCenter,
     addGroupAtCenter,
     flushSaveRef,
     clearSelection,
     configNodeId,
     duplicateNode,
-    setViewportLocked,
     fitView,
     history,
     insertMenu,
@@ -1202,46 +1046,21 @@ function CanvasEditorInner({
     selectedNodes,
     selectAll,
     selectMode,
-    setAgentChatOpen,
-    setConfigNodeId,
     zoomTo,
     zoomIn,
     zoomOut,
-  ]);
+    setAgentChatOpen,
+    setConfigNodeId,
+    setGroupName,
+    setGroupOpen,
+    setInsertMenu,
+    setLayoutMenuOpen,
+    setSelectMode,
+    setSpacePressed,
+    setViewportLocked,
+  });
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.code !== "Space" || event.repeat) {
-        return;
-      }
-      const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        target.closest(
-          "input, textarea, select, [contenteditable='true'], [role='dialog']",
-        )
-      ) {
-        return;
-      }
-      setSpacePressed(true);
-    }
-    function onKeyUp(event: KeyboardEvent) {
-      if (event.code === "Space") {
-        setSpacePressed(false);
-      }
-    }
-    function onBlur() {
-      setSpacePressed(false);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("blur", onBlur);
-    };
-  }, []);
+
 
   const isBatchRunActive = Boolean(activeRun || serverRunId || agentRunId);
 
