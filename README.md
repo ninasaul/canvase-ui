@@ -151,6 +151,14 @@ Agents can edit and run a single canvas through scoped tokens.
 
 Agent chat turns are persisted server-side (`canvas_chat_message`, append-only, last 400 per canvas) so history survives reloads and devices. Messages carry a `sessionId`: **New conversation** starts a fresh model context, while earlier sessions stay visible in the same timeline behind a divider. The editor keeps a local cache for instant paint; the server transcript wins when available. `GET/DELETE /api/canvases/[id]/chat` reads or clears it.
 
+### Agent approvals
+
+Read and ordinary edit tools run automatically (they are undoable). Tools that cost money or delete in bulk do not: `canvas_run` and `canvas_delete_nodes` with more than five ids block the turn and emit an `approval_request` over the chat stream. The browser answers through `POST /api/agent/approvals/[id]` with `allow_once`, `allow_session` (30 minute grant for that conversation) or `deny`; a denial is fed back to the model as a tool result so it can propose a smaller step. Pending approvals are process-local — run a single app instance, or move the registry to Redis before scaling out.
+
+### Canvas context
+
+Every chat turn carries `context { version, selection, focusNodeId, visibleNodeIds }` from the editor. The server rebuilds a short canvas digest from the database (title, version, node/group counts, failures, groups, the user's selection, focus node, viewport ids, version drift) and injects it into the system prompt, so the agent no longer has to call `canvas_get` just to learn node ids. The composer shows the current selection as removable chips, and a tool call that targets a node flashes it on the canvas and pans it into view.
+
 Edit tools use optimistic concurrency (`expectedVersion` from `canvas_get`). Details, tool list, and troubleshooting: [`packages/canvase-mcp/README.md`](packages/canvase-mcp/README.md).
 
 ## Agent skills

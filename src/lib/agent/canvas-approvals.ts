@@ -231,8 +231,3 @@ export function resolveApproval(
   entry.resolve(decision);
   return true;
 }
-
-/** Visible for tests. */
-export function pendingApprovalCount(): number {
-  return pending.size;
-}
