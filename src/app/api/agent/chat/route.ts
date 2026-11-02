@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { sanitizeCanvasAgentContext } from "@/lib/agent/canvas-agent-context";
 import {
   runCanvasAgentChat,
   type CanvasAgentChatMessage,
@@ -42,6 +43,8 @@ const bodySchema = z.object({
   sessionId: z.string().trim().max(80).optional(),
   messages: z.array(messageSchema).min(1).max(120),
   model: z.string().trim().min(1).max(200),
+  /** Selection / focus / viewport snapshot from the editor. */
+  context: z.unknown().optional(),
   vendor: z.preprocess(
     (value) =>
       value === "" || value === null || value === undefined
@@ -127,6 +130,8 @@ export async function POST(request: Request) {
         await runCanvasAgentChat({
           canvasId: parsed.data.canvasId,
           ownerId: user.id,
+          sessionId,
+          context: sanitizeCanvasAgentContext(parsed.data.context),
           messages,
           model: parsed.data.model,
           vendor: parsed.data.vendor,

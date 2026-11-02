@@ -345,6 +345,14 @@ export type CanvasAgentChatSseEvent =
       summary: string;
     }
   | { type: "graph_mutated"; tool: string }
+  | {
+      type: "approval_request";
+      id: string;
+      tool: string;
+      summary: string;
+      details?: Record<string, unknown>;
+    }
+  | { type: "approval_resolved"; id: string; decision: string }
   | { type: "step_budget" }
   | { type: "error"; message: string }
   | { type: "done" };
@@ -375,6 +383,26 @@ export async function clearCanvasChatMessages(canvasId: string): Promise<void> {
   });
 }
 
+/** Answers a pending agent approval (the turn is blocked until this lands). */
+export async function resolveAgentApproval(
+  id: string,
+  decision: "allow_once" | "allow_session" | "deny",
+): Promise<void> {
+  const response = await fetch(
+    `/api/agent/approvals/${encodeURIComponent(id)}`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision }),
+    },
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(text.trim() || `HTTP ${response.status}`);
+  }
+}
+
 export async function streamCanvasAgentChat(input: {
   canvasId: string;
   messages: CanvasAgentChatMessageInput[];
@@ -384,6 +412,13 @@ export async function streamCanvasAgentChat(input: {
   messageId?: string;
   /** Conversation boundary; keeps model context scoped to one session. */
   sessionId?: string;
+  /** Selection / focus / viewport snapshot (agent context). */
+  context?: {
+    version?: number;
+    selection?: string[];
+    focusNodeId?: string;
+    visibleNodeIds?: string[];
+  };
   signal?: AbortSignal;
   onEvent: (event: CanvasAgentChatSseEvent) => void;
 }): Promise<void> {
@@ -397,6 +432,7 @@ export async function streamCanvasAgentChat(input: {
       model: input.model,
       ...(input.messageId ? { messageId: input.messageId } : {}),
       ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      ...(input.context ? { context: input.context } : {}),
       ...(typeof input.vendor === "string" && input.vendor.trim()
         ? { vendor: input.vendor.trim() }
         : {}),

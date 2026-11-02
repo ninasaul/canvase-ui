@@ -10,7 +10,18 @@ import {
   isCanvasToolName,
   type CanvasToolName,
 } from "@/lib/agent/canvas-tools";
+import {
+  evaluateToolApproval,
+  grantSessionTool,
+  requestApproval,
+} from "@/lib/agent/canvas-approvals";
+import {
+  buildCanvasAgentContextLines,
+  type CanvasAgentContextInput,
+} from "@/lib/agent/canvas-agent-context";
 import { loadSkillCatalog, type CanvasSkill } from "@/lib/agent/skills";
+import { parseCanvasGraph } from "@/lib/canvas/canvas-graph";
+import { prisma } from "@/lib/prisma";
 import { CanvasUpdateError } from "@/lib/canvas/apply-canvas-graph-update";
 import { resolveUserGenerationConnection } from "@/lib/generation/generation-config-server";
 import {
@@ -63,6 +74,15 @@ export type CanvasAgentChatSseEvent =
       summary: string;
     }
   | { type: "graph_mutated"; tool: string }
+  /** A spend / destructive tool is waiting for a human decision. */
+  | {
+      type: "approval_request";
+      id: string;
+      tool: string;
+      summary: string;
+      details?: Record<string, unknown>;
+    }
+  | { type: "approval_resolved"; id: string; decision: string }
   /** Soft pause after step budget; UI may offer Continue. Never an Agent error. */
   | { type: "step_budget" }
   | { type: "error"; message: string }
@@ -100,11 +120,17 @@ function formatSkillCatalog(skills: CanvasSkill[]): string[] {
 export function buildCanvasAgentSystemPrompt(
   canvasId: string,
   skills: CanvasSkill[] = [],
+  contextLines: string[] = [],
 ): string {
   return [
     "You are the Canvase canvas agent. You help the user inspect and edit one canvas graph, and can start generation runs.",
     `Target canvas id: ${canvasId}.`,
-    "Always call canvas_get first in a session (or after edits) to learn the current version and node ids.",
+    ...(contextLines.length > 0
+      ? [
+          ...contextLines,
+          "The context block above is rebuilt every turn — trust it for ids, counts and the user's selection. Do not call canvas_get just to learn the state.",
+        ]
+      : ["Call canvas_get first in a session to learn the current version and node ids."]),
     "Every edit tool requires expectedVersion from the latest canvas_get / edit response. On version conflict, canvas_get again and retry.",
     "Prefer small, reversible edits. Confirm destructive deletes briefly in text when unsure.",
     "Use canvas_run to generate (modes: all | selected | node | from | retry-failed; `node` runs only the selected nodes, skipping upstream; selecting a group node expands to its children). Poll canvas_run_status when the user asks about progress.",
@@ -260,9 +286,99 @@ function parseToolArgs(raw: string | undefined): unknown {
   }
 }
 
+/** Fresh canvas digest for this turn; empty when the canvas is gone. */
+async function loadCanvasContextLines(input: {
+  canvasId: string;
+  ownerId: string;
+  context?: CanvasAgentContextInput | null;
+}): Promise<string[]> {
+  const row = await prisma.canvas
+    .findFirst({
+      where: { id: input.canvasId, ownerId: input.ownerId },
+      select: { title: true, version: true, graph: true },
+    })
+    .catch(() => null);
+  if (!row) {
+    return [];
+  }
+  try {
+    return buildCanvasAgentContextLines({
+      title: row.title,
+      version: row.version,
+      graph: parseCanvasGraph(row.graph),
+      context: input.context,
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Ask the human before a spend / bulk-destructive tool runs.
+ * Returns a denial summary when the action must not execute, else null.
+ */
+async function gateToolApproval(input: {
+  tool: string;
+  args: unknown;
+  canvasId: string;
+  ownerId: string;
+  sessionId?: string;
+  signal?: AbortSignal;
+  emit: (event: CanvasAgentChatSseEvent) => void;
+}): Promise<string | null> {
+  const args =
+    input.args && typeof input.args === "object"
+      ? (input.args as Record<string, unknown>)
+      : {};
+  const check = await evaluateToolApproval({
+    ownerId: input.ownerId,
+    canvasId: input.canvasId,
+    sessionId: input.sessionId,
+    tool: input.tool,
+    args,
+  });
+  if (!check.required) {
+    return null;
+  }
+
+  const { id, decision } = requestApproval({
+    ownerId: input.ownerId,
+    canvasId: input.canvasId,
+    sessionId: input.sessionId,
+    tool: input.tool,
+    signal: input.signal,
+  });
+  input.emit({
+    type: "approval_request",
+    id,
+    tool: input.tool,
+    summary: check.summary,
+    details: check.details,
+  });
+
+  const answer = await decision;
+  input.emit({ type: "approval_resolved", id, decision: answer });
+
+  if (answer === "deny") {
+    return "用户拒绝了这次操作。请说明原因，或提出一个更小的替代方案（例如只运行选中的那个节点）。";
+  }
+  if (answer === "allow_session") {
+    grantSessionTool({
+      canvasId: input.canvasId,
+      sessionId: input.sessionId,
+      tool: input.tool,
+    });
+  }
+  return null;
+}
+
 export async function runCanvasAgentChat(input: {
   canvasId: string;
   ownerId: string;
+  /** Conversation boundary; used for session-wide approvals. */
+  sessionId?: string;
+  /** What the user is looking at right now (selection / focus / viewport). */
+  context?: CanvasAgentContextInput | null;
   messages: CanvasAgentChatMessage[];
   model?: string;
   vendor?: string;
@@ -297,10 +413,15 @@ export async function runCanvasAgentChat(input: {
   const mediaProfile = getChatMediaCapabilityProfile(model, input.vendor);
   const tools = canvasToolsAsOpenAiTools();
   const skills = await loadSkillCatalog().catch(() => []);
+  const contextLines = await loadCanvasContextLines(input);
   const thread: Array<Record<string, unknown>> = [
     {
       role: "system",
-      content: buildCanvasAgentSystemPrompt(input.canvasId, skills),
+      content: buildCanvasAgentSystemPrompt(
+        input.canvasId,
+        skills,
+        contextLines,
+      ),
     },
   ];
   let lastUserMessageIndex = -1;
@@ -458,6 +579,32 @@ export async function runCanvasAgentChat(input: {
           tool_call_id: callId,
           name: toolName,
           content: summary,
+        });
+        continue;
+      }
+
+      const denialSummary = await gateToolApproval({
+        tool: toolName,
+        args,
+        canvasId: input.canvasId,
+        ownerId: input.ownerId,
+        sessionId: input.sessionId,
+        signal: input.signal,
+        emit: input.emit,
+      });
+      if (denialSummary) {
+        thread.push({
+          role: "tool",
+          tool_call_id: callId,
+          name: toolName,
+          content: denialSummary,
+        });
+        input.emit({
+          type: "tool_result",
+          tool: toolName,
+          id: callId,
+          ok: false,
+          summary: denialSummary,
         });
         continue;
       }
