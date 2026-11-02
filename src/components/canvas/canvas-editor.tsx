@@ -95,6 +95,7 @@ import {
   CanvasAgentChatPanel,
   loadCanvasAgentChatOpenPreference,
 } from "@/components/canvas/canvas-agent-chat-panel";
+import { CanvasDetailProvider } from "@/components/canvas/canvas-detail-context";
 import { CanvasModelSettingsModal } from "@/components/canvas/canvas-model-settings-modal";
 import { canvasNodeTypes } from "@/components/canvas/canvas-node-types";
 import {
@@ -272,6 +273,8 @@ function sameGraphObservation(
 }
 /** Below this zoom node media is illegible, so it is hidden to keep paint cheap. */
 const CANVAS_LOD_ZOOM = 0.35;
+/** Edge role labels only mount when they can actually be read. */
+const CANVAS_EDGE_LABEL_ZOOM = 0.5;
 
 /** Animated edges repaint every frame; past this many the canvas crawls. */
 const CANVAS_ANIMATED_EDGE_LIMIT = 80;
@@ -552,6 +555,13 @@ function CanvasEditorInner({
   const agentFlowWidth = useStore((state) => state.width);
   const agentFlowHeight = useStore((state) => state.height);
   const [viewportZoom, setViewportZoom] = useState(1);
+  const canvasDetail = useMemo(
+    () => ({
+      far: viewportZoom < CANVAS_LOD_ZOOM,
+      showEdgeLabels: viewportZoom >= CANVAS_EDGE_LABEL_ZOOM,
+    }),
+    [viewportZoom],
+  );
   const [visibleNodeIds, setVisibleNodeIds] = useState<string[]>([]);
   const syncViewport = useCallback(
     (viewport: { x: number; y: number; zoom: number }) => {
@@ -3125,6 +3135,7 @@ function CanvasEditorInner({
             ) : null}
 
             <CanvasPreferencesProvider value={preferences}>
+              <CanvasDetailProvider value={canvasDetail}>
               <ReactFlow
                 className={
                   viewportZoom < CANVAS_LOD_ZOOM ? "canvas-far" : undefined
@@ -3656,6 +3667,7 @@ function CanvasEditorInner({
                 </div>
               </Panel>
               </ReactFlow>
+              </CanvasDetailProvider>
             </CanvasPreferencesProvider>
 
             {selectedNodes.length >= 2 ? (

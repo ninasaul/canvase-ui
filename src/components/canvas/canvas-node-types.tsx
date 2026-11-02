@@ -16,6 +16,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { Icon } from "@/components/ui/icon";
+import { useCanvasDetail } from "@/components/canvas/canvas-detail-context";
 import { getNodeById } from "@/lib/canvas/canvas-node-index";
 import { useCanvasStore, type CanvasFlowNode } from "@/lib/canvas/canvas-store";
 import {
@@ -492,6 +493,7 @@ function nodePropsEqual(
 }
 
 export const TextCanvasNode = memo(function TextCanvasNode({ id, data, selected }: NodeProps<CanvasFlowNode>) {
+  const { far } = useCanvasDetail();
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   return (
     <div className="group/node relative h-full w-full">
@@ -504,12 +506,18 @@ export const TextCanvasNode = memo(function TextCanvasNode({ id, data, selected 
         nodeId={id}
         selected={Boolean(selected)}
       >
+        {far ? (
+          <p className="line-clamp-3 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+            {data.text?.trim() || messages.canvas.textNode}
+          </p>
+        ) : (
         <textarea
           className="nodrag nowheel h-full min-h-16 w-full resize-none border-0 bg-transparent p-0 text-[11px] leading-relaxed text-zinc-700 outline-none dark:text-zinc-200"
           value={data.text ?? ""}
           placeholder={messages.canvas.textPlaceholder}
           onChange={(event) => updateNodeData(id, { text: event.target.value })}
         />
+        )}
       </NodeShell>
       <NodeRunningOverlay
         nodeId={id}
@@ -536,6 +544,7 @@ export const TextCanvasNode = memo(function TextCanvasNode({ id, data, selected 
 
 
 export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selected }: NodeProps<CanvasFlowNode>) {
+  const { far } = useCanvasDetail();
   const setNodeSize = useCanvasStore((state) => state.setNodeSize);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const uploading = useCanvasStore(
@@ -555,7 +564,8 @@ export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selecte
       >
         <div className="h-full overflow-hidden">
           {data.url ? (
-            <div className="canvas-lod-hide h-full">
+            far ? null : (
+            <div className="h-full">
             <MediaPreview
               type="image"
               url={data.thumbnailUrl || data.url}
@@ -565,6 +575,7 @@ export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selecte
               }}
             />
             </div>
+            )
           ) : uploading ? null : (
             <EmptyMedia
               icon={<Icon icon={ImageSquare} size={18} weight="fill" />}
@@ -590,6 +601,7 @@ export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selecte
 
 
 export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selected }: NodeProps<CanvasFlowNode>) {
+  const { far } = useCanvasDetail();
   const setNodeSize = useCanvasStore((state) => state.setNodeSize);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const uploading = useCanvasStore(
@@ -609,7 +621,8 @@ export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selecte
       >
         <div className="h-full overflow-hidden">
           {data.url ? (
-            <div className="canvas-lod-hide h-full">
+            far ? null : (
+            <div className="h-full">
             <MediaPreview
             type="video"
             url={data.url}
@@ -628,6 +641,7 @@ export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selecte
             }}
           />
             </div>
+            )
           ) : uploading ? null : (
             <EmptyMedia
               icon={<Icon icon={VideoCamera} size={18} weight="fill" />}
@@ -653,6 +667,7 @@ export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selecte
 
 
 export const AudioCanvasNode = memo(function AudioCanvasNode({ id, data, selected }: NodeProps<CanvasFlowNode>) {
+  const { far } = useCanvasDetail();
   const uploading = useCanvasStore(
     (state) => typeof state.uploadProgressById[id] === "number",
   );
@@ -668,9 +683,11 @@ export const AudioCanvasNode = memo(function AudioCanvasNode({ id, data, selecte
         selected={Boolean(selected)}
       >
         {data.url ? (
-          <div className="canvas-lod-hide">
+          far ? null : (
+          <div>
             <CanvasAudioPlayer key={data.url} src={data.url} />
           </div>
+          )
         ) : uploading ? null : (
           <EmptyMedia
             icon={<Icon icon={Waveform} size={18} weight="fill" />}

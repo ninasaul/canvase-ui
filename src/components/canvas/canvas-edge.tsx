@@ -16,6 +16,7 @@ import {
 import type { CanvasFlowEdge, CanvasFlowNode } from "@/lib/canvas/canvas-store";
 import { useCanvasStore } from "@/lib/canvas/canvas-store";
 import { messages } from "@/messages";
+import { useCanvasDetail } from "./canvas-detail-context";
 import { useCanvasPreferences } from "./canvas-preferences-context";
 
 function roleLabel(role: string): string {
@@ -56,6 +57,7 @@ export function CanvasEdge({
   data,
 }: EdgeProps<CanvasFlowEdge>) {
   const preferences = useCanvasPreferences();
+  const { showEdgeLabels } = useCanvasDetail();
   const sourceNode = useNodesData<CanvasFlowNode>(source);
   const targetNode = useNodesData<CanvasFlowNode>(target);
   const sourceType = sourceNode?.type;
@@ -82,6 +84,7 @@ export function CanvasEdge({
   const options =
     sourceType && targetType ? edgeRoleOptions(sourceType, targetType) : [];
   const showPicker =
+    (showEdgeLabels || Boolean(selected)) &&
     (targetType === "image" ||
       targetType === "video" ||
       targetType === "audio") &&
@@ -117,7 +120,7 @@ export function CanvasEdge({
           >
             <button
               type="button"
-              className={`canvas-lod-hide rounded-full border px-1.5 py-0.5 text-[9px] font-medium shadow-sm transition-colors ${
+              className={`rounded-full border px-1.5 py-0.5 text-[9px] font-medium shadow-sm transition-colors ${
                 selected
                   ? "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-950 dark:text-sky-200"
                   : "border-zinc-200 bg-white/95 text-zinc-500 hover:text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-400 dark:hover:text-zinc-100"

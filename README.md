@@ -167,11 +167,14 @@ Long conversations are folded rather than truncated: before a turn whose transcr
 
 ### Large canvases
 
-Three guards keep big graphs usable (verified on a 164-node / 203-edge canvas):
+Big graphs stay interactive (verified on a 164-node / 203-edge canvas):
 
 - edge flow animation is capped at 80 edges — each animated edge repaints every frame
-- below 35% zoom node media and edge labels stop painting (`canvas-far`), since they are illegible at that scale
-- node components look up their node through a cached index instead of `nodes.find`, and viewport-derived state updates when a pan/zoom gesture ends rather than on every frame
+- level of detail: below 35% zoom node media stops mounting and text renders as a static preview; edge role labels only mount above 50% zoom. Both switch on gesture end, not per frame
+- node components look up their node through a cached index instead of `nodes.find` (O(n²) → O(n) per update), and viewport-derived state updates when a pan/zoom gesture ends
+- each node is a paint/layout containment boundary and the viewport layer is promoted, so dragging and panning composite instead of repainting the graph
+
+Measured on that canvas: idle slow frames 9 → 0, node drag 27.9ms → 8.4ms average, pan 19.9ms → 8.5ms.
 
 ### Run cards and history budget
 
