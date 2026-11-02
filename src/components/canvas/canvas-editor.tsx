@@ -125,9 +125,7 @@ import {
   getCanvas,
   getActiveCanvasRun,
   getCanvasRun,
-  isCanvasVersionConflict,
   listAgentTokens,
-  updateCanvas,
   uploadCanvasThumbnail,
   type AgentRunNodeStateView,
   type CanvasDetail,
@@ -164,6 +162,7 @@ import {
   type CanvasFlowNode,
 } from "@/lib/canvas/canvas-store";
 import { recoverCanvasNode } from "@/lib/canvas/canvas-task-recovery";
+import { useCanvasDocument } from "@/components/canvas/editor/workspace/use-canvas-document";
 import { useCanvasSettings } from "@/components/canvas/editor/workspace/use-canvas-settings";
 import { useCanvasHistory } from "@/lib/canvas/use-canvas-history";
 import { useCanvasRunStatusStore } from "@/lib/canvas/canvas-run-status-store";
@@ -202,10 +201,6 @@ import {
 import { costToCents } from "@/components/canvas/editor/lib/cost";
 import { nodeTypeLabel } from "@/components/canvas/editor/lib/node-display";
 import { isCanvasConnectionValid } from "@/components/canvas/editor/lib/geometry";
-import {
-  sameGraphObservation,
-  type CanvasGraphObservation,
-} from "@/components/canvas/editor/lib/observation";
 
 
 function CanvasEditorInner({
@@ -225,16 +220,11 @@ function CanvasEditorInner({
     useCanvasStore.getState().reset(canvasDocument.graph);
   });
   const [title, setTitle] = useState(canvasDocument.title);
-  const [, setVersion] = useState(canvasDocument.version);
-  const [savedAt, setSavedAt] = useState(canvasDocument.updatedAt);
   const [thumbnailUrl, setThumbnailUrl] = useState(
     canvasDocument.thumbnailUrl ?? null,
   );
   const [thumbnailBusy, setThumbnailBusy] = useState(false);
   const thumbnailRef = useRef<HTMLInputElement>(null);
-  const [saving, setSaving] = useState(false);
-  const [dirty, setDirty] = useState(false);
-  const [conflict, setConflict] = useState(false);
   const [assetLibraryOpen, setAssetLibraryOpen] = useState(false);
   const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
   const [connectAgentOpen, setConnectAgentOpen] = useState(false);
@@ -293,24 +283,9 @@ function CanvasEditorInner({
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
   const [viewportLocked, setViewportLocked] = useState(false);
   const layoutMenuButtonRef = useRef<HTMLButtonElement>(null);
-  const lastSavedRef = useRef({
-    title: canvasDocument.title,
-    graph: stableGraphJson(useCanvasStore.getState().toGraph()),
-  });
-  const graphObservationRef = useRef<CanvasGraphObservation | null>(null);
   const titleRef = useRef(canvasDocument.title);
-  const versionRef = useRef(canvasDocument.version);
-  const inFlightRef = useRef(false);
-  const pendingRef = useRef(false);
-  const saveTimerRef = useRef<number | null>(null);
-  const retryTimerRef = useRef<number | null>(null);
-  const retryCountRef = useRef(0);
-  const conflictRef = useRef(false);
-  const dirtyRef = useRef(false);
   const rebaseAttemptsRef = useRef(0);
   const activeRunRef = useRef(false);
-  const initialAutosaveSkippedRef = useRef(false);
-  const flushSaveRef = useRef<() => Promise<void>>(async () => undefined);
   const activeRunsRef = useRef<Map<string, AbortController>>(new Map());
 
   const nodes = useCanvasStore((state) => state.nodes);
@@ -429,15 +404,6 @@ function CanvasEditorInner({
     }));
   }, []);
 
-  // Fresh on every render: `versionRef` changes without a state update.
-  const agentChatContext = {
-    version: versionRef.current,
-    ...(selectedRunNodeIds.length > 0
-      ? { selection: selectedRunNodeIds }
-      : {}),
-    ...(configNodeId ? { focusNodeId: configNodeId } : {}),
-    ...(visibleNodeIds.length > 0 ? { visibleNodeIds } : {}),
-  };
   const librarySelectedUrls = useMemo(
     () =>
       Array.from(
@@ -487,6 +453,52 @@ function CanvasEditorInner({
   const replace = useCanvasStore((state) => state.replace);
   const toGraph = useCanvasStore((state) => state.toGraph);
 
+  const tryRebaseRef = useRef<() => Promise<boolean>>(async () => false);
+  const {
+    setVersion,
+    versionRef,
+    savedAt,
+    setSavedAt,
+    saving,
+    dirty,
+    conflict,
+    setConflict,
+    conflictRef,
+    dirtyRef,
+    inFlightRef,
+    lastSavedRef,
+    graphObservationRef,
+    markDirty,
+    flushSaveRef,
+  } = useCanvasDocument({
+    canvasId: canvasDocument.id,
+    initial: {
+      version: canvasDocument.version,
+      title: canvasDocument.title,
+      updatedAt: canvasDocument.updatedAt,
+    },
+    toGraph,
+    titleRef,
+    tryRebase: () => tryRebaseRef.current(),
+    nodes,
+    edges,
+    settings,
+    title,
+    runActive: Boolean(activeRun),
+    serverRunId,
+  });
+
+  // Fresh on every render: `versionRef` changes without a state update.
+  const agentChatContext = {
+    version: versionRef.current,
+    ...(selectedRunNodeIds.length > 0
+      ? { selection: selectedRunNodeIds }
+      : {}),
+    ...(configNodeId ? { focusNodeId: configNodeId } : {}),
+    ...(visibleNodeIds.length > 0 ? { visibleNodeIds } : {}),
+  };
+
+
   const history = useCanvasHistory({ nodes, edges, apply: replace });
 
   const openModelSettings = useCallback(() => {
@@ -516,11 +528,6 @@ function CanvasEditorInner({
       cancelled = true;
     };
   }, [canvasDocument.id]);
-
-  const markDirty = useCallback((value: boolean) => {
-    dirtyRef.current = value;
-    setDirty(value);
-  }, []);
 
   /**
    * Adopt a server snapshot in place (after an AI agent or another tab wrote).
@@ -581,7 +588,17 @@ function CanvasEditorInner({
         }, 0);
       }
     },
-    [markDirty],
+    [
+      conflictRef,
+      flushSaveRef,
+      graphObservationRef,
+      lastSavedRef,
+      markDirty,
+      setConflict,
+      setSavedAt,
+      setVersion,
+      versionRef,
+    ],
   );
 
   /**
@@ -604,7 +621,7 @@ function CanvasEditorInner({
     } catch {
       // Background sync is best-effort.
     }
-  }, [applyRemoteSnapshot, canvasDocument.id]);
+  }, [applyRemoteSnapshot, canvasDocument.id, conflictRef, dirtyRef, flushSaveRef, versionRef]);
 
   /** Manual refresh (Shift+R): pull the server graph without remounting. */
   const refreshCanvas = useCallback(() => {
@@ -632,7 +649,7 @@ function CanvasEditorInner({
         );
       }
     })();
-  }, [applyRemoteSnapshot, canvasDocument.id]);
+  }, [applyRemoteSnapshot, canvasDocument.id, conflictRef, dirtyRef, flushSaveRef, versionRef]);
 
   const agentChatSyncTimerRef = useRef<number | null>(null);
   const handleAgentChatGraphMutated = useCallback(() => {
@@ -662,7 +679,7 @@ function CanvasEditorInner({
         }
       })();
     }, 250);
-  }, [applyRemoteSnapshot, canvasDocument.id]);
+  }, [applyRemoteSnapshot, canvasDocument.id, conflictRef, dirtyRef, flushSaveRef, versionRef]);
 
   useEffect(() => {
     return () => {
@@ -697,7 +714,11 @@ function CanvasEditorInner({
     } catch {
       return false;
     }
-  }, [canvasDocument.id]);
+  }, [canvasDocument.id, lastSavedRef, setSavedAt, setVersion, versionRef]);
+
+  useEffect(() => {
+    tryRebaseRef.current = tryRebase;
+  }, [tryRebase]);
 
   /** Conflict resolution: keep local edits and win the last write. */
   const forceSaveMine = useCallback(() => {
@@ -718,7 +739,7 @@ function CanvasEditorInner({
       markDirty(true);
       void flushSaveRef.current();
     })();
-  }, [canvasDocument.id, markDirty]);
+  }, [canvasDocument.id, conflictRef, flushSaveRef, markDirty, setConflict, setVersion, versionRef]);
 
   /** Conflict resolution: drop local edits and adopt the server graph in place. */
   const discardAndLoadRemote = useCallback(() => {
@@ -777,7 +798,7 @@ function CanvasEditorInner({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [agentTokenActive, applyRemoteSnapshot, canvasDocument.id]);
+  }, [agentTokenActive, applyRemoteSnapshot, canvasDocument.id, conflictRef, dirtyRef, inFlightRef, versionRef]);
 
   useEffect(() => {
     let cancelled = false;
@@ -906,169 +927,7 @@ function CanvasEditorInner({
 
   useEffect(() => {
     conflictRef.current = conflict;
-  }, [conflict]);
-
-  const flushSave = useCallback(async () => {
-    if (inFlightRef.current) {
-      pendingRef.current = true;
-      return;
-    }
-    if (conflictRef.current) {
-      return;
-    }
-    const currentTitle = titleRef.current;
-    const graph = toGraph();
-    const graphJson = stableGraphJson(graph);
-    if (
-      currentTitle === lastSavedRef.current.title &&
-      graphJson === lastSavedRef.current.graph
-    ) {
-      markDirty(false);
-      return;
-    }
-
-    inFlightRef.current = true;
-    pendingRef.current = false;
-    setSaving(true);
-    const versionForSave = versionRef.current;
-    try {
-      const saved = await updateCanvas(canvasDocument.id, {
-        version: versionForSave,
-        title: currentTitle,
-        graph,
-      });
-      lastSavedRef.current = {
-        title: saved.title,
-        graph: stableGraphJson(saved.graph),
-      };
-      versionRef.current = saved.version;
-      setVersion(saved.version);
-      setSavedAt(saved.updatedAt);
-      setConflict(false);
-      conflictRef.current = false;
-      rebaseAttemptsRef.current = 0;
-      retryCountRef.current = 0;
-      if (retryTimerRef.current) {
-        window.clearTimeout(retryTimerRef.current);
-        retryTimerRef.current = null;
-      }
-      const latestGraph = stableGraphJson(toGraph());
-      const dirtyAfterSave =
-        titleRef.current !== saved.title ||
-        latestGraph !== lastSavedRef.current.graph;
-      markDirty(dirtyAfterSave);
-    } catch (error: unknown) {
-      if (isCanvasVersionConflict(error)) {
-        // Retry once the stale version is replaced, but only when the server
-        // content still matches what we last saved (no real divergence).
-        if (await tryRebase()) {
-          pendingRef.current = true;
-          return;
-        }
-        conflictRef.current = true;
-        setConflict(true);
-        markDirty(true);
-        return;
-      }
-      markDirty(true);
-      toast.danger(
-        error instanceof Error ? error.message : messages.canvas.saveFailed,
-      );
-      retryCountRef.current += 1;
-      const delay = Math.min(
-        8000,
-        1000 * 2 ** Math.min(retryCountRef.current - 1, 3),
-      );
-      if (retryTimerRef.current) {
-        window.clearTimeout(retryTimerRef.current);
-      }
-      retryTimerRef.current = window.setTimeout(() => {
-        retryTimerRef.current = null;
-        void flushSaveRef.current();
-      }, delay);
-    } finally {
-      inFlightRef.current = false;
-      setSaving(false);
-      if (!conflictRef.current && pendingRef.current) {
-        pendingRef.current = false;
-        void flushSaveRef.current();
-      }
-    }
-  }, [canvasDocument.id, markDirty, toGraph, tryRebase]);
-
-  useEffect(() => {
-    flushSaveRef.current = flushSave;
-  }, [flushSave]);
-
-  useEffect(() => {
-    if (
-      activeRun ||
-      serverRunId ||
-      nodes.some(
-        (node) =>
-          Boolean(node.data.runId) &&
-          (node.data.status === "running" || node.data.status === "queued"),
-      )
-    ) {
-      return;
-    }
-    if (!initialAutosaveSkippedRef.current) {
-      initialAutosaveSkippedRef.current = true;
-      graphObservationRef.current = { nodes, edges, settings, title };
-      return;
-    }
-    if (conflict) {
-      return;
-    }
-    const observation = { nodes, edges, settings, title };
-    const previous = graphObservationRef.current;
-    graphObservationRef.current = observation;
-    if (previous && sameGraphObservation(previous, observation)) {
-      return;
-    }
-    if (!previous) {
-      return;
-    }
-    markDirty(true);
-    if (inFlightRef.current) {
-      pendingRef.current = true;
-      return;
-    }
-    if (retryTimerRef.current) {
-      window.clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = null;
-    }
-    if (saveTimerRef.current) {
-      window.clearTimeout(saveTimerRef.current);
-    }
-    saveTimerRef.current = window.setTimeout(() => {
-      saveTimerRef.current = null;
-      void flushSaveRef.current();
-    }, 800);
-  }, [activeRun, conflict, edges, markDirty, nodes, serverRunId, settings, title]);
-
-  useEffect(() => {
-    return () => {
-      if (saveTimerRef.current) {
-        window.clearTimeout(saveTimerRef.current);
-      }
-      if (retryTimerRef.current) {
-        window.clearTimeout(retryTimerRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!dirtyRef.current) {
-        return;
-      }
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, []);
+  }, [conflict, conflictRef]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1713,6 +1572,7 @@ function CanvasEditorInner({
   }, [
     addAtCenter,
     addGroupAtCenter,
+    flushSaveRef,
     clearSelection,
     configNodeId,
     duplicateNode,
