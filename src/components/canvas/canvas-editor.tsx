@@ -94,6 +94,7 @@ import {
 import { CanvasDetailProvider } from "@/components/canvas/canvas-detail-context";
 import { CanvasGroupModal } from "@/components/canvas/editor/panels/canvas-group-modal";
 import { CanvasInfoModal } from "@/components/canvas/editor/panels/canvas-info-modal";
+import { CanvasConflictBanner } from "@/components/canvas/editor/chrome/canvas-conflict-banner";
 import { CanvasRunConfirmModal } from "@/components/canvas/editor/panels/canvas-run-confirm-modal";
 import { CanvasSettingsModal } from "@/components/canvas/editor/panels/canvas-settings-modal";
 import { CanvasModelSettingsModal } from "@/components/canvas/canvas-model-settings-modal";
@@ -116,14 +117,11 @@ import { useTheme } from "@/components/theme-provider";
 import { useCurrencySymbol } from "@/components/currency-provider";
 import { usePortalQuery } from "@/hooks/use-portal-query";
 import {
-  getActiveAgentRun,
   getCanvas,
   listAgentTokens,
   uploadCanvasThumbnail,
-  type AgentRunNodeStateView,
   type CanvasDetail,
 } from "@/lib/canvas/canvas-api";
-import type { CanvasNodeRunStatus } from "@/lib/tu-shared-browser";
 import {
   applyTransientNodeState,
   captureTransientNodeState,
@@ -838,83 +836,6 @@ function CanvasEditorInner({
     };
   }, [agentTokenActive, applyRemoteSnapshot, canvasDocument.id, conflictRef, dirtyRef, inFlightRef, versionRef]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    function mapAgentNodeStatus(
-      status: AgentRunNodeStateView["status"],
-    ): CanvasNodeRunStatus {
-      if (status === "pending") {
-        return "queued";
-      }
-      return status;
-    }
-
-    const tick = async () => {
-      try {
-        const { run } = await getActiveAgentRun(canvasDocument.id);
-        if (cancelled) {
-          return;
-        }
-        if (!run) {
-          if (agentRunSeenRef.current) {
-            agentRunSeenRef.current = false;
-            setAgentRunId(null);
-            // Drop the overlay entries: the run is over and the transcript of
-            // node states is stale from here on.
-            useCanvasRunStatusStore.getState().reset();
-            void syncFromServer();
-          }
-          return;
-        }
-        agentRunSeenRef.current = true;
-        setAgentRunId(run.runId);
-        const statusStore = useCanvasRunStatusStore.getState();
-        for (const nodeId of run.nodeIds) {
-          const state = run.nodes[nodeId];
-          if (!state) {
-            statusStore.setNode(nodeId, "queued");
-            updateNodeData(nodeId, { status: "queued", error: undefined });
-            continue;
-          }
-          const mapped = mapAgentNodeStatus(state.status);
-          statusStore.setNode(
-            nodeId,
-            mapped,
-            state.error,
-            state.requestId,
-            run.runId,
-          );
-          updateNodeData(nodeId, {
-            status: mapped,
-            ...(state.error !== undefined ? { error: state.error } : {}),
-            ...(state.requestId ? { requestId: state.requestId } : {}),
-            ...(state.outputUrl
-              ? {
-                  url: state.outputUrl,
-                  urls: [state.outputUrl],
-                  source: "generation" as const,
-                }
-              : {}),
-            ...(mapped === "running" || mapped === "queued"
-              ? { finishedAt: undefined }
-              : {}),
-          });
-        }
-      } catch {
-        // Ignore transient poll failures.
-      }
-    };
-
-    const timer = window.setInterval(() => {
-      void tick();
-    }, 2000);
-    void tick();
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [canvasDocument.id, syncFromServer, updateNodeData]);
 
   useEffect(() => {
     void readByokConfig()
@@ -2265,19 +2186,11 @@ function CanvasEditorInner({
               </div>
             </div>
 
-            {conflict ? (
-              <div className="pointer-events-auto absolute left-1/2 top-16 z-30 flex w-[min(560px,calc(100vw-2rem))] -translate-x-1/2 items-center gap-2 rounded-xl border border-amber-200/80 bg-amber-50/90 px-3 py-2 text-[11px] text-amber-800 shadow-lg backdrop-blur-xl dark:border-amber-900/60 dark:bg-amber-950/80 dark:text-amber-200">
-                <span className="min-w-0 flex-1 truncate">
-                  {messages.canvas.versionConflictBody}
-                </span>
-                <Button variant="secondary" size="sm" onClick={forceSaveMine}>
-                  {messages.canvas.versionConflictKeepMine}
-                </Button>
-                <Button variant="ghost" size="sm" onClick={discardAndLoadRemote}>
-                  {messages.canvas.conflictLoadRemote}
-                </Button>
-              </div>
-            ) : null}
+            <CanvasConflictBanner
+              open={conflict}
+              onKeepMine={forceSaveMine}
+              onLoadRemote={discardAndLoadRemote}
+            />
 
             {insertMenu ? (
               <>

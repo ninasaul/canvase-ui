@@ -13,9 +13,12 @@ import { toast } from "@/components/ui/toast";
 import {
   cancelAgentRun,
   cancelCanvasRun,
+  getActiveAgentRun,
   getActiveCanvasRun,
   getCanvasRun,
 } from "@/lib/canvas/canvas-api";
+import type { AgentRunNodeStateView } from "@/lib/canvas/canvas-api";
+import type { CanvasNodeRunStatus } from "@/lib/tu-shared-browser";
 import {
   runCanvasPlan,
 } from "@/lib/canvas/canvas-dag-runner";
@@ -432,6 +435,84 @@ export function useCanvasRun(input: {
       }
     };
   }, [canvasId, serverRunId, setActiveRun, setServerRunId, syncFromServer, updateNodeData]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    function mapAgentNodeStatus(
+      status: AgentRunNodeStateView["status"],
+    ): CanvasNodeRunStatus {
+      if (status === "pending") {
+        return "queued";
+      }
+      return status;
+    }
+
+    const tick = async () => {
+      try {
+        const { run } = await getActiveAgentRun(canvasId);
+        if (cancelled) {
+          return;
+        }
+        if (!run) {
+          if (agentRunSeenRef.current) {
+            agentRunSeenRef.current = false;
+            setAgentRunId(null);
+            // Drop the overlay entries: the run is over and the transcript of
+            // node states is stale from here on.
+            useCanvasRunStatusStore.getState().reset();
+            void syncFromServer();
+          }
+          return;
+        }
+        agentRunSeenRef.current = true;
+        setAgentRunId(run.runId);
+        const statusStore = useCanvasRunStatusStore.getState();
+        for (const nodeId of run.nodeIds) {
+          const state = run.nodes[nodeId];
+          if (!state) {
+            statusStore.setNode(nodeId, "queued");
+            updateNodeData(nodeId, { status: "queued", error: undefined });
+            continue;
+          }
+          const mapped = mapAgentNodeStatus(state.status);
+          statusStore.setNode(
+            nodeId,
+            mapped,
+            state.error,
+            state.requestId,
+            run.runId,
+          );
+          updateNodeData(nodeId, {
+            status: mapped,
+            ...(state.error !== undefined ? { error: state.error } : {}),
+            ...(state.requestId ? { requestId: state.requestId } : {}),
+            ...(state.outputUrl
+              ? {
+                  url: state.outputUrl,
+                  urls: [state.outputUrl],
+                  source: "generation" as const,
+                }
+              : {}),
+            ...(mapped === "running" || mapped === "queued"
+              ? { finishedAt: undefined }
+              : {}),
+          });
+        }
+      } catch {
+        // Ignore transient poll failures.
+      }
+    };
+
+    const timer = window.setInterval(() => {
+      void tick();
+    }, 2000);
+    void tick();
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [agentRunSeenRef, canvasId, setAgentRunId, syncFromServer, updateNodeData]);
 
   // ---- view models for the dialog -------------------------------------------
   const runSummary = useMemo(
