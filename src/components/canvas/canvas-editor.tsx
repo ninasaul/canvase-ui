@@ -78,7 +78,6 @@ import {
 } from "@/components/canvas/canvas-running-tasks";
 import { CanvasShortcutsModal } from "@/components/canvas/canvas-shortcuts-modal";
 import {
-  runCanvasPlan,
   type CanvasRunMode,
 } from "@/lib/canvas/canvas-dag-runner";
 import { CanvasPreferencesProvider } from "@/components/canvas/canvas-preferences-context";
@@ -119,8 +118,6 @@ import { usePortalQuery } from "@/hooks/use-portal-query";
 import {
   getActiveAgentRun,
   getCanvas,
-  getActiveCanvasRun,
-  getCanvasRun,
   listAgentTokens,
   uploadCanvasThumbnail,
   type AgentRunNodeStateView,
@@ -149,9 +146,6 @@ import {
   type CanvasAutoLayoutMode,
 } from "@/lib/canvas/canvas-auto-layout";
 import {
-  runCanvasImageNode,
-  runCanvasTextNode,
-  runCanvasVideoNode,
 } from "@/lib/canvas/canvas-runner";
 import {
   useCanvasStore,
@@ -484,7 +478,11 @@ function CanvasEditorInner({
    * Adopt a server snapshot in place (after an AI agent or another tab wrote).
    * Doing this instead of a full reload keeps undo history, viewport and selection.
    */
+  const syncFromServerRef = useRef<() => Promise<void>>(async () => undefined);
+
   const {
+    runNode,
+    startPlanRun,
     cancelNodeRun,
     prepareRun,
     prepareRunSelected,
@@ -514,7 +512,8 @@ function CanvasEditorInner({
     setActiveRun,
     agentRunId,
     setAgentRunId,
-    activeRunRef,
+    updateNodeData,
+    syncFromServer: () => syncFromServerRef.current(),
     activeRunsRef,
     agentRunSeenRef,
   });
@@ -645,6 +644,10 @@ function CanvasEditorInner({
   }, [applyRemoteSnapshot, canvasDocument.id, conflictRef, dirtyRef, flushSaveRef, versionRef]);
 
   /** Manual refresh (Shift+R): pull the server graph without remounting. */
+  useEffect(() => {
+    syncFromServerRef.current = syncFromServer;
+  }, [syncFromServer]);
+
   const refreshCanvas = useCallback(() => {
     void (async () => {
       try {
@@ -1087,204 +1090,6 @@ function CanvasEditorInner({
     },
     [onConnect],
   );
-
-  const executeNode = useCallback(
-    async (nodeId: string, signal?: AbortSignal) => {
-      const node = nodes.find((item) => item.id === nodeId);
-      if (!node) {
-        throw new Error(messages.canvas.nodeMissing);
-      }
-      if (!isGenerationConfigured()) {
-        throw new Error(messages.canvas.generationMissing);
-      }
-      if (
-        node.type !== "image" &&
-        node.type !== "video" &&
-        node.type !== "text"
-      ) {
-        throw new Error(messages.canvas.runUnsupported);
-      }
-      const run =
-        node.type === "image"
-          ? runCanvasImageNode
-          : node.type === "video"
-            ? runCanvasVideoNode
-            : runCanvasTextNode;
-      await run({
-        nodeId,
-        graph: toGraph(),
-        apiKey: "",
-        update: updateNodeData,
-        signal,
-      });
-    },
-    [nodes, toGraph, updateNodeData],
-  );
-
-  const runNode = useCallback(
-    async (nodeId: string) => {
-      if (activeRun) {
-        toast.info(messages.canvas.runAlreadyRunning);
-        return;
-      }
-      const current = useCanvasStore
-        .getState()
-        .nodes.find((node) => node.id === nodeId);
-      if (
-        activeRunsRef.current.has(nodeId) ||
-        current?.data.status === "running" ||
-        current?.data.status === "queued"
-      ) {
-        toast.info(messages.canvas.runAlreadyRunning);
-        return;
-      }
-      const controller = new AbortController();
-      activeRunsRef.current.set(nodeId, controller);
-      try {
-        await executeNode(nodeId, controller.signal);
-      } catch (error) {
-        toast.danger(
-          error instanceof Error ? error.message : messages.canvas.runFailed,
-        );
-      } finally {
-        activeRunsRef.current.delete(nodeId);
-      }
-    },
-    [activeRun, executeNode],
-  );
-
-  const startLocalPlanRun = useCallback(async () => {
-    const pending = runConfirm;
-    if (!pending) {
-      return;
-    }
-    setRunConfirm(null);
-    const controller = new AbortController();
-    setActiveRun({ mode: pending.mode, controller });
-    const planned = new Set(pending.plan.nodeIds);
-    useCanvasStore.setState((state) => ({
-      nodes: state.nodes.map((node) =>
-        planned.has(node.id)
-          ? {
-              ...node,
-              data: {
-                ...node.data,
-                status: "queued",
-                error: undefined,
-                finishedAt: undefined,
-              },
-            }
-          : node,
-      ),
-    }));
-    try {
-      const result = await runCanvasPlan({
-        plan: pending.plan,
-        signal: controller.signal,
-        concurrency: 2,
-        // The runner updates node data directly; the snapshot merge keeps those
-        // live fields alive across agent writes, so no separate mirror is needed
-        // (and mirroring only the plan-level "queued" made the overlay stick).
-        update: updateNodeData,
-        runNode: (nodeId, signal) => executeNode(nodeId, signal),
-      });
-      if (controller.signal.aborted) {
-        toast.info(messages.canvas.runCancelled);
-      } else if (result.failed.length > 0 || result.skipped.length > 0) {
-        toast.info(
-          messages.canvas.runPartial
-            .replace("{failed}", String(result.failed.length))
-            .replace("{skipped}", String(result.skipped.length)),
-        );
-      } else {
-        toast.success(messages.canvas.runCompleted);
-      }
-    } catch (error) {
-      toast.danger(
-        error instanceof Error ? error.message : messages.canvas.runFailed,
-      );
-    } finally {
-      setActiveRun(null);
-    }
-  }, [executeNode, runConfirm, updateNodeData]);
-
-  const startPlanRun = useCallback(async () => {
-    await startLocalPlanRun();
-  }, [startLocalPlanRun]);
-
-  useEffect(() => {
-    let stopped = false;
-    void getActiveCanvasRun(canvasDocument.id)
-      .then((run) => {
-        if (!stopped && run) {
-          setServerRunId(run.id);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      stopped = true;
-    };
-  }, [canvasDocument.id]);
-
-  useEffect(() => {
-    if (!serverRunId) {
-      return;
-    }
-    let stopped = false;
-    let timer: number | null = null;
-    async function poll() {
-      try {
-        const run = await getCanvasRun(canvasDocument.id, serverRunId!);
-        if (stopped) {
-          return;
-        }
-        const runStatus = useCanvasRunStatusStore.getState();
-        for (const item of run.nodes) {
-          runStatus.setNode(
-            item.nodeId,
-            item.status === "pending" ? "queued" : item.status,
-            item.error ?? undefined,
-            item.requestId ?? undefined,
-            item.taskId ?? undefined,
-          );
-        }
-        if (["succeeded", "partial", "failed", "cancelled"].includes(run.status)) {
-          stopped = true;
-          setServerRunId(null);
-          setActiveRun(null);
-          useCanvasRunStatusStore.getState().reset();
-          if (run.status === "cancelled") {
-            toast.info(messages.canvas.runCancelled);
-          } else if (run.status === "succeeded") {
-            toast.success(messages.canvas.runCompleted);
-          } else {
-            toast.info(run.error ?? messages.canvas.runFailed);
-          }
-          await syncFromServer();
-          return;
-        }
-        timer = window.setTimeout(() => void poll(), 1500);
-      } catch (error) {
-        if (stopped) {
-          return;
-        }
-        stopped = true;
-        setServerRunId(null);
-        setActiveRun(null);
-        useCanvasRunStatusStore.getState().reset();
-        toast.danger(
-          error instanceof Error ? error.message : messages.canvas.runFailed,
-        );
-      }
-    }
-    void poll();
-    return () => {
-      stopped = true;
-      if (timer) {
-        window.clearTimeout(timer);
-      }
-    };
-  }, [canvasDocument.id, serverRunId, syncFromServer, updateNodeData]);
 
   const addNodeWithPreset = useCallback(
     (
