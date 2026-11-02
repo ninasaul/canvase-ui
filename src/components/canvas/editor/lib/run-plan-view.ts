@@ -1,5 +1,8 @@
 import { estimateCanvasGenerationCost, formatCanvasCost } from "@/lib/canvas/canvas-generation-cost";
-import type { CanvasRunPlan } from "@/lib/canvas/canvas-run-plan";
+import type {
+  CanvasRunMode,
+  CanvasRunPlan,
+} from "@/lib/canvas/canvas-run-plan";
 import type { CanvasFlowNode } from "@/lib/canvas/canvas-store";
 import { messages } from "@/messages";
 
@@ -7,7 +10,7 @@ import { costToCents } from "./cost";
 import { nodeTypeLabel } from "./node-display";
 
 export type RunConfirmState = {
-  mode: string;
+  mode: CanvasRunMode;
   plan: CanvasRunPlan;
   selectedNodeIds: string[];
   includeUpstream: boolean;

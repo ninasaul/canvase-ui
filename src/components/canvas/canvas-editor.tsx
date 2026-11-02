@@ -78,10 +78,8 @@ import {
 } from "@/components/canvas/canvas-running-tasks";
 import { CanvasShortcutsModal } from "@/components/canvas/canvas-shortcuts-modal";
 import {
-  buildCanvasRunPlan,
   runCanvasPlan,
   type CanvasRunMode,
-  type CanvasRunPlan,
 } from "@/lib/canvas/canvas-dag-runner";
 import { CanvasPreferencesProvider } from "@/components/canvas/canvas-preferences-context";
 import { CanvasTextGenerationDock } from "@/components/canvas/canvas-text-generation-dock";
@@ -119,8 +117,6 @@ import { useTheme } from "@/components/theme-provider";
 import { useCurrencySymbol } from "@/components/currency-provider";
 import { usePortalQuery } from "@/hooks/use-portal-query";
 import {
-  cancelAgentRun,
-  cancelCanvasRun,
   getActiveAgentRun,
   getCanvas,
   getActiveCanvasRun,
@@ -163,6 +159,7 @@ import {
 } from "@/lib/canvas/canvas-store";
 import { recoverCanvasNode } from "@/lib/canvas/canvas-task-recovery";
 import { useCanvasDocument } from "@/components/canvas/editor/workspace/use-canvas-document";
+import { useCanvasRun } from "@/components/canvas/editor/workspace/use-canvas-run";
 import { useCanvasSettings } from "@/components/canvas/editor/workspace/use-canvas-settings";
 import { useCanvasHistory } from "@/lib/canvas/use-canvas-history";
 import { useCanvasRunStatusStore } from "@/lib/canvas/canvas-run-status-store";
@@ -194,12 +191,7 @@ import {
   CANVAS_SNAP_DISTANCE,
   NODE_TYPE_COLORS,
 } from "@/components/canvas/editor/lib/constants";
-import {
-  buildRunPlanRows,
-  estimateRunCost,
-  orderRunPlanNodes,
-  summarizeRunPlan,
-} from "@/components/canvas/editor/lib/run-plan-view";
+import type { RunConfirmState } from "@/components/canvas/editor/lib/run-plan-view";
 import { nodeTypeLabel } from "@/components/canvas/editor/lib/node-display";
 import { isCanvasConnectionValid } from "@/components/canvas/editor/lib/geometry";
 
@@ -233,8 +225,15 @@ function CanvasEditorInner({
     loadCanvasAgentChatOpenPreference(),
   );
   const [agentTokenActive, setAgentTokenActive] = useState(false);
+  const [runMenuOpen, setRunMenuOpen] = useState(false);
+  const [runListExpanded, setRunListExpanded] = useState(false);
+  const [runConfirm, setRunConfirm] = useState<RunConfirmState | null>(null);
+  const [activeRun, setActiveRun] = useState<{
+    mode: CanvasRunMode;
+    controller: AbortController;
+  } | null>(null);
+  const [serverRunId, setServerRunId] = useState<string | null>(null);
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
-  const agentRunSeenRef = useRef(false);
   const [preferences, setPreferences] = useState<CanvasPreferences>(() =>
     loadCanvasPreferences(),
   );
@@ -253,20 +252,7 @@ function CanvasEditorInner({
   const [helperLines, setHelperLines] = useState<CanvasHelperLines | null>(
     null,
   );
-  const [runMenuOpen, setRunMenuOpen] = useState(false);
-  const [runListExpanded, setRunListExpanded] = useState(false);
   const runMenuButtonRef = useRef<HTMLButtonElement>(null);
-  const [runConfirm, setRunConfirm] = useState<{
-    mode: CanvasRunMode;
-    plan: CanvasRunPlan;
-    selectedNodeIds: string[];
-    includeUpstream: boolean;
-  } | null>(null);
-  const [activeRun, setActiveRun] = useState<{
-    mode: CanvasRunMode;
-    controller: AbortController;
-  } | null>(null);
-  const [serverRunId, setServerRunId] = useState<string | null>(null);
   const [archiveMenuOpen, setArchiveMenuOpen] = useState(false);
   const [insertMenu, setInsertMenu] = useState<{
     left: number;
@@ -285,9 +271,10 @@ function CanvasEditorInner({
   const [viewportLocked, setViewportLocked] = useState(false);
   const layoutMenuButtonRef = useRef<HTMLButtonElement>(null);
   const titleRef = useRef(canvasDocument.title);
-  const rebaseAttemptsRef = useRef(0);
   const activeRunRef = useRef(false);
   const activeRunsRef = useRef<Map<string, AbortController>>(new Map());
+  const agentRunSeenRef = useRef(false);
+  const rebaseAttemptsRef = useRef(0);
 
   const nodes = useCanvasStore((state) => state.nodes);
   const edges = useCanvasStore((state) => state.edges);
@@ -454,6 +441,84 @@ function CanvasEditorInner({
   const replace = useCanvasStore((state) => state.replace);
   const toGraph = useCanvasStore((state) => state.toGraph);
 
+
+
+
+  const history = useCanvasHistory({ nodes, edges, apply: replace });
+
+  const modelsQuery = usePortalQuery(
+    `generation-canvas-models:${readByokBaseUrl()}:${byokRevision}`,
+    () => loadGenerationModels(),
+  );
+  const models = useMemo(() => modelsQuery.data ?? [], [modelsQuery.data]);
+
+  const openModelSettings = useCallback(() => {
+    setModelSettingsOpen(true);
+  }, []);
+
+  useEffect(() => {
+    useCanvasRunStatusStore.getState().reset();
+    setAgentRunId(null);
+    agentRunSeenRef.current = false;
+  }, [canvasDocument.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listAgentTokens(canvasDocument.id)
+      .then((result) => {
+        if (!cancelled) {
+          setAgentTokenActive(result.items.some((item) => item.active));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAgentTokenActive(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canvasDocument.id]);
+
+  /**
+   * Adopt a server snapshot in place (after an AI agent or another tab wrote).
+   * Doing this instead of a full reload keeps undo history, viewport and selection.
+   */
+  const {
+    cancelNodeRun,
+    prepareRun,
+    prepareRunSelected,
+    setRunIncludeUpstream,
+    cancelActiveRun,
+    runSummary,
+    runRows,
+    runCostEstimate,
+    runHasUpstream,
+  } = useCanvasRun({
+    canvasId: canvasDocument.id,
+    nodes,
+    models,
+    toGraph,
+    selectedRunNodeIds,
+    openModelSettings,
+    isGenerationConfigured,
+    runMenuOpen,
+    setRunMenuOpen,
+    runListExpanded,
+    setRunListExpanded,
+    runConfirm,
+    setRunConfirm,
+    activeRun,
+    serverRunId,
+    setServerRunId,
+    setActiveRun,
+    agentRunId,
+    setAgentRunId,
+    activeRunRef,
+    activeRunsRef,
+    agentRunSeenRef,
+  });
+
   const tryRebaseRef = useRef<() => Promise<boolean>>(async () => false);
   const {
     setVersion,
@@ -489,51 +554,6 @@ function CanvasEditorInner({
     serverRunId,
   });
 
-  // Fresh on every render: `versionRef` changes without a state update.
-  const agentChatContext = {
-    version: versionRef.current,
-    ...(selectedRunNodeIds.length > 0
-      ? { selection: selectedRunNodeIds }
-      : {}),
-    ...(configNodeId ? { focusNodeId: configNodeId } : {}),
-    ...(visibleNodeIds.length > 0 ? { visibleNodeIds } : {}),
-  };
-
-
-  const history = useCanvasHistory({ nodes, edges, apply: replace });
-
-  const openModelSettings = useCallback(() => {
-    setModelSettingsOpen(true);
-  }, []);
-
-  useEffect(() => {
-    useCanvasRunStatusStore.getState().reset();
-    setAgentRunId(null);
-    agentRunSeenRef.current = false;
-  }, [canvasDocument.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void listAgentTokens(canvasDocument.id)
-      .then((result) => {
-        if (!cancelled) {
-          setAgentTokenActive(result.items.some((item) => item.active));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAgentTokenActive(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [canvasDocument.id]);
-
-  /**
-   * Adopt a server snapshot in place (after an AI agent or another tab wrote).
-   * Doing this instead of a full reload keeps undo history, viewport and selection.
-   */
   const applyRemoteSnapshot = useCallback(
     (remote: CanvasDetail) => {
       const store = useCanvasStore.getState();
@@ -695,6 +715,8 @@ function CanvasEditorInner({
    * what we last saved, nothing diverged — adopt the new version and retry
    * instead of locking the editor behind a banner until a reload.
    */
+
+
   const tryRebase = useCallback(async (): Promise<boolean> => {
     if (rebaseAttemptsRef.current >= 2) {
       return false;
@@ -758,6 +780,18 @@ function CanvasEditorInner({
       }
     })();
   }, [applyRemoteSnapshot, canvasDocument.id]);
+
+
+
+  // Fresh on every render: `versionRef` changes without a state update.
+  const agentChatContext = {
+    version: versionRef.current,
+    ...(selectedRunNodeIds.length > 0
+      ? { selection: selectedRunNodeIds }
+      : {}),
+    ...(configNodeId ? { focusNodeId: configNodeId } : {}),
+    ...(visibleNodeIds.length > 0 ? { visibleNodeIds } : {}),
+  };
 
   useEffect(() => {
     activeRunRef.current = Boolean(activeRun || serverRunId || agentRunId);
@@ -889,11 +923,7 @@ function CanvasEditorInner({
       });
   }, []);
 
-  const modelsQuery = usePortalQuery(
-    `generation-canvas-models:${readByokBaseUrl()}:${byokRevision}`,
-    () => loadGenerationModels(),
-  );
-  const models = useMemo(() => modelsQuery.data ?? [], [modelsQuery.data]);
+
   const imageModels = useMemo(
     () => models.filter((model) => model.capability === "image"),
     [models],
@@ -1123,85 +1153,6 @@ function CanvasEditorInner({
     [activeRun, executeNode],
   );
 
-  const prepareRun = useCallback(
-    (mode: CanvasRunMode, nodeIds?: string[]) => {
-      setRunMenuOpen(false);
-      if (activeRun || activeRunsRef.current.size > 0) {
-        toast.info(messages.canvas.runAlreadyRunning);
-        return;
-      }
-      if (!isGenerationConfigured()) {
-        toast.danger(messages.canvas.generationMissing);
-        openModelSettings();
-        return;
-      }
-      const selectedIds = nodeIds ?? selectedRunNodeIds;
-      if (
-        (mode === "selected" || mode === "node" || mode === "from") &&
-        selectedIds.length === 0
-      ) {
-        toast.info(messages.canvas.runSelectNode);
-        return;
-      }
-      const plan = buildCanvasRunPlan(toGraph(), {
-        mode,
-        selectedNodeIds: selectedIds,
-        fromNodeIds: selectedIds,
-      });
-      if (!plan) {
-        toast.info(
-          mode === "retry-failed"
-            ? messages.canvas.runNoFailed
-            : mode === "all"
-              ? messages.canvas.runNoNodes
-              : messages.canvas.runSelectNode,
-        );
-        return;
-      }
-      setRunListExpanded(false);
-      setRunConfirm({
-        mode,
-        plan,
-        selectedNodeIds: selectedIds,
-        includeUpstream: mode !== "node",
-      });
-    },
-    [activeRun, openModelSettings, selectedRunNodeIds, toGraph],
-  );
-
-  /** Flip between "selected + upstream" and "selected only" inside the dialog. */
-  const setRunIncludeUpstream = useCallback(
-    (includeUpstream: boolean) => {
-      setRunConfirm((current) => {
-        if (!current) {
-          return current;
-        }
-        const mode: CanvasRunMode = includeUpstream ? "selected" : "node";
-        const plan =
-          buildCanvasRunPlan(toGraph(), {
-            mode,
-            selectedNodeIds: current.selectedNodeIds,
-          }) ?? current.plan;
-        return { ...current, mode, plan, includeUpstream };
-      });
-    },
-    [toGraph],
-  );
-
-  const cancelNodeRun = useCallback((nodeId: string) => {
-    const controller = activeRunsRef.current.get(nodeId);
-    if (controller) {
-      controller.abort();
-    }
-  }, []);
-
-  const prepareRunSelected = useCallback(
-    (nodeIds: string[]) => {
-      prepareRun("selected", nodeIds);
-    },
-    [prepareRun],
-  );
-
   const startLocalPlanRun = useCallback(async () => {
     const pending = runConfirm;
     if (!pending) {
@@ -1334,37 +1285,6 @@ function CanvasEditorInner({
       }
     };
   }, [canvasDocument.id, serverRunId, syncFromServer, updateNodeData]);
-
-  const cancelActiveRun = useCallback(() => {
-    setRunMenuOpen(false);
-    if (agentRunId) {
-      void cancelAgentRun(canvasDocument.id, agentRunId)
-        .then(() => {
-          setAgentRunId(null);
-          agentRunSeenRef.current = false;
-        })
-        .catch((error) => {
-          toast.danger(
-            error instanceof Error ? error.message : messages.canvas.runFailed,
-          );
-        });
-    }
-    if (serverRunId) {
-      void cancelCanvasRun(canvasDocument.id, serverRunId).catch((error) => {
-        toast.danger(
-          error instanceof Error ? error.message : messages.canvas.runFailed,
-        );
-      });
-      return;
-    }
-    activeRun?.controller.abort();
-  }, [activeRun, agentRunId, canvasDocument.id, serverRunId]);
-
-  useEffect(() => {
-    return () => {
-      activeRun?.controller.abort();
-    };
-  }, [activeRun]);
 
   const addNodeWithPreset = useCallback(
     (
@@ -1654,58 +1574,6 @@ function CanvasEditorInner({
     [configNodeId, nodes],
   );
 
-  const runSummary = useMemo(
-    () => (runConfirm ? summarizeRunPlan(runConfirm, nodes) : null),
-    [nodes, runConfirm],
-  );
-
-  /** Execution order, but spatial within a layer (top-left first). */
-  const runDisplayOrder = useMemo(
-    () => (runConfirm ? orderRunPlanNodes(runConfirm, nodes) : []),
-    [nodes, runConfirm],
-  );
-
-  /** Rows shown in the run dialog (limited when collapsed). */
-  const runRows = useMemo(() => {
-    if (!runConfirm) {
-      return [];
-    }
-    return buildRunPlanRows({
-      runConfirm,
-      nodes,
-      order: runDisplayOrder,
-      limit: runListExpanded ? runDisplayOrder.length : 8,
-    });
-  }, [nodes, runConfirm, runDisplayOrder, runListExpanded]);
-
-  /** Only offer the upstream switch when it actually changes the plan. */
-  const runHasUpstream = useMemo(() => {
-    if (
-      !runConfirm ||
-      (runConfirm.mode !== "selected" && runConfirm.mode !== "node")
-    ) {
-      return false;
-    }
-    const graph = toGraph();
-    const withUpstream = buildCanvasRunPlan(graph, {
-      mode: "selected",
-      selectedNodeIds: runConfirm.selectedNodeIds,
-    });
-    const without = buildCanvasRunPlan(graph, {
-      mode: "node",
-      selectedNodeIds: runConfirm.selectedNodeIds,
-    });
-    return (
-      (withUpstream?.nodeIds.length ?? 0) > (without?.nodeIds.length ?? 0)
-    );
-  }, [runConfirm, toGraph]);
-  const runCostEstimate = useMemo(
-    () =>
-      runConfirm
-        ? estimateRunCost({ runConfirm, nodes, models })
-        : null,
-    [models, nodes, runConfirm],
-  );
 
   const runStatusById = useCanvasRunStatusStore((state) => state.statusById);
   const runningTaskCount = useMemo(
