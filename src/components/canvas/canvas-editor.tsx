@@ -4,7 +4,6 @@ import "@xyflow/react/dist/style.css";
 
 import {
   ArrowLeft,
-  BoundingBox,
   Brain,
   ChatCircle,
   CircleNotch,
@@ -66,6 +65,7 @@ import {
 } from "@/components/canvas/canvas-agent-chat-panel";
 import { CanvasDetailProvider } from "@/components/canvas/canvas-detail-context";
 import { CanvasOverlays } from "@/components/canvas/editor/chrome/canvas-overlays";
+import { CanvasSelectionBar } from "@/components/canvas/editor/chrome/canvas-selection-bar";
 import { CanvasBackdrop } from "@/components/canvas/editor/chrome/canvas-backdrop";
 import { CanvasBottomDock } from "@/components/canvas/editor/chrome/canvas-bottom-dock";
 import { CanvasConflictBanner } from "@/components/canvas/editor/chrome/canvas-conflict-banner";
@@ -2109,34 +2109,15 @@ function CanvasEditorInner({
               </CanvasDetailProvider>
             </CanvasPreferencesProvider>
 
-            {selectedNodes.length >= 2 ? (
-              <div className="nodrag absolute left-1/2 top-3 z-30 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-zinc-200 bg-white/95 px-2 py-1.5 shadow-lg backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95">
-                <Icon
-                  icon={BoundingBox}
-                  size={14}
-                  className="text-zinc-400"
-                />
-                <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300">
-                  {messages.canvas.selectedNodeCount.replace(
-                    "{count}",
-                    String(selectedNodes.length),
-                  )}
-                </span>
-                <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    setGroupName(
-                      `${messages.canvas.groupDefault} ${selectedNodes.length}`,
-                    );
-                    setGroupOpen(true);
-                  }}
-                >
-                  {messages.canvas.createGroup}
-                </Button>
-              </div>
-            ) : null}
+            <CanvasSelectionBar
+              selectedNodes={selectedNodes}
+              onCreateGroup={() => {
+                setGroupName(
+                  `${messages.canvas.groupDefault} ${selectedNodes.length}`,
+                );
+                setGroupOpen(true);
+              }}
+            />
 
             {!draggingNode ? <CanvasNodeLabels nodes={nodes} /> : null}
 
