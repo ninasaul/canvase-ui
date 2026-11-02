@@ -98,6 +98,7 @@ import {
 import { CanvasDetailProvider } from "@/components/canvas/canvas-detail-context";
 import { CanvasGroupModal } from "@/components/canvas/editor/panels/canvas-group-modal";
 import { CanvasInfoModal } from "@/components/canvas/editor/panels/canvas-info-modal";
+import { CanvasRunConfirmModal } from "@/components/canvas/editor/panels/canvas-run-confirm-modal";
 import { CanvasModelSettingsModal } from "@/components/canvas/canvas-model-settings-modal";
 import { canvasNodeTypes } from "@/components/canvas/canvas-node-types";
 import {
@@ -119,7 +120,6 @@ import {
 import { LocaleToggle } from "@/components/locale-toggle";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { Icon } from "@/components/ui/icon";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Popover } from "@/components/ui/popover";
@@ -1922,6 +1922,57 @@ function CanvasEditorInner({
     );
   }, [nodes, runConfirm]);
 
+  /** Rows shown in the run dialog (limited when collapsed). */
+  const runRows = useMemo(() => {
+    if (!runConfirm) {
+      return [];
+    }
+    const selectedIds = new Set(runConfirm.selectedNodeIds);
+    for (const candidate of nodes) {
+      if (candidate.parentId && selectedIds.has(candidate.parentId)) {
+        selectedIds.add(candidate.id);
+      }
+    }
+    const trackUpstream =
+      runConfirm.mode === "selected" && runConfirm.includeUpstream;
+    const visible = runListExpanded
+      ? runDisplayOrder
+      : runDisplayOrder.slice(0, 8);
+    return visible.flatMap((nodeId) => {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (!node) {
+        return [];
+      }
+      const params = node.data.params ?? {};
+      const size =
+        typeof params.size === "string"
+          ? params.size
+          : typeof params.aspectRatio === "string"
+            ? params.aspectRatio
+            : "";
+      const duration =
+        typeof params.duration === "string" ||
+        typeof params.duration === "number"
+          ? `${params.duration}s`
+          : "";
+      const meta = [node.data.model, duration || size]
+        .filter((value): value is string => Boolean(value))
+        .join(" · ");
+      return [
+        {
+          id: nodeId,
+          label: node.data.label?.trim() || nodeTypeName(node.type),
+          type: node.type ?? "text",
+          meta: meta || messages.canvas.noModel,
+          hasResult: Boolean(
+            node.data.url?.trim() || node.data.status === "succeeded",
+          ),
+          isUpstream: trackUpstream && !selectedIds.has(nodeId),
+        },
+      ];
+    });
+  }, [nodes, runConfirm, runDisplayOrder, runListExpanded]);
+
   /** Only offer the upstream switch when it actually changes the plan. */
   const runHasUpstream = useMemo(() => {
     if (
@@ -2111,19 +2162,6 @@ function CanvasEditorInner({
       configNode.type === "text")
       ? configNode
       : null;
-  function nodeTypeIcon(type: string | undefined) {
-    switch (type) {
-      case "image":
-        return ImageSquare;
-      case "video":
-        return VideoCamera;
-      case "audio":
-        return Waveform;
-      default:
-        return TextT;
-    }
-  }
-
   function nodeTypeName(type: string | undefined): string {
     switch (type) {
       case "image":
@@ -3635,201 +3673,30 @@ function CanvasEditorInner({
       />
       ) : null}
 
-      {runConfirm ? (
-      <Modal
+      <CanvasRunConfirmModal
         open={Boolean(runConfirm)}
-        onClose={() => setRunConfirm(null)}
-        title={messages.canvas.runConfirmTitle}
-        size="2xl"
-        closeLabel={messages.close}
-        footer={
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setRunConfirm(null)}
-            >
-              {messages.cancel}
-            </Button>
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              onClick={() => void startPlanRun()}
-            >
-              {messages.canvas.runStartWithCount.replace(
-                "{count}",
-                String(runConfirm?.plan.nodeIds.length ?? 0),
-              )}
-            </Button>
-          </div>
+        count={runSummary?.count ?? runConfirm?.plan.nodeIds.length ?? 0}
+        overwrite={runSummary?.overwrite ?? 0}
+        costLabel={
+          runCostEstimate && runCostEstimate.priced > 0
+            ? `${currencySymbol}${runCostEstimate.total}`
+            : "—"
         }
-      >
-        <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-lg border border-zinc-200/80 px-3 py-2 dark:border-zinc-700/80">
-              <p className="text-lg font-semibold leading-none text-zinc-900 dark:text-zinc-50">
-                {runSummary?.count ?? runConfirm?.plan.nodeIds.length ?? 0}
-              </p>
-              <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-                {messages.canvas.runStatNodes}
-              </p>
-            </div>
-            <div className="rounded-lg border border-zinc-200/80 px-3 py-2 dark:border-zinc-700/80">
-              <p
-                className={`text-lg font-semibold leading-none ${
-                  (runSummary?.overwrite ?? 0) > 0
-                    ? "text-amber-600 dark:text-amber-400"
-                    : "text-zinc-900 dark:text-zinc-50"
-                }`}
-              >
-                {runSummary?.overwrite ?? 0}
-              </p>
-              <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-                {messages.canvas.runStatOverwrite}
-              </p>
-            </div>
-            <div className="rounded-lg border border-zinc-200/80 px-3 py-2 dark:border-zinc-700/80">
-              <p className="text-lg font-semibold leading-none text-zinc-900 dark:text-zinc-50">
-                {runCostEstimate && runCostEstimate.priced > 0
-                  ? `${currencySymbol}${runCostEstimate.total}`
-                  : "—"}
-              </p>
-              <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-                {messages.canvas.runStatCost}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-            {(["image", "video", "audio", "text"] as const)
-              .filter((type) => (runSummary?.byType[type] ?? 0) > 0)
-              .map((type) => (
-                <span key={type}>
-                  {nodeTypeName(type)} {runSummary?.byType[type]}
-                </span>
-              ))}
-            {runSummary && runSummary.upstream > 0 ? (
-              <span className="text-zinc-400 dark:text-zinc-500">
-                · {runSummary.upstream} {messages.canvas.runUpstreamNodes}
-              </span>
-            ) : null}
-          </div>
-
-          {runHasUpstream ? (
-            <div className="rounded-lg border border-zinc-200/80 px-3 py-2 dark:border-zinc-700/80">
-              <Switch
-                id="run-include-upstream"
-                checked={Boolean(runConfirm?.includeUpstream)}
-                onChange={setRunIncludeUpstream}
-                label={messages.canvas.runIncludeUpstream}
-                layout="between"
-              />
-              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-                {messages.canvas.runIncludeUpstreamHint}
-              </p>
-            </div>
-          ) : null}
-
-          <div className="overflow-hidden rounded-lg border border-zinc-200/80 dark:border-zinc-700/80">
-            <div className="max-h-72 divide-y divide-zinc-200/70 overflow-y-auto dark:divide-zinc-800">
-              {(runListExpanded
-                ? runDisplayOrder
-                : runDisplayOrder.slice(0, 8)
-              ).map((nodeId) => {
-                const node = nodes.find((item) => item.id === nodeId);
-                if (!node) {
-                  return null;
-                }
-                const hasResult = Boolean(
-                  node.data.url?.trim() || node.data.status === "succeeded",
-                );
-                const selectedIds = new Set(
-                  runConfirm?.selectedNodeIds ?? [],
-                );
-                for (const candidate of nodes) {
-                  if (
-                    candidate.parentId &&
-                    selectedIds.has(candidate.parentId)
-                  ) {
-                    selectedIds.add(candidate.id);
-                  }
-                }
-                const isUpstream =
-                  runConfirm?.mode === "selected" &&
-                  runConfirm.includeUpstream &&
-                  !selectedIds.has(nodeId);
-                const params = node.data.params ?? {};
-                const size =
-                  typeof params.size === "string"
-                    ? params.size
-                    : typeof params.aspectRatio === "string"
-                      ? params.aspectRatio
-                      : "";
-                const duration =
-                  typeof params.duration === "string" ||
-                  typeof params.duration === "number"
-                    ? `${params.duration}s`
-                    : "";
-                const meta = [node.data.model, duration || size]
-                  .filter((value): value is string => Boolean(value))
-                  .join(" · ");
-                return (
-                  <div
-                    key={nodeId}
-                    className="flex items-center gap-2 px-3 py-1.5 text-xs transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
-                  >
-                    <Icon
-                      icon={nodeTypeIcon(node.type)}
-                      size={13}
-                      className="shrink-0 text-zinc-400"
-                    />
-                    <span className="min-w-0 flex-1 truncate text-zinc-700 dark:text-zinc-200">
-                      {node.data.label?.trim() || nodeTypeName(node.type)}
-                    </span>
-                    {isUpstream ? (
-                      <span className="shrink-0 rounded bg-zinc-100 px-1 py-0.5 text-[9px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                        {messages.canvas.runUpstreamTag}
-                      </span>
-                    ) : null}
-                    {hasResult ? (
-                      <span className="shrink-0 text-[9px] font-medium text-amber-600 dark:text-amber-400">
-                        {messages.canvas.runOverwriteTag}
-                      </span>
-                    ) : null}
-                    <span className="w-40 shrink-0 truncate text-right font-mono text-[10px] text-zinc-400 dark:text-zinc-500">
-                      {meta || messages.canvas.noModel}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            {runConfirm && runConfirm.plan.nodeIds.length > 8 ? (
-              <button
-                type="button"
-                className="w-full border-t border-zinc-200/80 px-3 py-1.5 text-left text-[10px] text-zinc-400 transition-colors hover:bg-zinc-50 hover:text-zinc-600 dark:border-zinc-800 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-300"
-                onClick={() => setRunListExpanded((current) => !current)}
-              >
-                {runListExpanded
-                  ? messages.canvas.runCollapse
-                  : messages.canvas.runExpandAll.replace(
-                      "{count}",
-                      String(runConfirm.plan.nodeIds.length),
-                    )}
-              </button>
-            ) : null}
-          </div>
-
-          <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-            {messages.canvas.runCostHint}
-            {runCostEstimate && runCostEstimate.unpriced > 0
-              ? ` ${messages.canvas.runEstimatedPartial}`
-              : ""}
-          </p>
-        </div>
-      </Modal>
-      ) : null}
+        typeMix={(["image", "video", "audio", "text"] as const)
+          .filter((type) => (runSummary?.byType[type] ?? 0) > 0)
+          .map((type) => ({ type, count: runSummary?.byType[type] ?? 0 }))}
+        upstreamCount={runSummary?.upstream ?? 0}
+        showUpstreamToggle={runHasUpstream}
+        includeUpstream={Boolean(runConfirm?.includeUpstream)}
+        onIncludeUpstreamChange={setRunIncludeUpstream}
+        rows={runRows}
+        total={runConfirm?.plan.nodeIds.length ?? 0}
+        expanded={runListExpanded}
+        onToggleExpand={() => setRunListExpanded((current) => !current)}
+        unpriced={Boolean(runCostEstimate && runCostEstimate.unpriced > 0)}
+        onClose={() => setRunConfirm(null)}
+        onStart={() => void startPlanRun()}
+      />
 
       {shortcutsOpen ? (
       <CanvasShortcutsModal
