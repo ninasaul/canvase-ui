@@ -170,7 +170,6 @@ import {
 } from "@/lib/canvas/canvas-runner";
 import {
   useCanvasStore,
-  type CanvasFlowEdge,
   type CanvasFlowNode,
 } from "@/lib/canvas/canvas-store";
 import { recoverCanvasNode } from "@/lib/canvas/canvas-task-recovery";
@@ -197,217 +196,30 @@ import {
   writeStorageConfig,
 } from "@/lib/storage/storage-config-client";
 
-import type {
-  CanvasNodeType,
-  CanvasSettings,
-} from "@/lib/tu-shared-browser";
+import type { CanvasSettings } from "@/lib/tu-shared-browser";
 
-type CanvasSettingsTab = "canvas" | "generation" | "storage";
+import {
+  CANVAS_ANIMATED_EDGE_LIMIT,
+  CANVAS_BACKGROUND_PATTERN_COLORS,
+  CANVAS_CONNECTION_SNAP_RADIUS,
+  CANVAS_DEFAULT_FIT_VIEW_OPTIONS,
+  CANVAS_DEFAULT_VIEWPORT,
+  CANVAS_EDGE_LABEL_ZOOM,
+  CANVAS_LOD_ZOOM,
+  CANVAS_MAX_ZOOM,
+  CANVAS_MIN_ZOOM,
+  CANVAS_SNAP_DISTANCE,
+  EDGE_COLOR_OPTIONS,
+  NODE_TYPE_COLORS,
+  type CanvasSettingsTab,
+} from "@/components/canvas/editor/lib/constants";
+import { costToCents } from "@/components/canvas/editor/lib/cost";
+import { isCanvasConnectionValid } from "@/components/canvas/editor/lib/geometry";
+import {
+  sameGraphObservation,
+  type CanvasGraphObservation,
+} from "@/components/canvas/editor/lib/observation";
 
-const nodeColors: Record<string, string> = {
-  text: "#3b82f6",
-  image: "#10b981",
-  video: "#8b5cf6",
-  audio: "#f97316",
-  group: "#94a3b8",
-};
-
-const CANVAS_MIN_ZOOM = 0.05;
-const CANVAS_MAX_ZOOM = 4;
-const CANVAS_SNAP_DISTANCE = 40;
-const CANVAS_CONNECTION_SNAP_RADIUS = 96;
-const CANVAS_DEFAULT_ZOOM = 0.8;
-const CANVAS_DEFAULT_VIEWPORT = { x: 0, y: 0, zoom: CANVAS_DEFAULT_ZOOM };
-
-type CanvasGraphObservation = {
-  nodes: CanvasFlowNode[];
-  edges: CanvasFlowEdge[];
-  settings: CanvasSettings;
-  title: string;
-};
-
-function sameGraphObservation(
-  previous: CanvasGraphObservation,
-  next: CanvasGraphObservation,
-): boolean {
-  if (
-    previous.title !== next.title ||
-    previous.settings !== next.settings ||
-    previous.nodes.length !== next.nodes.length ||
-    previous.edges.length !== next.edges.length
-  ) {
-    return false;
-  }
-  for (let index = 0; index < next.nodes.length; index += 1) {
-    const left = previous.nodes[index]!;
-    const right = next.nodes[index]!;
-    if (
-      left.id !== right.id ||
-      left.type !== right.type ||
-      left.parentId !== right.parentId ||
-      left.position.x !== right.position.x ||
-      left.position.y !== right.position.y ||
-      left.width !== right.width ||
-      left.height !== right.height ||
-      left.data !== right.data
-    ) {
-      return false;
-    }
-  }
-  for (let index = 0; index < next.edges.length; index += 1) {
-    const left = previous.edges[index]!;
-    const right = next.edges[index]!;
-    if (
-      left.id !== right.id ||
-      left.source !== right.source ||
-      left.target !== right.target ||
-      left.sourceHandle !== right.sourceHandle ||
-      left.targetHandle !== right.targetHandle ||
-      left.data?.role !== right.data?.role ||
-      left.data?.order !== right.data?.order
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
-/** Below this zoom node media is illegible, so it is hidden to keep paint cheap. */
-const CANVAS_LOD_ZOOM = 0.35;
-/** Edge role labels only mount when they can actually be read. */
-const CANVAS_EDGE_LABEL_ZOOM = 0.5;
-
-/** Animated edges repaint every frame; past this many the canvas crawls. */
-const CANVAS_ANIMATED_EDGE_LIMIT = 80;
-
-const CANVAS_DEFAULT_FIT_VIEW_OPTIONS = {
-  minZoom: CANVAS_MIN_ZOOM,
-  maxZoom: CANVAS_DEFAULT_ZOOM,
-  padding: 0.2,
-};
-
-const CANVAS_BACKGROUND_PATTERN_COLORS = {
-  light: {
-    dots: "#d4d4d8",
-    lines: "#ececee",
-    cross: "#d4d4d8",
-    none: "transparent",
-  },
-  dark: {
-    dots: "rgba(255,255,255,0.18)",
-    lines: "rgba(255,255,255,0.075)",
-    cross: "rgba(255,255,255,0.16)",
-    none: "transparent",
-  },
-} as const;
-
-const EDGE_COLOR_OPTIONS = [
-  {
-    value: "muted" as const,
-    label: messages.canvas.edgeColorMuted,
-    color: CANVAS_EDGE_COLORS.muted,
-  },
-  {
-    value: "blue" as const,
-    label: messages.canvas.edgeColorBlue,
-    color: CANVAS_EDGE_COLORS.blue,
-  },
-  {
-    value: "green" as const,
-    label: messages.canvas.edgeColorGreen,
-    color: CANVAS_EDGE_COLORS.green,
-  },
-  {
-    value: "violet" as const,
-    label: messages.canvas.edgeColorViolet,
-    color: CANVAS_EDGE_COLORS.violet,
-  },
-  {
-    value: "orange" as const,
-    label: messages.canvas.edgeColorOrange,
-    color: CANVAS_EDGE_COLORS.orange,
-  },
-  {
-    value: "red" as const,
-    label: messages.canvas.edgeColorRed,
-    color: CANVAS_EDGE_COLORS.red,
-  },
-  {
-    value: "cyan" as const,
-    label: messages.canvas.edgeColorCyan,
-    color: CANVAS_EDGE_COLORS.cyan,
-  },
-  {
-    value: "pink" as const,
-    label: messages.canvas.edgeColorPink,
-    color: CANVAS_EDGE_COLORS.pink,
-  },
-];
-
-function hasCycle(source: string, target: string, edges: Edge[]): boolean {
-  const adjacency = new Map<string, string[]>();
-  for (const edge of edges) {
-    const list = adjacency.get(edge.source) ?? [];
-    list.push(edge.target);
-    adjacency.set(edge.source, list);
-  }
-  const stack = [target];
-  const seen = new Set<string>();
-  while (stack.length > 0) {
-    const id = stack.pop()!;
-    if (id === source) {
-      return true;
-    }
-    if (seen.has(id)) {
-      continue;
-    }
-    seen.add(id);
-    stack.push(...(adjacency.get(id) ?? []));
-  }
-  return false;
-}
-
-function isCanvasConnectionValid(
-  connection: Connection | Edge,
-  nodes: Array<{ id: string; type?: string | null }>,
-  edges: Edge[],
-): boolean {
-  const source = nodes.find((node) => node.id === connection.source);
-  const target = nodes.find((node) => node.id === connection.target);
-  if (!source?.type || !target?.type) {
-    return false;
-  }
-  const sourceType = source.type as CanvasNodeType;
-  const targetType = target.type as CanvasNodeType;
-  const handle = connection.targetHandle ?? "";
-  if (
-    (targetType === "image" ||
-      targetType === "video" ||
-      targetType === "audio") &&
-    handle === "in"
-  ) {
-    if (edgeRoleOptions(sourceType, targetType).length === 0) {
-      return false;
-    }
-    return !hasCycle(source.id, target.id, edges);
-  }
-  const acceptedType =
-    handle === "prompt" || handle === "context" || handle === "text"
-      ? "text"
-      : handle === "reference_video"
-        ? "video"
-        : handle === "reference_audio"
-          ? "audio"
-          : "image";
-  if (sourceType !== acceptedType) {
-    return false;
-  }
-  return !hasCycle(source.id, target.id, edges);
-}
-
-function costToCents(value: string): bigint {
-  const [whole = "0", fraction = ""] = value.split(".");
-  return BigInt(whole) * BigInt(100) + BigInt((fraction + "00").slice(0, 2));
-}
 
 function CanvasEditorInner({
   canvasDocument,
@@ -3270,7 +3082,7 @@ function CanvasEditorInner({
                   pannable
                   zoomable
                   nodeColor={(node) =>
-                    nodeColors[node.type ?? "text"] ?? "#a1a1aa"
+                    NODE_TYPE_COLORS[node.type ?? "text"] ?? "#a1a1aa"
                   }
                 />
               ) : null}
