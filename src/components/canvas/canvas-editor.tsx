@@ -38,7 +38,6 @@ import {
   TreeStructure,
   UploadSimple,
   VideoCamera,
-  WarningCircle,
   Waveform,
 } from "@phosphor-icons/react";
 import {
@@ -2028,6 +2027,18 @@ function CanvasEditorInner({
       return null;
     }
     let overwrite = 0;
+    const byType: Record<string, number> = {};
+    // A selected group stands for its children: they are not "upstream".
+    const selected = new Set(runConfirm.selectedNodeIds);
+    for (const node of nodes) {
+      if (node.parentId && selected.has(node.parentId)) {
+        selected.add(node.id);
+      }
+    }
+    // "Upstream" only means something when the plan pulled extra nodes in.
+    const trackUpstream =
+      runConfirm.mode === "selected" && runConfirm.includeUpstream;
+    let upstream = 0;
     for (const nodeId of runConfirm.plan.nodeIds) {
       const node = nodes.find((item) => item.id === nodeId);
       if (!node) {
@@ -2036,8 +2047,17 @@ function CanvasEditorInner({
       if (node.data.url?.trim() || node.data.status === "succeeded") {
         overwrite += 1;
       }
+      byType[node.type] = (byType[node.type] ?? 0) + 1;
+      if (trackUpstream && !selected.has(nodeId)) {
+        upstream += 1;
+      }
     }
-    return { count: runConfirm.plan.nodeIds.length, overwrite };
+    return {
+      count: runConfirm.plan.nodeIds.length,
+      overwrite,
+      upstream,
+      byType,
+    };
   }, [nodes, runConfirm]);
 
   /** Execution order, but spatial within a layer (top-left first). */
@@ -3757,7 +3777,7 @@ function CanvasEditorInner({
         open={Boolean(runConfirm)}
         onClose={() => setRunConfirm(null)}
         title={messages.canvas.runConfirmTitle}
-        size="md"
+        size="2xl"
         closeLabel={messages.close}
         footer={
           <div className="flex justify-end gap-2">
@@ -3783,36 +3803,59 @@ function CanvasEditorInner({
           </div>
         }
       >
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="text-[13px] font-medium text-zinc-800 dark:text-zinc-100">
-              {messages.canvas.runSummaryNodes.replace(
-                "{count}",
-                String(runSummary?.count ?? runConfirm?.plan.nodeIds.length ?? 0),
-              )}
-            </span>
-            {runCostEstimate && runCostEstimate.priced > 0 ? (
-              <span className="rounded-full bg-sky-50 px-2 py-0.5 font-mono text-[11px] text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
-                {messages.canvas.runEstimatedTotal} {currencySymbol}
-                {runCostEstimate.total}
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-lg border border-zinc-200/80 px-3 py-2 dark:border-zinc-700/80">
+              <p className="text-lg font-semibold leading-none text-zinc-900 dark:text-zinc-50">
+                {runSummary?.count ?? runConfirm?.plan.nodeIds.length ?? 0}
+              </p>
+              <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+                {messages.canvas.runStatNodes}
+              </p>
+            </div>
+            <div className="rounded-lg border border-zinc-200/80 px-3 py-2 dark:border-zinc-700/80">
+              <p
+                className={`text-lg font-semibold leading-none ${
+                  (runSummary?.overwrite ?? 0) > 0
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-zinc-900 dark:text-zinc-50"
+                }`}
+              >
+                {runSummary?.overwrite ?? 0}
+              </p>
+              <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+                {messages.canvas.runStatOverwrite}
+              </p>
+            </div>
+            <div className="rounded-lg border border-zinc-200/80 px-3 py-2 dark:border-zinc-700/80">
+              <p className="text-lg font-semibold leading-none text-zinc-900 dark:text-zinc-50">
+                {runCostEstimate && runCostEstimate.priced > 0
+                  ? `${currencySymbol}${runCostEstimate.total}`
+                  : "—"}
+              </p>
+              <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+                {messages.canvas.runStatCost}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+            {(["image", "video", "audio", "text"] as const)
+              .filter((type) => (runSummary?.byType[type] ?? 0) > 0)
+              .map((type) => (
+                <span key={type}>
+                  {nodeTypeName(type)} {runSummary?.byType[type]}
+                </span>
+              ))}
+            {runSummary && runSummary.upstream > 0 ? (
+              <span className="text-zinc-400 dark:text-zinc-500">
+                · {runSummary.upstream} {messages.canvas.runUpstreamNodes}
               </span>
             ) : null}
           </div>
 
-          {runSummary && runSummary.overwrite > 0 ? (
-            <div className="flex items-start gap-2 rounded-md bg-amber-50/80 px-2.5 py-2 text-[11px] leading-relaxed text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-              <Icon icon={WarningCircle} size={13} className="mt-0.5 shrink-0" />
-              <span>
-                {messages.canvas.runOverwriteWarning.replace(
-                  "{count}",
-                  String(runSummary.overwrite),
-                )}
-              </span>
-            </div>
-          ) : null}
-
           {runHasUpstream ? (
-            <div className="rounded-md border border-zinc-200/80 px-2.5 py-2 dark:border-zinc-700/80">
+            <div className="rounded-lg border border-zinc-200/80 px-3 py-2 dark:border-zinc-700/80">
               <Switch
                 id="run-include-upstream"
                 checked={Boolean(runConfirm?.includeUpstream)}
@@ -3820,52 +3863,89 @@ function CanvasEditorInner({
                 label={messages.canvas.runIncludeUpstream}
                 layout="between"
               />
-              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400">
+              <p className="mt-1 text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
                 {messages.canvas.runIncludeUpstreamHint}
               </p>
             </div>
           ) : null}
 
-          <div className="space-y-1">
-            {(runListExpanded
-              ? runDisplayOrder
-              : runDisplayOrder.slice(0, 6)
-            ).map((nodeId) => {
-              const node = nodes.find((item) => item.id === nodeId);
-              if (!node) {
-                return null;
-              }
-              const hasResult = Boolean(
-                node.data.url?.trim() || node.data.status === "succeeded",
-              );
-              return (
-                <div
-                  key={nodeId}
-                  className="flex items-center gap-2 rounded-md bg-zinc-50 px-2 py-1.5 text-xs dark:bg-zinc-800/60"
-                >
-                  <Icon
-                    icon={nodeTypeIcon(node.type)}
-                    size={13}
-                    className="shrink-0 text-zinc-400"
-                  />
-                  <span className="min-w-0 flex-1 truncate text-zinc-700 dark:text-zinc-200">
-                    {node.data.label?.trim() || nodeTypeName(node.type)}
-                  </span>
-                  {hasResult ? (
-                    <span className="shrink-0 rounded-full bg-zinc-200/70 px-1.5 py-0.5 text-[9px] text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300">
-                      {messages.canvas.runHasResult}
+          <div className="overflow-hidden rounded-lg border border-zinc-200/80 dark:border-zinc-700/80">
+            <div className="max-h-72 divide-y divide-zinc-200/70 overflow-y-auto dark:divide-zinc-800">
+              {(runListExpanded
+                ? runDisplayOrder
+                : runDisplayOrder.slice(0, 8)
+              ).map((nodeId) => {
+                const node = nodes.find((item) => item.id === nodeId);
+                if (!node) {
+                  return null;
+                }
+                const hasResult = Boolean(
+                  node.data.url?.trim() || node.data.status === "succeeded",
+                );
+                const selectedIds = new Set(
+                  runConfirm?.selectedNodeIds ?? [],
+                );
+                for (const candidate of nodes) {
+                  if (
+                    candidate.parentId &&
+                    selectedIds.has(candidate.parentId)
+                  ) {
+                    selectedIds.add(candidate.id);
+                  }
+                }
+                const isUpstream =
+                  runConfirm?.mode === "selected" &&
+                  runConfirm.includeUpstream &&
+                  !selectedIds.has(nodeId);
+                const params = node.data.params ?? {};
+                const size =
+                  typeof params.size === "string"
+                    ? params.size
+                    : typeof params.aspectRatio === "string"
+                      ? params.aspectRatio
+                      : "";
+                const duration =
+                  typeof params.duration === "string" ||
+                  typeof params.duration === "number"
+                    ? `${params.duration}s`
+                    : "";
+                const meta = [node.data.model, duration || size]
+                  .filter((value): value is string => Boolean(value))
+                  .join(" · ");
+                return (
+                  <div
+                    key={nodeId}
+                    className="flex items-center gap-2 px-3 py-1.5 text-xs transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                  >
+                    <Icon
+                      icon={nodeTypeIcon(node.type)}
+                      size={13}
+                      className="shrink-0 text-zinc-400"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-zinc-700 dark:text-zinc-200">
+                      {node.data.label?.trim() || nodeTypeName(node.type)}
                     </span>
-                  ) : null}
-                  <span className="shrink-0 font-mono text-[10px] text-zinc-400">
-                    {node.data.model || messages.canvas.noModel}
-                  </span>
-                </div>
-              );
-            })}
-            {runConfirm && runConfirm.plan.nodeIds.length > 6 ? (
+                    {isUpstream ? (
+                      <span className="shrink-0 rounded bg-zinc-100 px-1 py-0.5 text-[9px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                        {messages.canvas.runUpstreamTag}
+                      </span>
+                    ) : null}
+                    {hasResult ? (
+                      <span className="shrink-0 text-[9px] font-medium text-amber-600 dark:text-amber-400">
+                        {messages.canvas.runOverwriteTag}
+                      </span>
+                    ) : null}
+                    <span className="w-40 shrink-0 truncate text-right font-mono text-[10px] text-zinc-400 dark:text-zinc-500">
+                      {meta || messages.canvas.noModel}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {runConfirm && runConfirm.plan.nodeIds.length > 8 ? (
               <button
                 type="button"
-                className="w-full rounded-md px-2 py-1 text-left text-[10px] text-zinc-400 transition-colors hover:bg-zinc-50 hover:text-zinc-600 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-300"
+                className="w-full border-t border-zinc-200/80 px-3 py-1.5 text-left text-[10px] text-zinc-400 transition-colors hover:bg-zinc-50 hover:text-zinc-600 dark:border-zinc-800 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-300"
                 onClick={() => setRunListExpanded((current) => !current)}
               >
                 {runListExpanded
@@ -3877,13 +3957,12 @@ function CanvasEditorInner({
               </button>
             ) : null}
           </div>
-          {runCostEstimate && runCostEstimate.unpriced > 0 ? (
-            <p className="text-[10px] text-zinc-400">
-              {messages.canvas.runEstimatedPartial}
-            </p>
-          ) : null}
-          <p className="text-[10px] leading-relaxed text-zinc-400">
+
+          <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
             {messages.canvas.runCostHint}
+            {runCostEstimate && runCostEstimate.unpriced > 0
+              ? ` ${messages.canvas.runEstimatedPartial}`
+              : ""}
           </p>
         </div>
       </Modal>
