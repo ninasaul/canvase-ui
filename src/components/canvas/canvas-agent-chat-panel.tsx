@@ -9,6 +9,7 @@ import {
   FileAudio,
   Paperclip,
   PaperPlaneTilt,
+  Play,
   Plus,
   ShieldWarning,
   Stop,
@@ -33,6 +34,8 @@ import { Icon } from "@/components/ui/icon";
 import { toast } from "@/components/ui/toast";
 import { useMessages } from "@/hooks/use-feature-messages";
 import {
+  cancelAgentRun,
+  getCanvasRun,
   resolveAgentApproval,
   steerCanvasAgentChat,
   streamCanvasAgentChat,
@@ -98,6 +101,18 @@ type UiMessage =
       status: "running" | "done" | "failed";
       summary?: string;
       expanded?: boolean;
+    }
+  | {
+      id: string;
+      kind: "run";
+      mode: string;
+      runId?: string;
+      nodeIds: string[];
+      status: "queued" | "running" | "succeeded" | "partial" | "failed" | "cancelled";
+      total: number;
+      done: number;
+      failed: number;
+      error?: string;
     }
   | {
       id: string;
@@ -257,6 +272,39 @@ function savePanelWidth(width: number): void {
   window.localStorage.setItem(WIDTH_STORAGE_KEY, String(clampPanelWidth(width)));
 }
 
+/** `canvas_run` results are JSON; tolerate plain text. */
+function readRunSummary(summary: string | undefined): {
+  runId?: string;
+  status?: "queued" | "running" | "succeeded" | "partial" | "failed" | "cancelled";
+  nodeIds?: string[];
+} {
+  const text = (summary ?? "").trim();
+  const start = text.indexOf("{");
+  if (start < 0) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(text.slice(start)) as Record<string, unknown>;
+    const run = (parsed.run ?? parsed) as Record<string, unknown>;
+    return {
+      ...(typeof run.runId === "string" ? { runId: run.runId } : {}),
+      ...(typeof run.id === "string" ? { runId: run.id } : {}),
+      ...(typeof run.status === "string"
+        ? { status: run.status as "queued" }
+        : {}),
+      ...(Array.isArray(run.nodeIds)
+        ? {
+            nodeIds: run.nodeIds.filter(
+              (id): id is string => typeof id === "string",
+            ),
+          }
+        : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
 /** First node id a tool call is about, if it names one. */
 function readToolFocusNodeId(args: unknown): string | null {
   if (!args || typeof args !== "object") {
@@ -286,7 +334,9 @@ type MessageGroup =
   | {
       key: string;
       type: "assistant-turn";
-      items: Array<Extract<UiMessage, { kind: "assistant" | "tool" | "approval" }>>;
+      items: Array<
+        Extract<UiMessage, { kind: "assistant" | "tool" | "approval" | "run" }>
+      >;
     }
   | { key: string; type: "error"; item: Extract<UiMessage, { kind: "error" }> }
   | { key: string; type: "divider"; sessionId: string; at?: string };
@@ -376,6 +426,10 @@ function AttachmentPreview({
 
 /** Keep API payload under route message limit after tool expansion. */
 const MAX_API_HISTORY_MESSAGES = 80;
+/** Character budget for one request; older turns are summarized away. */
+const MAX_API_HISTORY_CHARS = 24_000;
+/** Always keep the tail verbatim, even when it blows the budget. */
+const KEEP_RECENT_MESSAGES = 6;
 
 /** Flatten UI transcript into API history (tools become assistant notes). */
 function buildApiHistory(
@@ -428,6 +482,10 @@ function buildApiHistory(
       history.push({ role: "assistant", content });
       continue;
     }
+    if (item.kind === "run") {
+      // The run is represented by its tool result line instead.
+      continue;
+    }
     if (item.kind === "approval") {
       // UI-only: the decision is already reflected in the tool result.
       continue;
@@ -441,15 +499,131 @@ function buildApiHistory(
       history.push({
         role: "assistant",
         content: `[tool ${toolName} ${item.status}]${
-          summary ? `\n${summary.slice(0, 1200)}` : ""
+          summary ? `\n${summary.slice(0, 420)}` : ""
         }`,
       });
     }
   }
-  if (history.length <= MAX_API_HISTORY_MESSAGES) {
-    return history;
+  const trimmed =
+    history.length <= MAX_API_HISTORY_MESSAGES
+      ? history
+      : history.slice(-MAX_API_HISTORY_MESSAGES);
+
+  // Budget by characters: tool results dominate and are re-readable, so drop
+  // the oldest turns first and tell the model they existed.
+  let total = 0;
+  let keepFrom = trimmed.length;
+  for (let index = trimmed.length - 1; index >= 0; index -= 1) {
+    const entry = trimmed[index]!;
+    const cost = entry.content.length;
+    const mustKeep = trimmed.length - index <= KEEP_RECENT_MESSAGES;
+    if (!mustKeep && total + cost > MAX_API_HISTORY_CHARS) {
+      break;
+    }
+    total += cost;
+    keepFrom = index;
   }
-  return history.slice(-MAX_API_HISTORY_MESSAGES);
+  if (keepFrom === 0) {
+    return trimmed;
+  }
+  const dropped = keepFrom;
+  return [
+    {
+      role: "assistant" as const,
+      content: `[earlier conversation omitted: ${dropped} message(s). Call canvas_get if you need the current state again.]`,
+    },
+    ...trimmed.slice(keepFrom),
+  ];
+}
+
+function RunCard({
+  item,
+  onCancel,
+}: {
+  item: Extract<UiMessage, { kind: "run" }>;
+  onCancel?: () => void;
+}) {
+  const messages = useMessages();
+  const active = item.status === "queued" || item.status === "running";
+  const modeLabel =
+    item.mode === "all"
+      ? messages.canvas.runAll
+      : item.mode === "node"
+        ? messages.canvas.runSelected
+        : item.mode === "from"
+          ? messages.canvas.runFrom
+          : item.mode === "retry-failed"
+            ? messages.canvas.retryFailed
+            : messages.canvas.runSelected;
+  const statusLabel =
+    item.status === "queued"
+      ? messages.canvas.runCardQueued
+      : item.status === "running"
+        ? messages.canvas.runCardRunning
+        : item.status === "succeeded"
+          ? messages.canvas.runCardSucceeded
+          : item.status === "partial"
+            ? messages.canvas.runCardPartial
+            : item.status === "cancelled"
+              ? messages.canvas.runCardCancelled
+              : messages.canvas.runCardFailed;
+  const total = item.total || item.nodeIds.length;
+  const progress = total > 0 ? Math.round((item.done / total) * 100) : 0;
+
+  return (
+    <div className="rounded-xl border border-sky-200/80 bg-sky-50/70 p-2.5 dark:border-sky-500/30 dark:bg-sky-950/25">
+      <div className="flex items-center gap-2">
+        <Icon
+          icon={active ? CircleNotch : Play}
+          size={13}
+          className={`shrink-0 text-sky-600 dark:text-sky-300 ${
+            active ? "animate-spin" : ""
+          }`}
+        />
+        <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-sky-900 dark:text-sky-200">
+          {messages.canvas.runCardTitle} · {modeLabel}
+        </span>
+        <span className="shrink-0 text-[10px] text-sky-700/80 dark:text-sky-300/80">
+          {statusLabel}
+        </span>
+      </div>
+      {total > 0 ? (
+        <div className="mt-2 flex items-center gap-2">
+          <div className="h-1 flex-1 overflow-hidden rounded-full bg-sky-200/60 dark:bg-sky-900/60">
+            <div
+              className="h-full rounded-full bg-sky-500 transition-all"
+              style={{ width: `${Math.min(100, progress)}%` }}
+            />
+          </div>
+          <span className="shrink-0 font-mono text-[10px] text-sky-800/80 dark:text-sky-300/80">
+            {item.done}/{total}
+          </span>
+        </div>
+      ) : null}
+      {item.failed > 0 ? (
+        <p className="mt-1 text-[10px] text-red-600 dark:text-red-400">
+          {messages.canvas.runCardFailures.replace(
+            "{count}",
+            String(item.failed),
+          )}
+        </p>
+      ) : null}
+      {item.error ? (
+        <p className="mt-1 line-clamp-2 text-[10px] text-red-600 dark:text-red-400">
+          {item.error}
+        </p>
+      ) : null}
+      {active && onCancel ? (
+        <button
+          type="button"
+          className="mt-2 rounded-md px-1.5 py-0.5 text-[10px] text-sky-700 transition-colors hover:bg-sky-100 dark:text-sky-300 dark:hover:bg-sky-900/50"
+          onClick={onCancel}
+        >
+          {messages.canvas.runCardCancel}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 function ApprovalCard({
@@ -748,6 +922,74 @@ export function CanvasAgentChatPanel({
     saveOpenPreference(next);
   }
 
+  // Live progress for agent-triggered runs. Only active runs keep the timer on.
+  const activeRunKey = useMemo(
+    () =>
+      items
+        .filter(
+          (item) =>
+            item.kind === "run" &&
+            item.runId &&
+            (item.status === "queued" || item.status === "running"),
+        )
+        .map((item) => (item as Extract<UiMessage, { kind: "run" }>).runId!)
+        .filter((id, index, all) => all.indexOf(id) === index)
+        .join(","),
+    [items],
+  );
+  useEffect(() => {
+    if (!activeRunKey) {
+      return;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      for (const runId of activeRunKey.split(",")) {
+        if (cancelled) {
+          return;
+        }
+        try {
+          const detail = await getCanvasRun(canvasId, runId);
+          if (cancelled) {
+            return;
+          }
+          const settled = detail.nodes.filter(
+            (node) =>
+              node.status === "succeeded" ||
+              node.status === "failed" ||
+              node.status === "cancelled",
+          ).length;
+          const failed = detail.nodes.filter(
+            (node) => node.status === "failed",
+          ).length;
+          setItems((current) =>
+            current.map((item) =>
+              item.kind === "run" && item.runId === runId
+                ? {
+                    ...item,
+                    status: detail.status,
+                    done: settled,
+                    failed,
+                    total: detail.nodes.length || item.total,
+                    ...(detail.error ? { error: detail.error } : {}),
+                  }
+                : item,
+            ),
+          );
+        } catch {
+          // Transient; the next tick retries.
+        }
+      }
+    };
+    void tick();
+    const timer = window.setInterval(() => {
+      void tick();
+    }, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeRunKey, canvasId]);
+
   function handleClear() {
     if (busy) {
       return;
@@ -945,6 +1187,26 @@ export function CanvasAgentChatPanel({
         if (focusId) {
           onAgentFocusNode?.(focusId);
         }
+        if (event.tool === "canvas_run") {
+          const args = (event.args ?? {}) as Record<string, unknown>;
+          const nodeIds = Array.isArray(args.nodeIds)
+            ? args.nodeIds.filter((id): id is string => typeof id === "string")
+            : [];
+          setItems((current) => [
+            ...current,
+            {
+              id: event.id || newId("run"),
+              kind: "run" as const,
+              mode: typeof args.mode === "string" ? args.mode : "selected",
+              nodeIds,
+              status: "queued" as const,
+              total: nodeIds.length,
+              done: 0,
+              failed: 0,
+            },
+          ]);
+          return;
+        }
         setItems((current) => [
           ...current,
           {
@@ -998,6 +1260,28 @@ export function CanvasAgentChatPanel({
               : item,
           ),
         );
+        return;
+      }
+      if (event.type === "tool_result" && event.tool === "canvas_run") {
+        const summary = readRunSummary(event.summary);
+        setItems((current) => {
+          const index = current.findIndex((item) => item.kind === "run");
+          if (index < 0) {
+            return current;
+          }
+          const next = [...current];
+          const card = next[index] as Extract<UiMessage, { kind: "run" }>;
+          next[index] = {
+            ...card,
+            ...(summary.runId ? { runId: summary.runId } : {}),
+            ...(summary.nodeIds && summary.nodeIds.length > 0
+              ? { nodeIds: summary.nodeIds, total: summary.nodeIds.length }
+              : {}),
+            status: event.ok ? (summary.status ?? "queued") : "failed",
+            ...(event.ok ? {} : { error: event.summary }),
+          };
+          return next;
+        });
         return;
       }
       if (event.type === "tool_result") {
@@ -1094,6 +1378,28 @@ export function CanvasAgentChatPanel({
         abortRef.current = null;
       }
       setBusy(false);
+    }
+  }
+
+  async function handleCancelRun(runId?: string) {
+    if (!runId) {
+      return;
+    }
+    try {
+      await cancelAgentRun(canvasId, runId);
+      setItems((current) =>
+        current.map((item) =>
+          item.kind === "run" && item.runId === runId
+            ? { ...item, status: "cancelled" as const }
+            : item,
+        ),
+      );
+    } catch (caught) {
+      toast.error(
+        caught instanceof Error
+          ? caught.message
+          : messages.canvas.runCardCancelFailed,
+      );
     }
   }
 
@@ -1493,6 +1799,22 @@ export function CanvasAgentChatPanel({
                         onDecide={(decision) => {
                           void handleApproval(item.id, decision);
                         }}
+                      />
+                    );
+                  }
+
+                  if (item.kind === "run") {
+                    return (
+                      <RunCard
+                        key={item.id}
+                        item={item}
+                        onCancel={
+                          item.runId
+                            ? () => {
+                                void handleCancelRun(item.runId);
+                              }
+                            : undefined
+                        }
                       />
                     );
                   }

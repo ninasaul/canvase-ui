@@ -155,6 +155,10 @@ Agent chat turns are persisted server-side (`canvas_chat_message`, append-only, 
 
 Read and ordinary edit tools run automatically (they are undoable). Tools that cost money or delete in bulk do not: `canvas_run` and `canvas_delete_nodes` with more than five ids block the turn and emit an `approval_request` over the chat stream. The browser answers through `POST /api/agent/approvals/[id]` with `allow_once`, `allow_session` (30 minute grant for that conversation) or `deny`; a denial is fed back to the model as a tool result so it can propose a smaller step. Pending approvals are process-local — run a single app instance, or move the registry to Redis before scaling out.
 
+### Run cards and history budget
+
+Agent-triggered `canvas_run` renders as a live card in the transcript (mode, `done/total`, failures, cancel) that polls `GET /api/canvases/[id]/runs/[runId]` every two seconds until the run settles. Chat history sent to the model is capped by characters (`MAX_API_HISTORY_CHARS`, 24k) rather than messages alone: tool notes are truncated to 420 characters and the oldest turns collapse into an `[earlier conversation omitted]` note, while the last six messages always stay verbatim.
+
 ### Steering
 
 While a turn is streaming the composer stays editable: the send button becomes **Steer** and the message is queued instead of starting a new turn. The instruction is folded into the conversation as `[mid-turn instruction from the user] …` right before the agent's next step (and once more before the turn ends, so guidance that arrives during the final stream still gets answered). The endpoint is `POST /api/agent/steer`; a `409` means nothing was streaming, and the client falls back to a normal message. Queued instructions are persisted to the transcript, so history stays honest.
