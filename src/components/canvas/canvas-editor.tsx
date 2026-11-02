@@ -56,7 +56,6 @@ import {
   type OnConnect,
   type OnNodeDrag,
   useReactFlow,
-  useStore,
   ViewportPortal,
 } from "@xyflow/react";
 import {
@@ -152,6 +151,7 @@ import {
 import { recoverCanvasNode } from "@/lib/canvas/canvas-task-recovery";
 import { useCanvasDocument } from "@/components/canvas/editor/workspace/use-canvas-document";
 import { useCanvasRun } from "@/components/canvas/editor/workspace/use-canvas-run";
+import { useCanvasViewport } from "@/components/canvas/editor/workspace/use-canvas-viewport";
 import { useCanvasSettings } from "@/components/canvas/editor/workspace/use-canvas-settings";
 import { useCanvasHistory } from "@/lib/canvas/use-canvas-history";
 import { useCanvasRunStatusStore } from "@/lib/canvas/canvas-run-status-store";
@@ -176,7 +176,6 @@ import {
   CANVAS_CONNECTION_SNAP_RADIUS,
   CANVAS_DEFAULT_FIT_VIEW_OPTIONS,
   CANVAS_DEFAULT_VIEWPORT,
-  CANVAS_EDGE_LABEL_ZOOM,
   CANVAS_LOD_ZOOM,
   CANVAS_MAX_ZOOM,
   CANVAS_MIN_ZOOM,
@@ -260,7 +259,6 @@ function CanvasEditorInner({
     () => new Set(),
   );
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
-  const [viewportLocked, setViewportLocked] = useState(false);
   const layoutMenuButtonRef = useRef<HTMLButtonElement>(null);
   const titleRef = useRef(canvasDocument.title);
   const activeRunRef = useRef(false);
@@ -269,6 +267,16 @@ function CanvasEditorInner({
   const rebaseAttemptsRef = useRef(0);
 
   const nodes = useCanvasStore((state) => state.nodes);
+
+  const {
+    viewportZoom,
+    visibleNodeIds,
+    canvasDetail,
+    syncViewport,
+    viewportLocked,
+    setViewportLocked,
+  } = useCanvasViewport();
+
   const edges = useCanvasStore((state) => state.edges);
   const selectedNodes = useMemo(
     () =>
@@ -283,44 +291,6 @@ function CanvasEditorInner({
    */
   // Viewport changes every frame while panning; keep only what we need as
   // state, refreshed when the gesture ends (a re-render per frame is costly).
-  const agentFlowWidth = useStore((state) => state.width);
-  const agentFlowHeight = useStore((state) => state.height);
-  const [viewportZoom, setViewportZoom] = useState(1);
-  const canvasDetail = useMemo(
-    () => ({
-      far: viewportZoom < CANVAS_LOD_ZOOM,
-      showEdgeLabels: viewportZoom >= CANVAS_EDGE_LABEL_ZOOM,
-    }),
-    [viewportZoom],
-  );
-  const [visibleNodeIds, setVisibleNodeIds] = useState<string[]>([]);
-  const syncViewport = useCallback(
-    (viewport: { x: number; y: number; zoom: number }) => {
-      setViewportZoom(viewport.zoom || 1);
-      const zoom = viewport.zoom || 1;
-      const width = (agentFlowWidth || 1200) / zoom;
-      const height = (agentFlowHeight || 800) / zoom;
-      const left = -viewport.x / zoom;
-      const top = -viewport.y / zoom;
-      const store = useCanvasStore.getState();
-      setVisibleNodeIds(
-        store.nodes
-          .filter((node) => {
-            const nodeWidth = node.width ?? 240;
-            const nodeHeight = node.height ?? 240;
-            return (
-              node.position.x + nodeWidth >= left &&
-              node.position.x <= left + width &&
-              node.position.y + nodeHeight >= top &&
-              node.position.y <= top + height
-            );
-          })
-          .slice(0, 40)
-          .map((node) => node.id),
-      );
-    },
-    [agentFlowHeight, agentFlowWidth],
-  );
 
   const selectedRunNodeIds = useMemo(
     () => nodes.filter((node) => node.selected).map((node) => node.id),
@@ -1223,6 +1193,7 @@ function CanvasEditorInner({
     clearSelection,
     configNodeId,
     duplicateNode,
+    setViewportLocked,
     fitView,
     history,
     insertMenu,
