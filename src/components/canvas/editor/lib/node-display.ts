@@ -40,3 +40,25 @@ export function nodeTypeLabel(type: string | undefined): string {
       return messages.canvas.textNode;
   }
 }
+
+/** Human label for a node run status. */
+export function nodeStatusLabel(status: string | undefined): string {
+    switch (status) {
+      case "queued":
+        return messages.canvas.statusQueued;
+      case "running":
+        return messages.canvas.statusRunning;
+      case "succeeded":
+        return messages.canvas.statusSucceeded;
+      case "failed":
+        return messages.canvas.statusFailed;
+      case "skipped":
+        return messages.canvas.statusSkipped;
+      case "cancelled":
+        return messages.canvas.statusCancelled;
+      case "interrupted":
+        return messages.canvas.statusInterrupted;
+      default:
+        return messages.canvas.statusIdle;
+    }
+}

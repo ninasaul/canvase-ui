@@ -163,7 +163,10 @@ import {
   CANVAS_SNAP_DISTANCE,
 } from "@/components/canvas/editor/lib/constants";
 import type { RunConfirmState } from "@/components/canvas/editor/lib/run-plan-view";
-import { nodeTypeLabel } from "@/components/canvas/editor/lib/node-display";
+import {
+  nodeStatusLabel,
+  nodeTypeLabel,
+} from "@/components/canvas/editor/lib/node-display";
 import { isCanvasConnectionValid } from "@/components/canvas/editor/lib/geometry";
 
 
@@ -1204,26 +1207,6 @@ function CanvasEditorInner({
       configNode.type === "text")
       ? configNode
       : null;
-  function nodeStatusName(status: string | undefined): string {
-    switch (status) {
-      case "queued":
-        return messages.canvas.statusQueued;
-      case "running":
-        return messages.canvas.statusRunning;
-      case "succeeded":
-        return messages.canvas.statusSucceeded;
-      case "failed":
-        return messages.canvas.statusFailed;
-      case "skipped":
-        return messages.canvas.statusSkipped;
-      case "cancelled":
-        return messages.canvas.statusCancelled;
-      case "interrupted":
-        return messages.canvas.statusInterrupted;
-      default:
-        return messages.canvas.statusIdle;
-    }
-  }
 
   const { infoNodes, infoRows, childCounts } = useMemo(() => {
     const byId = new Map(nodes.map((node) => [node.id, node]));
@@ -2463,7 +2446,7 @@ function CanvasEditorInner({
                   const status =
                     node.type === "group"
                       ? "—"
-                      : nodeStatusName(node.data.status);
+                      : nodeStatusLabel(node.data.status);
                   const width = node.width ?? node.measured?.width;
                   const height = node.height ?? node.measured?.height;
                   const isGroup = node.type === "group";
