@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     })) ||
     `session-${crypto.randomUUID()}`;
   const id = parsed.data.messageId?.trim() || `steer_${crypto.randomUUID()}`;
-  const queued = queueSteer(
+  const queued = await queueSteer(
     { canvasId: parsed.data.canvasId, sessionId },
     { id, content: parsed.data.content, createdAt: Date.now() },
   );

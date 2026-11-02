@@ -1,3 +1,4 @@
+import { getRedis, getRedisSubscriber } from "@/lib/redis";
 import { prisma } from "@/lib/prisma";
 import { readCanvasGraph } from "@/lib/canvas/apply-canvas-graph-update";
 import { buildCanvasRunPlan, type CanvasRunMode } from "@/lib/canvas/canvas-run-plan";
@@ -31,10 +32,50 @@ const SESSION_GRANT_TTL_MS = 30 * 60_000;
 /** Bulk deletions below this size go through without asking. */
 const DELETE_APPROVAL_THRESHOLD = 5;
 
+const DECISION_CHANNEL = "canvase:approval:decision";
+const approvalKey = (id: string) => `canvase:approval:${id}`;
+const grantKeyName = (canvasId: string, sessionId?: string) =>
+  `canvase:grant:${canvasId}:${sessionId ?? "-"}`;
+
 const pending = new Map<string, PendingApproval>();
 const sessionGrants = new Map<
   string, { tools: Set<string>; expiresAt: number }
 >();
+const globalForApprovals = globalThis as typeof globalThis & {
+  __canvaseApprovalSubscribed?: boolean;
+};
+
+/**
+ * Decisions may land on a different instance than the one holding the turn,
+ * so they travel over Redis pub/sub and local promises resolve from there.
+ */
+async function ensureDecisionSubscriber(): Promise<void> {
+  const subscriber = getRedisSubscriber();
+  if (!subscriber || globalForApprovals.__canvaseApprovalSubscribed) {
+    return;
+  }
+  globalForApprovals.__canvaseApprovalSubscribed = true;
+  subscriber.on("message", (channel, payload) => {
+    if (channel !== DECISION_CHANNEL) {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(payload) as {
+        id?: string;
+        decision?: ApprovalDecision;
+      };
+      if (!parsed.id || !parsed.decision) {
+        return;
+      }
+      pending.get(parsed.id)?.resolve(parsed.decision);
+    } catch {
+      // Ignore malformed payloads.
+    }
+  });
+  await subscriber.subscribe(DECISION_CHANNEL).catch(() => {
+    globalForApprovals.__canvaseApprovalSubscribed = false;
+  });
+}
 
 /**
  * The agent may spend money and wipe results. Reads and ordinary graph edits
@@ -49,7 +90,7 @@ export async function evaluateToolApproval(input: {
   args: Record<string, unknown>;
 }): Promise<ApprovalCheck> {
   if (input.tool === "canvas_run") {
-    if (hasSessionGrant(input, "canvas_run")) {
+    if (await hasSessionGrant(input, "canvas_run")) {
       return { required: false };
     }
     return {
@@ -65,7 +106,7 @@ export async function evaluateToolApproval(input: {
     if (nodeIds.length < DELETE_APPROVAL_THRESHOLD) {
       return { required: false };
     }
-    if (hasSessionGrant(input, "canvas_delete_nodes")) {
+    if (await hasSessionGrant(input, "canvas_delete_nodes")) {
       return { required: false };
     }
     return {
@@ -141,27 +182,40 @@ function grantKey(input: { canvasId: string; sessionId?: string }): string {
   return `${input.canvasId}:${input.sessionId ?? "-"}`;
 }
 
-function hasSessionGrant(
+async function hasSessionGrant(
   input: { canvasId: string; sessionId?: string },
   tool: string,
-): boolean {
-  const key = grantKey(input);
-  const grant = sessionGrants.get(key);
+): Promise<boolean> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      const member = await redis.sismember(
+        grantKeyName(input.canvasId, input.sessionId),
+        tool,
+      );
+      if (member) {
+        return true;
+      }
+    } catch {
+      // Fall through to the process-local copy.
+    }
+  }
+  const grant = sessionGrants.get(grantKey(input));
   if (!grant) {
     return false;
   }
   if (grant.expiresAt < Date.now()) {
-    sessionGrants.delete(key);
+    sessionGrants.delete(grantKey(input));
     return false;
   }
   return grant.tools.has(tool);
 }
 
-export function grantSessionTool(input: {
+export async function grantSessionTool(input: {
   canvasId: string;
   sessionId?: string;
   tool: string;
-}): void {
+}): Promise<void> {
   const key = grantKey(input);
   const current = sessionGrants.get(key);
   const tools = current ? current.tools : new Set<string>();
@@ -170,19 +224,31 @@ export function grantSessionTool(input: {
     tools,
     expiresAt: Date.now() + SESSION_GRANT_TTL_MS,
   });
+  const redis = getRedis();
+  if (!redis) {
+    return;
+  }
+  const name = grantKeyName(input.canvasId, input.sessionId);
+  try {
+    await redis.sadd(name, input.tool);
+    await redis.pexpire(name, SESSION_GRANT_TTL_MS);
+  } catch {
+    // Local grant still applies on this instance.
+  }
 }
 
 /**
  * Block the turn until the user answers (or the stream is aborted / times out).
  * The decision arrives through `POST /api/agent/approvals/[id]`.
  */
-export function requestApproval(input: {
+export async function requestApproval(input: {
   ownerId: string;
   canvasId: string;
   sessionId?: string;
   tool: string;
   signal?: AbortSignal;
-}): { id: string; decision: Promise<ApprovalDecision> } {
+}): Promise<{ id: string; decision: Promise<ApprovalDecision> }> {
+  await ensureDecisionSubscriber();
   const id = `ap_${crypto.randomUUID()}`;
   const decision = new Promise<ApprovalDecision>((resolve) => {
     let settled = false;
@@ -215,15 +281,62 @@ export function requestApproval(input: {
       resolve: finish,
     });
   });
+
+  // Advertise the pending approval so any instance can accept the decision.
+  const redis = getRedis();
+  if (redis) {
+    try {
+      await redis.set(
+        approvalKey(id),
+        JSON.stringify({
+          ownerId: input.ownerId,
+          canvasId: input.canvasId,
+          sessionId: input.sessionId ?? null,
+          tool: input.tool,
+          createdAt: Date.now(),
+        }),
+        "PX",
+        APPROVAL_TIMEOUT_MS + 10_000,
+      );
+    } catch {
+      // Single-instance fallback: the local entry still works.
+    }
+  }
+
   return { id, decision };
 }
 
-/** Returns false when the id is unknown / already settled. */
-export function resolveApproval(
+/**
+ * Answers a pending approval. Works from any instance: the decision is
+ * published so whichever process holds the turn can unblock it.
+ * Returns false when the id is unknown / already settled.
+ */
+export async function resolveApproval(
   id: string,
   decision: ApprovalDecision,
   actorUserId: string,
-): boolean {
+): Promise<boolean> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      const raw = await redis.get(approvalKey(id));
+      if (raw) {
+        const record = JSON.parse(raw) as { ownerId?: string };
+        if (record.ownerId !== actorUserId) {
+          return false;
+        }
+        await redis.publish(
+          DECISION_CHANNEL,
+          JSON.stringify({ id, decision }),
+        );
+        await redis.del(approvalKey(id)).catch(() => undefined);
+        return true;
+      }
+    } catch {
+      // Fall through to the local entry.
+    }
+  }
+
   const entry = pending.get(id);
   if (!entry || entry.ownerId !== actorUserId) {
     return false;

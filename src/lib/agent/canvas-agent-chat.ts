@@ -348,7 +348,7 @@ async function gateToolApproval(input: {
     return null;
   }
 
-  const { id, decision } = requestApproval({
+  const { id, decision } = await requestApproval({
     ownerId: input.ownerId,
     canvasId: input.canvasId,
     sessionId: input.sessionId,
@@ -370,7 +370,7 @@ async function gateToolApproval(input: {
     return "用户拒绝了这次操作。请说明原因，或提出一个更小的替代方案（例如只运行选中的那个节点）。";
   }
   if (answer === "allow_session") {
-    grantSessionTool({
+    await grantSessionTool({
       canvasId: input.canvasId,
       sessionId: input.sessionId,
       tool: input.tool,
@@ -487,12 +487,12 @@ export async function runCanvasAgentChat(input: {
 
   // Steering: a turn stays steerable until it ends, so the user can add
   // guidance while the agent is mid-flight (applied at the next step).
-  const turnKey = beginAgentTurn({
+  const turnKey = await beginAgentTurn({
     canvasId: input.canvasId,
     sessionId: input.sessionId,
   });
-  const applySteers = () => {
-    const steers = drainSteers(turnKey);
+  const applySteers = async () => {
+    const steers = await drainSteers(turnKey);
     for (const steer of steers) {
       thread.push({
         role: "user",
@@ -521,7 +521,7 @@ export async function runCanvasAgentChat(input: {
     }
 
     // Guidance sent while the previous step was streaming applies here.
-    applySteers();
+    await applySteers();
 
     let text = "";
     let toolCalls: V1ChatToolCall[] = [];
@@ -566,7 +566,7 @@ export async function runCanvasAgentChat(input: {
         thread.push({ role: "assistant", content: text });
       }
       // A message that arrived during this stream still deserves an answer.
-      if (applySteers() > 0) {
+      if ((await applySteers()) > 0) {
         continue;
       }
       if (!text && step === 0) {
@@ -697,7 +697,7 @@ export async function runCanvasAgentChat(input: {
     }
   }
   } finally {
-    endAgentTurn(turnKey);
+    await endAgentTurn(turnKey);
   }
 
   if (input.signal?.aborted) {

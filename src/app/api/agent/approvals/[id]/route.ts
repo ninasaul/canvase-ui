@@ -35,7 +35,7 @@ export async function POST(request: Request, context: RouteContext) {
     return jsonError("Invalid decision", 400);
   }
   const decision: ApprovalDecision = parsed.data.decision;
-  const resolved = resolveApproval(id, decision, user.id);
+  const resolved = await resolveApproval(id, decision, user.id);
   if (!resolved) {
     return jsonError("Approval request not found or already answered", 404);
   }
