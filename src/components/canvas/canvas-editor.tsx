@@ -60,22 +60,17 @@ import { PlaygroundMediaLibraryPicker } from "@/components/playground/playground
 import { uploadPlaygroundAssetWithMeta } from "@/lib/playground-media";
 import { CanvasVideoGenerationDock } from "@/components/canvas/canvas-video-generation-dock";
 import { CanvasHelperLinesOverlay } from "@/components/canvas/canvas-helper-lines";
-import { CanvasConnectAgentModal } from "@/components/canvas/canvas-connect-agent-modal";
 import {
   CanvasAgentChatPanel,
   loadCanvasAgentChatOpenPreference,
 } from "@/components/canvas/canvas-agent-chat-panel";
 import { CanvasDetailProvider } from "@/components/canvas/canvas-detail-context";
-import { CanvasGroupModal } from "@/components/canvas/editor/panels/canvas-group-modal";
-import { CanvasInfoModal } from "@/components/canvas/editor/panels/canvas-info-modal";
-import { CanvasNodeInfoModal } from "@/components/canvas/editor/panels/canvas-node-info-modal";
+import { CanvasOverlays } from "@/components/canvas/editor/chrome/canvas-overlays";
 import { CanvasBackdrop } from "@/components/canvas/editor/chrome/canvas-backdrop";
 import { CanvasBottomDock } from "@/components/canvas/editor/chrome/canvas-bottom-dock";
 import { CanvasConflictBanner } from "@/components/canvas/editor/chrome/canvas-conflict-banner";
 import { CanvasToolbar } from "@/components/canvas/editor/chrome/canvas-toolbar";
 import { CanvasRunConfirmModal } from "@/components/canvas/editor/panels/canvas-run-confirm-modal";
-import { CanvasSettingsModal } from "@/components/canvas/editor/panels/canvas-settings-modal";
-import { CanvasModelSettingsModal } from "@/components/canvas/canvas-model-settings-modal";
 import { canvasNodeTypes } from "@/components/canvas/canvas-node-types";
 import {
   getHelperLines,
@@ -2309,61 +2304,40 @@ function CanvasEditorInner({
       />
       ) : null}
 
-      <CanvasInfoModal
-        open={infoOpen}
+      <CanvasOverlays
+        infoOpen={infoOpen}
         titleDraft={titleDraft}
-        onTitleChange={setTitleDraft}
+        setTitleDraft={setTitleDraft}
         thumbnailUrl={thumbnailUrl}
         thumbnailBusy={thumbnailBusy}
-        onPickThumbnail={() => thumbnailRef.current?.click()}
-        nodeCount={nodes.length}
-        edgeCount={edges.length}
-        createdAt={canvasDocument.createdAt}
-        updatedAt={savedAt ?? canvasDocument.updatedAt}
-        onExport={exportJson}
-        onSubmit={saveCanvasInfo}
-        onClose={closeCanvasInfo}
-      />
-
-      <CanvasModelSettingsModal
-        open={modelSettingsOpen}
-        onClose={() => setModelSettingsOpen(false)}
-        onSaved={() => setByokRevision((current) => current + 1)}
-      />
-
-      <CanvasConnectAgentModal
-        open={connectAgentOpen}
-        canvasId={canvasDocument.id}
-        onClose={() => setConnectAgentOpen(false)}
-        onTokensChanged={setAgentTokenActive}
-      />
-
-      <CanvasSettingsModal
-        state={canvasSettings}
+        thumbnailRef={thumbnailRef}
+        nodes={nodes}
+        edges={edges}
+        canvasDocument={canvasDocument}
+        savedAt={savedAt}
+        exportJson={exportJson}
+        saveCanvasInfo={saveCanvasInfo}
+        closeCanvasInfo={closeCanvasInfo}
+        modelSettingsOpen={modelSettingsOpen}
+        setModelSettingsOpen={setModelSettingsOpen}
+        setByokRevision={setByokRevision}
+        connectAgentOpen={connectAgentOpen}
+        setConnectAgentOpen={setConnectAgentOpen}
+        setAgentTokenActive={setAgentTokenActive}
+        canvasSettings={canvasSettings}
         chatModels={chatModels}
         imageModels={imageModels}
         videoModels={videoModels}
         imageDefaultParams={imageDefaultParams}
         videoDefaultParams={videoDefaultParams}
-      />
-      <CanvasNodeInfoModal
-        open={nodeInfoOpen}
-        nodes={nodes}
-        onClose={() => setNodeInfoOpen(false)}
-      />
-
-      <CanvasGroupModal
-        open={groupOpen}
-        name={groupName}
-        onNameChange={setGroupName}
-        onClose={() => setGroupOpen(false)}
-        onCreate={() => {
-          groupSelection(
-            selectedNodes.map((node) => node.id),
-            groupName,
-          );
-          setGroupOpen(false);
-        }}
+        nodeInfoOpen={nodeInfoOpen}
+        setNodeInfoOpen={setNodeInfoOpen}
+        groupOpen={groupOpen}
+        groupName={groupName}
+        setGroupName={setGroupName}
+        setGroupOpen={setGroupOpen}
+        groupSelection={groupSelection}
+        selectedNodes={selectedNodes}
       />
     </>
   );
