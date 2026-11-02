@@ -1020,6 +1020,9 @@ function CanvasEditorInner({
           if (agentRunSeenRef.current) {
             agentRunSeenRef.current = false;
             setAgentRunId(null);
+            // Drop the overlay entries: the run is over and the transcript of
+            // node states is stale from here on.
+            useCanvasRunStatusStore.getState().reset();
             void syncFromServer();
           }
           return;

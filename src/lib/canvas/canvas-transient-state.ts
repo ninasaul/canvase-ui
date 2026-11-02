@@ -43,6 +43,14 @@ export function captureTransientNodeState(
   return captured;
 }
 
+/** Terminal states always win over a stale "running" held in memory. */
+const TERMINAL_STATUSES = new Set([
+  "succeeded",
+  "failed",
+  "cancelled",
+  "interrupted",
+]);
+
 /** Re-apply captured live fields onto freshly loaded nodes of the same ids. */
 export function applyTransientNodeState<T extends NodeLike>(
   nodes: readonly T[],
@@ -54,6 +62,15 @@ export function applyTransientNodeState<T extends NodeLike>(
   return nodes.map((node) => {
     const patch = captured.get(node.id);
     if (!patch) {
+      return node;
+    }
+    const incoming = node.data.status;
+    if (
+      typeof incoming === "string" &&
+      TERMINAL_STATUSES.has(incoming)
+    ) {
+      // The server finished this node (agent run, background run) — do not
+      // resurrect the local "running" flag.
       return node;
     }
     return { ...node, data: { ...node.data, ...patch } };
