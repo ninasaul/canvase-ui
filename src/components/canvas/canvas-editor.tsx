@@ -151,7 +151,6 @@ import { mergeRemoteSnapshot } from "@/lib/canvas/canvas-snapshot-merge";
 import type { CanvasGraph } from "@/lib/canvas/canvas-graph";
 import {
   CANVAS_EDGE_COLORS,
-  DEFAULT_CANVAS_PREFERENCES,
   canvasEdgeDashArray,
   loadCanvasPreferences,
   saveCanvasPreferences,
@@ -175,6 +174,7 @@ import {
   type CanvasFlowNode,
 } from "@/lib/canvas/canvas-store";
 import { recoverCanvasNode } from "@/lib/canvas/canvas-task-recovery";
+import { useCanvasSettings } from "@/components/canvas/editor/workspace/use-canvas-settings";
 import { useCanvasHistory } from "@/lib/canvas/use-canvas-history";
 import { useCanvasRunStatusStore } from "@/lib/canvas/canvas-run-status-store";
 import { formatDateTime } from "@/lib/format";
@@ -192,13 +192,9 @@ import {
 } from "@/lib/generation/byok-store";
 
 import { pruneCanvasSettingsModels } from "@/lib/canvas/canvas-settings-prune";
-import {
-  readStorageConfig,
-  testStorageConfig,
-  writeStorageConfig,
-} from "@/lib/storage/storage-config-client";
 
-import type { CanvasSettings } from "@/lib/tu-shared-browser";
+
+
 
 import {
   CANVAS_ANIMATED_EDGE_LIMIT,
@@ -213,7 +209,6 @@ import {
   CANVAS_SNAP_DISTANCE,
   EDGE_COLOR_OPTIONS,
   NODE_TYPE_COLORS,
-  type CanvasSettingsTab,
 } from "@/components/canvas/editor/lib/constants";
 import { costToCents } from "@/components/canvas/editor/lib/cost";
 import { nodeTypeLabel } from "@/components/canvas/editor/lib/node-display";
@@ -252,7 +247,6 @@ function CanvasEditorInner({
   const [dirty, setDirty] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [assetLibraryOpen, setAssetLibraryOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
   const [connectAgentOpen, setConnectAgentOpen] = useState(false);
   const [agentChatOpen, setAgentChatOpen] = useState(() =>
@@ -261,32 +255,10 @@ function CanvasEditorInner({
   const [agentTokenActive, setAgentTokenActive] = useState(false);
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
   const agentRunSeenRef = useRef(false);
-  const [settingsDraft, setSettingsDraft] = useState<CanvasSettings>({});
   const [preferences, setPreferences] = useState<CanvasPreferences>(() =>
     loadCanvasPreferences(),
   );
-  const [preferencesDraft, setPreferencesDraft] = useState<CanvasPreferences>(
-    DEFAULT_CANVAS_PREFERENCES,
-  );
-  const [settingsTab, setSettingsTab] = useState<CanvasSettingsTab>("canvas");
-  const [settingsSaving, setSettingsSaving] = useState(false);
   const [byokRevision, setByokRevision] = useState(0);
-  const [storageEndpointDraft, setStorageEndpointDraft] = useState("");
-  const [storageRegionDraft, setStorageRegionDraft] = useState("auto");
-  const [storageBucketDraft, setStorageBucketDraft] = useState("");
-  const [storageAccessKeyIdDraft, setStorageAccessKeyIdDraft] = useState("");
-  const [storageSecretDraft, setStorageSecretDraft] = useState("");
-  const [storagePublicBaseUrlDraft, setStoragePublicBaseUrlDraft] =
-    useState("");
-  const [storageForcePathStyleDraft, setStorageForcePathStyleDraft] =
-    useState(true);
-  const [storageSecretConfigured, setStorageSecretConfigured] = useState(false);
-  const [storageSource, setStorageSource] = useState<"user" | "env" | "none">(
-    "none",
-  );
-  const [storageConfigured, setStorageConfigured] = useState(false);
-  const [storageError, setStorageError] = useState<string | null>(null);
-  const [storageTesting, setStorageTesting] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [nodeInfoOpen, setNodeInfoOpen] = useState(false);
@@ -492,6 +464,40 @@ function CanvasEditorInner({
   );
   const settings = useCanvasStore((state) => state.settings);
   const setSettings = useCanvasStore((state) => state.setSettings);
+  const {
+    settingsOpen,
+    setSettingsOpen,
+    settingsTab,
+    setSettingsTab,
+    settingsDraft,
+    setSettingsDraft,
+    preferencesDraft,
+    setPreferencesDraft,
+    settingsSaving,
+    storageEndpointDraft,
+    setStorageEndpointDraft,
+    storageRegionDraft,
+    setStorageRegionDraft,
+    storageBucketDraft,
+    setStorageBucketDraft,
+    storageAccessKeyIdDraft,
+    setStorageAccessKeyIdDraft,
+    storageSecretDraft,
+    setStorageSecretDraft,
+    storagePublicBaseUrlDraft,
+    setStoragePublicBaseUrlDraft,
+    storageForcePathStyleDraft,
+    setStorageForcePathStyleDraft,
+    storageSecretConfigured,
+    storageSource,
+    storageConfigured,
+    storageError,
+    storageTesting,
+    openCanvasSettings,
+    closeCanvasSettings,
+    saveCanvasSettings,
+    testCanvasStorage,
+  } = useCanvasSettings({ settings, preferences, setSettings, setPreferences });
   const groupSelection = useCanvasStore((state) => state.groupSelection);
   const addNodesToGroup = useCanvasStore((state) => state.addNodesToGroup);
   const setNodePosition = useCanvasStore((state) => state.setNodePosition);
@@ -515,36 +521,6 @@ function CanvasEditorInner({
   const toGraph = useCanvasStore((state) => state.toGraph);
 
   const history = useCanvasHistory({ nodes, edges, apply: replace });
-
-  const openCanvasSettings = useCallback(
-    (tab: CanvasSettingsTab) => {
-      setSettingsDraft(settings);
-      setPreferencesDraft(preferences);
-      setSettingsTab(tab);
-      setStorageError(null);
-      setSettingsOpen(true);
-      void (async () => {
-        try {
-          const storage = await readStorageConfig();
-          setStorageSource(storage.source);
-          setStorageConfigured(storage.configured);
-          setStorageSecretConfigured(storage.secretConfigured);
-          setStorageEndpointDraft(storage.endpoint);
-          setStorageRegionDraft(storage.region || "auto");
-          setStorageBucketDraft(storage.bucket);
-          setStorageAccessKeyIdDraft(
-            storage.source === "user" ? storage.accessKeyId : "",
-          );
-          setStorageSecretDraft("");
-          setStoragePublicBaseUrlDraft(storage.publicBaseUrl);
-          setStorageForcePathStyleDraft(storage.forcePathStyle);
-        } catch {
-          // keep previous storage drafts
-        }
-      })();
-    },
-    [preferences, settings],
-  );
 
   const openModelSettings = useCallback(() => {
     setModelSettingsOpen(true);
@@ -915,17 +891,6 @@ function CanvasEditorInner({
   }, [canvasDocument.id, syncFromServer, updateNodeData]);
 
   useEffect(() => {
-    void readStorageConfig()
-      .then((storage) => {
-        setStorageConfigured(storage.configured);
-        setStorageSource(storage.source);
-      })
-      .catch(() => {
-        setStorageConfigured(false);
-      });
-  }, []);
-
-  useEffect(() => {
     void readByokConfig()
       .then(() => {
         setByokRevision((current) => current + 1);
@@ -966,7 +931,7 @@ function CanvasEditorInner({
       const draftPruned = pruneCanvasSettingsModels(current, availableIds);
       return draftPruned.changed ? draftPruned.settings : current;
     });
-  }, [models, modelsQuery.data, setSettings, settings]);
+  }, [models, modelsQuery.data, setSettings, setSettingsDraft, settings]);
 
   useEffect(() => {
     titleRef.current = title;
@@ -3735,7 +3700,7 @@ function CanvasEditorInner({
       {settingsOpen ? (
       <Modal
         open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={closeCanvasSettings}
         title={messages.canvas.canvasSettings}
         size="5xl"
         closeLabel={messages.close}
@@ -3792,60 +3757,7 @@ function CanvasEditorInner({
                 size="sm"
                 disabled={settingsSaving || storageTesting}
                 onClick={() => {
-                  void (async () => {
-                    const storageEndpoint = storageEndpointDraft.trim();
-                    const missingSecret =
-                      !storageSecretDraft.trim() &&
-                      !storageSecretConfigured &&
-                      storageSource !== "env";
-                    if (
-                      !storageEndpoint ||
-                      !storageBucketDraft.trim() ||
-                      !storageAccessKeyIdDraft.trim() ||
-                      !storagePublicBaseUrlDraft.trim() ||
-                      missingSecret
-                    ) {
-                      setStorageError(messages.canvas.storageRequired);
-                      return;
-                    }
-                    if (
-                      /:\/\/xxx\.|<account|accountid|example\.com|changeme/i.test(
-                        storageEndpoint,
-                      )
-                    ) {
-                      setStorageError(
-                        messages.canvas.storagePlaceholderEndpoint,
-                      );
-                      return;
-                    }
-
-                    setStorageTesting(true);
-                    setStorageError(null);
-                    try {
-                      await testStorageConfig({
-                        endpoint: storageEndpoint,
-                        region: storageRegionDraft.trim() || "auto",
-                        bucket: storageBucketDraft.trim(),
-                        accessKeyId: storageAccessKeyIdDraft.trim(),
-                        secretAccessKey:
-                          storageSecretDraft.trim() || undefined,
-                        publicBaseUrl: storagePublicBaseUrlDraft.trim(),
-                        forcePathStyle: storageForcePathStyleDraft,
-                      });
-                      toast.success(messages.canvas.storageTestOk);
-                    } catch (caught) {
-                      const message =
-                        caught instanceof Error ? caught.message : null;
-                      setStorageError(
-                        message ?? messages.canvas.storageTestFailed,
-                      );
-                      toast.danger(
-                        message ?? messages.canvas.storageTestFailed,
-                      );
-                    } finally {
-                      setStorageTesting(false);
-                    }
-                  })();
+                  void testCanvasStorage();
                 }}
               >
                 {storageTesting
@@ -3858,68 +3770,7 @@ function CanvasEditorInner({
               size="sm"
               disabled={settingsSaving || storageTesting}
               onClick={() => {
-                void (async () => {
-                  const storageEndpoint = storageEndpointDraft.trim();
-                  if (settingsTab === "storage") {
-                    const missingSecret =
-                      !storageSecretDraft.trim() && !storageSecretConfigured;
-                    if (
-                      !storageEndpoint ||
-                      !storageBucketDraft.trim() ||
-                      !storageAccessKeyIdDraft.trim() ||
-                      !storagePublicBaseUrlDraft.trim() ||
-                      missingSecret
-                    ) {
-                      setStorageError(messages.canvas.storageRequired);
-                      return;
-                    }
-                    if (
-                      /:\/\/xxx\.|<account|accountid|example\.com|changeme/i.test(
-                        storageEndpoint,
-                      )
-                    ) {
-                      setStorageError(
-                        messages.canvas.storagePlaceholderEndpoint,
-                      );
-                      return;
-                    }
-                  }
-
-                  setSettingsSaving(true);
-                  setStorageError(null);
-                  try {
-                    if (settingsTab === "storage") {
-                      const saved = await writeStorageConfig({
-                        endpoint: storageEndpoint,
-                        region: storageRegionDraft.trim() || "auto",
-                        bucket: storageBucketDraft.trim(),
-                        accessKeyId: storageAccessKeyIdDraft.trim(),
-                        secretAccessKey: storageSecretDraft.trim() || undefined,
-                        publicBaseUrl: storagePublicBaseUrlDraft.trim(),
-                        forcePathStyle: storageForcePathStyleDraft,
-                      });
-                      setStorageConfigured(saved.configured);
-                      setStorageSource(saved.source);
-                      setStorageSecretConfigured(saved.secretConfigured);
-                      setStorageSecretDraft("");
-                    } else {
-                      setSettings(settingsDraft);
-                      setPreferences({
-                        ...preferencesDraft,
-                        snapToGrid: preferences.snapToGrid,
-                      });
-                    }
-                    setSettingsOpen(false);
-                  } catch (caught) {
-                    const message =
-                      caught instanceof Error ? caught.message : null;
-                    setStorageError(
-                      message ?? messages.canvas.storageSaveFailed,
-                    );
-                  } finally {
-                    setSettingsSaving(false);
-                  }
-                })();
+                void saveCanvasSettings();
               }}
             >
               {settingsSaving ? messages.loading : messages.canvas.saveSettings}
