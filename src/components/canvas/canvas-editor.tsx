@@ -265,9 +265,20 @@ function CanvasEditorInner({
   // Viewport changes every frame while panning; keep only what we need as
   // state, refreshed when the gesture ends (a re-render per frame is costly).
 
+  const selectedIdsKey = useCanvasStore((state) =>
+    state.nodes
+      .filter((node) => node.selected)
+      .map((node) => node.id)
+      .join(","),
+  );
+
+  // Derived from `selectedIdsKey`  so this stays referentially
+  // stable while the selection is unchanged: a drag frame replaces `nodes`,
+  // and a new array here produced a new `prepareRunSelected`, a new `actions`
+  // context value, and a re-render of every node that consumes it.
   const selectedRunNodeIds = useMemo(
-    () => nodes.filter((node) => node.selected).map((node) => node.id),
-    [nodes],
+    () => (selectedIdsKey ? selectedIdsKey.split(",") : []),
+    [selectedIdsKey],
   );
   const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(
     null,
@@ -309,12 +320,6 @@ function CanvasEditorInner({
   // Keyed on the selected ids, not on the node array: a drag frame replaces
   // `nodes`, and rebuilding this array handed the chat panel a new prop every
   // frame (it re-rendered even though nothing about the selection changed).
-  const selectedIdsKey = useCanvasStore((state) =>
-    state.nodes
-      .filter((node) => node.selected)
-      .map((node) => node.id)
-      .join(","),
-  );
   const selectionChips = useMemo(() => {
     if (!selectedIdsKey) {
       return [];
