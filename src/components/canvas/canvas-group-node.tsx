@@ -37,6 +37,7 @@ import {
   useCanvasStore,
   type CanvasFlowNode,
 } from "@/lib/canvas/canvas-store";
+import { useCanvasDetail } from "@/components/canvas/canvas-detail-context";
 import { messages } from "@/messages";
 
 function nodePropsEqual(
@@ -124,6 +125,7 @@ export const GroupCanvasNode = memo(function GroupCanvasNode({
   const [infoOpen, setInfoOpen] = useState(false);
   const [addIds, setAddIds] = useState<string[]>([]);
   const [draft, setDraft] = useState(data.label ?? "");
+  const { far } = useCanvasDetail();
   const { nodeStyle } = useCanvasPreferences();
   // Only needed while the "add nodes" menu is open; reading it on demand keeps
   // the component out of the store's node subscription.
@@ -138,6 +140,16 @@ export const GroupCanvasNode = memo(function GroupCanvasNode({
   const titleAccent = dragOver || selected;
   const minWidth = Math.max(260, childSummary.maxWidth);
   const minHeight = Math.max(180, childSummary.maxHeight);
+
+  if (far) {
+    return (
+      <div
+        className={`h-full w-full rounded-xl border-2 border-dashed ${
+          selected ? "border-sky-500 bg-sky-500/5" : "border-zinc-400/60"
+        }`}
+      />
+    );
+  }
 
   return (
     <>
