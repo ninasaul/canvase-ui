@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@xyflow/react";
 
 import { useCanvasStore } from "@/lib/canvas/canvas-store";
@@ -34,6 +34,13 @@ export function useCanvasViewport() {
   // Only the derived tiers are state, so a render happens when the level of
   // detail actually changes.
   const zoomRef = useRef(1);
+  // The tier is applied on idle, not mid-gesture: switching LOD back to full
+  // nodes re-renders every node (textareas, images, players) in one pass, and
+  // doing that while the user is still scrolling made the zoom feel frozen.
+  const pendingTierRef = useRef<{ far: boolean; showEdgeLabels: boolean } | null>(
+    null,
+  );
+  const tierTimerRef = useRef<number | null>(null);
   const [tier, setTier] = useState({
     far: 1 < CANVAS_LOD_ZOOM,
     showEdgeLabels: 1 >= CANVAS_EDGE_LABEL_ZOOM,
@@ -60,9 +67,25 @@ export function useCanvasViewport() {
         const showEdgeLabels = previous.showEdgeLabels
           ? zoom >= LABELS_EXIT
           : zoom >= LABELS_ENTER;
-        return previous.far === far && previous.showEdgeLabels === showEdgeLabels
-          ? previous
-          : { far, showEdgeLabels };
+        if (
+          previous.far === far &&
+          previous.showEdgeLabels === showEdgeLabels
+        ) {
+          return previous;
+        }
+        pendingTierRef.current = { far, showEdgeLabels };
+        if (tierTimerRef.current !== null) {
+          window.clearTimeout(tierTimerRef.current);
+        }
+        tierTimerRef.current = window.setTimeout(() => {
+          tierTimerRef.current = null;
+          const next = pendingTierRef.current;
+          pendingTierRef.current = null;
+          if (next) {
+            setTier(next);
+          }
+        }, 160);
+        return previous;
       });
       const width = (flowWidth || 1200) / zoom;
       const height = (flowHeight || 800) / zoom;
@@ -98,6 +121,15 @@ export function useCanvasViewport() {
       );
     },
     [flowHeight, flowWidth],
+  );
+
+  useEffect(
+    () => () => {
+      if (tierTimerRef.current !== null) {
+        window.clearTimeout(tierTimerRef.current);
+      }
+    },
+    [],
   );
 
   return {
