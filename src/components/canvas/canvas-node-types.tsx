@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useDeferredValue, useEffect, useRef, useState } from "react";
 
 import {
   ArrowLeft,
@@ -521,7 +521,11 @@ function NodeFarBlock({
 }
 
 export const TextCanvasNode = memo(function TextCanvasNode({ id, data, selected }: NodeProps<CanvasFlowNode>) {
-  const { far } = useCanvasDetail();
+  // Deferred so the LOD switch back to full nodes is rendered at low
+  // priority: React can interrupt that pass and keep the zoom gesture
+  // responsive instead of freezing while 100+ nodes mount their content.
+  const { far: farTier } = useCanvasDetail();
+  const far = useDeferredValue(farTier);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   if (far) {
     return <NodeFarBlock type="text" selected={Boolean(selected)} />;
@@ -575,7 +579,11 @@ export const TextCanvasNode = memo(function TextCanvasNode({ id, data, selected 
 
 
 export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selected }: NodeProps<CanvasFlowNode>) {
-  const { far } = useCanvasDetail();
+  // Deferred so the LOD switch back to full nodes is rendered at low
+  // priority: React can interrupt that pass and keep the zoom gesture
+  // responsive instead of freezing while 100+ nodes mount their content.
+  const { far: farTier } = useCanvasDetail();
+  const far = useDeferredValue(farTier);
   const setNodeSize = useCanvasStore((state) => state.setNodeSize);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const uploading = useCanvasStore(
@@ -635,7 +643,11 @@ export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selecte
 
 
 export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selected }: NodeProps<CanvasFlowNode>) {
-  const { far } = useCanvasDetail();
+  // Deferred so the LOD switch back to full nodes is rendered at low
+  // priority: React can interrupt that pass and keep the zoom gesture
+  // responsive instead of freezing while 100+ nodes mount their content.
+  const { far: farTier } = useCanvasDetail();
+  const far = useDeferredValue(farTier);
   const setNodeSize = useCanvasStore((state) => state.setNodeSize);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const uploading = useCanvasStore(
@@ -704,7 +716,11 @@ export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selecte
 
 
 export const AudioCanvasNode = memo(function AudioCanvasNode({ id, data, selected }: NodeProps<CanvasFlowNode>) {
-  const { far } = useCanvasDetail();
+  // Deferred so the LOD switch back to full nodes is rendered at low
+  // priority: React can interrupt that pass and keep the zoom gesture
+  // responsive instead of freezing while 100+ nodes mount their content.
+  const { far: farTier } = useCanvasDetail();
+  const far = useDeferredValue(farTier);
   const uploading = useCanvasStore(
     (state) => typeof state.uploadProgressById[id] === "number",
   );
