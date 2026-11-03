@@ -62,7 +62,10 @@ import {
 import { CanvasDetailProvider } from "@/components/canvas/canvas-detail-context";
 import { CanvasGenerationDock } from "@/components/canvas/editor/chrome/canvas-generation-dock";
 import { CanvasNodeDockSlot } from "@/components/canvas/editor/chrome/canvas-node-dock-slot";
-import { CanvasOverlays } from "@/components/canvas/editor/chrome/canvas-overlays";
+import {
+  CanvasOverlays,
+  EMPTY_NODES,
+} from "@/components/canvas/editor/chrome/canvas-overlays";
 import { CanvasPanningFlag } from "@/components/canvas/editor/chrome/canvas-panning-flag";
 import { CanvasSelectionBar } from "@/components/canvas/editor/chrome/canvas-selection-bar";
 import { CanvasBackdrop } from "@/components/canvas/editor/chrome/canvas-backdrop";
@@ -2289,8 +2292,8 @@ function CanvasEditorInner({
         thumbnailUrl={thumbnailUrl}
         thumbnailBusy={thumbnailBusy}
         thumbnailRef={thumbnailRef}
-        nodes={nodes}
-        edges={edges}
+        nodeCount={nodes.length}
+        edgeCount={edges.length}
         canvasDocument={canvasDocument}
         savedAt={savedAt}
         exportJson={exportJson}
@@ -2316,6 +2319,7 @@ function CanvasEditorInner({
         setGroupOpen={setGroupOpen}
         groupSelection={groupSelection}
         selectedNodes={selectedNodes}
+        nodeInfoNodes={nodeInfoOpen ? nodes : EMPTY_NODES}
       />
     </>
   );

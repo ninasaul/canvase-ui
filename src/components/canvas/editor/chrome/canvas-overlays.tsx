@@ -1,5 +1,7 @@
 "use client";
 
+import { memo } from "react";
+
 import { CanvasConnectAgentModal } from "@/components/canvas/canvas-connect-agent-modal";
 import { CanvasInfoModal } from "@/components/canvas/editor/panels/canvas-info-modal";
 import { CanvasGroupModal } from "@/components/canvas/editor/panels/canvas-group-modal";
@@ -9,7 +11,6 @@ import { CanvasSettingsModal } from "@/components/canvas/editor/panels/canvas-se
 import type { CanvasDetail } from "@/lib/canvas/canvas-api";
 import type { CanvasFlowNode } from "@/lib/canvas/canvas-store";
 import type {
-  CanvasFlowEdge,
 } from "@/lib/canvas/canvas-store";
 import type { PortalPublicModel } from "@/types/admin";
 
@@ -18,15 +19,15 @@ import type { useCanvasSettings } from "../workspace/use-canvas-settings";
 type SettingsState = ReturnType<typeof useCanvasSettings>;
 
 /** Dialogs that hang off the canvas document: info, models, agent, settings. */
-export function CanvasOverlays({
+function CanvasOverlaysInner({
   infoOpen,
   titleDraft,
   setTitleDraft,
   thumbnailUrl,
   thumbnailBusy,
   thumbnailRef,
-  nodes,
-  edges,
+  nodeCount,
+  edgeCount,
   canvasDocument,
   savedAt,
   exportJson,
@@ -52,6 +53,7 @@ export function CanvasOverlays({
   setGroupOpen,
   groupSelection,
   selectedNodes,
+  nodeInfoNodes,
 }: {
   infoOpen: boolean;
   titleDraft: string;
@@ -59,8 +61,8 @@ export function CanvasOverlays({
   thumbnailUrl: string | null;
   thumbnailBusy: boolean;
   thumbnailRef: { current: HTMLInputElement | null };
-  nodes: CanvasFlowNode[];
-  edges: CanvasFlowEdge[];
+  nodeCount: number;
+  edgeCount: number;
   canvasDocument: CanvasDetail;
   savedAt: string | null;
   exportJson: () => void;
@@ -86,6 +88,7 @@ export function CanvasOverlays({
   setGroupOpen: (value: boolean) => void;
   groupSelection: (nodeIds: string[], name: string) => void;
   selectedNodes: CanvasFlowNode[];
+  nodeInfoNodes: CanvasFlowNode[];
 }) {
   return (
     <>
@@ -96,8 +99,8 @@ export function CanvasOverlays({
         thumbnailUrl={thumbnailUrl}
         thumbnailBusy={thumbnailBusy}
         onPickThumbnail={() => thumbnailRef.current?.click()}
-        nodeCount={nodes.length}
-        edgeCount={edges.length}
+        nodeCount={nodeCount}
+        edgeCount={edgeCount}
         createdAt={canvasDocument.createdAt}
         updatedAt={savedAt ?? canvasDocument.updatedAt}
         onExport={exportJson}
@@ -128,7 +131,7 @@ export function CanvasOverlays({
       />
       <CanvasNodeInfoModal
         open={nodeInfoOpen}
-        nodes={nodes}
+        nodes={nodeInfoNodes}
         onClose={() => setNodeInfoOpen(false)}
       />
 
@@ -148,3 +151,11 @@ export function CanvasOverlays({
     </>
   );
 }
+
+export const CanvasOverlays = memo(CanvasOverlaysInner);
+
+/**
+ * Stable identity for "no nodes to show": passing a fresh `[]` while the node
+ * info dialog is closed would defeat memo on every render.
+ */
+export const EMPTY_NODES: CanvasFlowNode[] = [];
