@@ -240,7 +240,10 @@ export function useCanvasRun(input: {
 
   const executeNode = useCallback(
     async (nodeId: string, signal?: AbortSignal) => {
-      const node = nodes.find((item) => item.id === nodeId);
+      // Read from the store instead of closing over `nodes`: a dependency on
+      // the node array made this callback (and the actions context built from
+      // it) new on every drag frame, so every node component re-rendered.
+      const node = useCanvasStore.getState().nodes.find((item) => item.id === nodeId);
       if (!node) {
         throw new Error(messages.canvas.nodeMissing);
       }
@@ -268,7 +271,7 @@ export function useCanvasRun(input: {
         signal,
       });
     },
-    [isGenerationConfigured, nodes, toGraph, updateNodeData],
+    [isGenerationConfigured, toGraph, updateNodeData],
   );
 
   const runNode = useCallback(
