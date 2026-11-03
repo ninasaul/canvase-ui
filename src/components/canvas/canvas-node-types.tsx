@@ -33,6 +33,7 @@ import {
   NODE_STYLE_HOVER_CLASS,
 } from "./canvas-node-chrome";
 import { canvasMediaNodeSize } from "@/lib/canvas/canvas-node-size";
+import { NODE_TYPE_COLORS } from "@/components/canvas/editor/lib/constants";
 import { messages } from "@/messages";
 import { CanvasAudioPlayer } from "./canvas-audio-player";
 import { CanvasVideoPlayer } from "./canvas-video-player";
@@ -492,9 +493,39 @@ function nodePropsEqual(
   );
 }
 
+/**
+ * Level of detail: a plain block. Rendering the full node shell, handles and
+ * overlays for 100+ nodes made panning unusable when zoomed out, and none of
+ * that chrome is readable at that scale anyway.
+ */
+function NodeFarBlock({
+  type,
+  selected,
+}: {
+  type: CanvasFlowNode["type"];
+  selected?: boolean;
+}) {
+  return (
+    <div
+      className={`h-full w-full rounded-lg border ${
+        selected
+          ? "border-sky-500 ring-2 ring-sky-400/40"
+          : "border-zinc-300/80"
+      }`}
+      style={{
+        backgroundColor:
+          (NODE_TYPE_COLORS[type ?? "text"] ?? "#a1a1aa") + "26",
+      }}
+    />
+  );
+}
+
 export const TextCanvasNode = memo(function TextCanvasNode({ id, data, selected }: NodeProps<CanvasFlowNode>) {
   const { far } = useCanvasDetail();
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
+  if (far) {
+    return <NodeFarBlock type="text" selected={Boolean(selected)} />;
+  }
   return (
     <div className="group/node relative h-full w-full">
       <InputHandle
@@ -550,6 +581,9 @@ export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selecte
   const uploading = useCanvasStore(
     (state) => typeof state.uploadProgressById[id] === "number",
   );
+  if (far) {
+    return <NodeFarBlock type="image" selected={Boolean(selected)} />;
+  }
   return (
     <div className="group/node relative h-full w-full">
       <InputHandle
@@ -607,6 +641,9 @@ export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selecte
   const uploading = useCanvasStore(
     (state) => typeof state.uploadProgressById[id] === "number",
   );
+  if (far) {
+    return <NodeFarBlock type="video" selected={Boolean(selected)} />;
+  }
   return (
     <div className="group/node relative h-full w-full">
       <InputHandle
@@ -671,6 +708,9 @@ export const AudioCanvasNode = memo(function AudioCanvasNode({ id, data, selecte
   const uploading = useCanvasStore(
     (state) => typeof state.uploadProgressById[id] === "number",
   );
+  if (far) {
+    return <NodeFarBlock type="audio" selected={Boolean(selected)} />;
+  }
   return (
     <div className="group/node relative h-full w-full">
       <InputHandle
