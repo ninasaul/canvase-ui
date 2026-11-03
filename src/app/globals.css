@@ -418,3 +418,10 @@ body {
 [data-panning="true"] .react-flow__edge.animated path {
   animation: none;
 }
+
+/* Labels are recomputed from the viewport transform; hiding them for the
+   duration of a zoom gesture (via the imperative data-zooming flag) keeps the
+   gesture free of React work and of sub-pixel label shimmer. */
+[data-zooming="true"] .canvas-node-labels {
+  visibility: hidden;
+}

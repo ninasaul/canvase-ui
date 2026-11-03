@@ -22,12 +22,14 @@ export function useCanvasViewport() {
   const [visibleNodeIds, setVisibleNodeIds] = useState<string[]>([]);
   const [viewportLocked, setViewportLocked] = useState(false);
 
+  // Derived from the tier booleans, not from the raw zoom: a zoom gesture
+  // updates `viewportZoom` on every tick, and a fresh provider value on each
+  // tick re-rendered every node even while the tier stayed the same.
+  const far = viewportZoom < CANVAS_LOD_ZOOM;
+  const showEdgeLabels = viewportZoom >= CANVAS_EDGE_LABEL_ZOOM;
   const canvasDetail = useMemo(
-    () => ({
-      far: viewportZoom < CANVAS_LOD_ZOOM,
-      showEdgeLabels: viewportZoom >= CANVAS_EDGE_LABEL_ZOOM,
-    }),
-    [viewportZoom],
+    () => ({ far, showEdgeLabels }),
+    [far, showEdgeLabels],
   );
 
   const syncViewport = useCallback(

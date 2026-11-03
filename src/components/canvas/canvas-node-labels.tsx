@@ -12,6 +12,7 @@ import type {
   CanvasNodeType,
 } from "@/lib/tu-shared-browser";
 import { useStore, useViewport } from "@xyflow/react";
+import { useViewportMotionStore } from "@/lib/canvas/viewport-motion-store";
 import { canvasNodeAbsolutePosition } from "@/lib/canvas/canvas-node-position";
 import { Icon } from "@/components/ui/icon";
 import { useCanvasStore } from "@/lib/canvas/canvas-store";
@@ -68,8 +69,11 @@ export function CanvasNodeLabels({
   // Split so the viewport subscription does not run during a pan: the inner
   // component is unmounted while the pane moves, which removes the per-frame
   // work entirely instead of just skipping the returned markup.
-  const paneDragging = useStore((state) => state.paneDragging);
-  if (paneDragging) {
+  // A viewport gesture (pan or zoom) unmounts the labels: recomputing screen
+  // positions for every visible node on every frame is the expensive part.
+  // The motion flag flips twice per gesture, not per frame.
+  const moving = useViewportMotionStore((state) => state.moving);
+  if (moving) {
     return null;
   }
   return <CanvasNodeLabelsInner nodes={nodes} />;
@@ -127,7 +131,7 @@ function CanvasNodeLabelsInner({ nodes }: { nodes: CanvasFlowNode[] }) {
   }
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+    <div className="canvas-node-labels pointer-events-none absolute inset-0 z-20 overflow-hidden">
       {visibleNodes.map((node) => {
         const position = canvasNodeAbsolutePosition(node, byId);
         const type = node.type ?? "text";
