@@ -2182,9 +2182,6 @@ function CanvasAgentChatPanelInner({
               }
             }}
           />
-          <p className="px-1.5 pb-1 text-[10px] text-zinc-400">
-            {messages.canvas.agentChatSendHint}
-          </p>
           {busy ? (
             <p className="mt-1 px-1.5 text-[10px] text-zinc-400">
               {messages.canvas.agentChatSteerHint}
