@@ -68,6 +68,9 @@ export function CanvasNodeLabels({
   const viewport = useViewport();
   const width = useStore((state) => state.width);
   const height = useStore((state) => state.height);
+  // While the pane is panned this component recomputes every label position on
+  // every frame. Labels are decorative, so skip them for the gesture.
+  const paneDragging = useStore((state) => state.paneDragging);
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const showDetail = viewport.zoom >= 0.35;
   const visibleNodes =
@@ -113,6 +116,10 @@ export function CanvasNodeLabels({
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+  }
+
+  if (paneDragging) {
+    return null;
   }
 
   return (
