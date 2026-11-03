@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasFlowEdge, CanvasFlowNode } from "./canvas-store";
 
 type Snapshot = {
@@ -162,10 +162,10 @@ export function useCanvasHistory(options: {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [redo, undo]);
 
-  return {
-    undo,
-    redo,
-    canUndo,
-    canRedo,
-  };
+  // Memoized: a fresh object here re-rendered every consumer (the toolbar) on
+  // each render of the editor, which happens on every drag frame.
+  return useMemo(
+    () => ({ undo, redo, canUndo, canRedo }),
+    [undo, redo, canUndo, canRedo],
+  );
 }

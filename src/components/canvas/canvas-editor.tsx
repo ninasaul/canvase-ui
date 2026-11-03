@@ -1128,17 +1128,26 @@ function CanvasEditorInner({
 
   const applyAutoLayout = useCallback(
     (mode: CanvasAutoLayoutMode) => {
-      const next = layoutCanvasNodes(nodes, edges, mode);
-      if (next === nodes || canvasLayoutPositionsEqual(nodes, next)) {
+      // Read the latest graph instead of closing over it: a dependency on the
+      // node array made this callback new on every drag frame, which defeated
+      // memo on the toolbar.
+      const state = useCanvasStore.getState();
+      const currentNodes = state.nodes;
+      const currentEdges = state.edges;
+      const next = layoutCanvasNodes(currentNodes, currentEdges, mode);
+      if (
+        next === currentNodes ||
+        canvasLayoutPositionsEqual(currentNodes, next)
+      ) {
         toast.info(messages.canvas.autoLayoutNoChange);
         return;
       }
-      replace(next, edges);
+      replace(next, currentEdges);
       window.setTimeout(() => {
         void fitView({ padding: 0.2, duration: 300 });
       }, 60);
     },
-    [edges, fitView, nodes, replace],
+    [fitView, replace],
   );
 
   const imageDefaultParams = settingsDraft.image?.params ?? {};
@@ -2101,7 +2110,7 @@ function CanvasEditorInner({
                 preferences={preferences}
                 runningTaskCount={runningTaskCount}
                 selectMode={selectMode}
-                selectedNodes={selectedNodes}
+                selectedCount={selectedNodes.length}
                 setAssetLibraryOpen={setAssetLibraryOpen}
                 setGroupName={setGroupName}
                 setGroupOpen={setGroupOpen}

@@ -1,5 +1,7 @@
 "use client";
 
+import { memo } from "react";
+
 import type {
   Dispatch,
   RefObject,
@@ -10,7 +12,6 @@ import { Panel } from "@xyflow/react";
 
 import type { CanvasPreferences } from "@/lib/canvas/canvas-preferences";
 import type { CanvasAutoLayoutMode } from "@/lib/canvas/canvas-auto-layout";
-import type { CanvasFlowNode } from "@/lib/canvas/canvas-store";
 import type { CanvasTasksTab } from "@/components/canvas/canvas-running-tasks";
 
 import type { CanvasSettingsTab } from "../lib/constants";
@@ -43,7 +44,7 @@ import { messages } from "@/messages";
 
 
 /** Toolbar panel: insert nodes, auto layout, upload, tasks, info and settings. */
-export function CanvasToolbar({
+function CanvasToolbarInner({
   addAtCenter,
   addGroupAtCenter,
   applyAutoLayout,
@@ -55,7 +56,7 @@ export function CanvasToolbar({
   preferences,
   runningTaskCount,
   selectMode,
-  selectedNodes,
+  selectedCount,
   setAssetLibraryOpen,
   setGroupName,
   setGroupOpen,
@@ -85,7 +86,7 @@ export function CanvasToolbar({
   preferences: CanvasPreferences;
   runningTaskCount: number;
   selectMode: boolean;
-  selectedNodes: CanvasFlowNode[];
+  selectedCount: number;
   setAssetLibraryOpen: Dispatch<SetStateAction<boolean>>;
   setGroupName: Dispatch<SetStateAction<string>>;
   setGroupOpen: Dispatch<SetStateAction<boolean>>;
@@ -144,14 +145,14 @@ export function CanvasToolbar({
           <Button
             variant="ghost"
             size="icon-sm"
-            disabled={selectedNodes.length < 2}
+            disabled={selectedCount < 2}
             aria-label={messages.canvas.groupSelection}
             onClick={() => {
-              if (selectedNodes.length < 2) {
+              if (selectedCount < 2) {
                 return;
               }
               setGroupName(
-                `${messages.canvas.groupDefault} ${selectedNodes.length}`,
+                `${messages.canvas.groupDefault} ${selectedCount}`,
               );
               setGroupOpen(true);
             }}
@@ -379,3 +380,5 @@ export function CanvasToolbar({
     </Panel>
   );
 }
+
+export const CanvasToolbar = memo(CanvasToolbarInner);
