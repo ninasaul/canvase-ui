@@ -65,12 +65,20 @@ export function CanvasNodeLabels({
 }: {
   nodes: CanvasFlowNode[];
 }) {
+  // Split so the viewport subscription does not run during a pan: the inner
+  // component is unmounted while the pane moves, which removes the per-frame
+  // work entirely instead of just skipping the returned markup.
+  const paneDragging = useStore((state) => state.paneDragging);
+  if (paneDragging) {
+    return null;
+  }
+  return <CanvasNodeLabelsInner nodes={nodes} />;
+}
+
+function CanvasNodeLabelsInner({ nodes }: { nodes: CanvasFlowNode[] }) {
   const viewport = useViewport();
   const width = useStore((state) => state.width);
   const height = useStore((state) => state.height);
-  // While the pane is panned this component recomputes every label position on
-  // every frame. Labels are decorative, so skip them for the gesture.
-  const paneDragging = useStore((state) => state.paneDragging);
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const showDetail = viewport.zoom >= 0.35;
   const visibleNodes =
@@ -116,10 +124,6 @@ export function CanvasNodeLabels({
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
-  }
-
-  if (paneDragging) {
-    return null;
   }
 
   return (

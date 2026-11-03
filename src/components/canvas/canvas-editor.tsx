@@ -31,7 +31,6 @@ import {
   type OnConnect,
   type OnNodeDrag,
   useReactFlow,
-  useStore,
   ViewportPortal,
 } from "@xyflow/react";
 import {
@@ -64,6 +63,7 @@ import { CanvasDetailProvider } from "@/components/canvas/canvas-detail-context"
 import { CanvasGenerationDock } from "@/components/canvas/editor/chrome/canvas-generation-dock";
 import { CanvasNodeDockSlot } from "@/components/canvas/editor/chrome/canvas-node-dock-slot";
 import { CanvasOverlays } from "@/components/canvas/editor/chrome/canvas-overlays";
+import { CanvasPanningFlag } from "@/components/canvas/editor/chrome/canvas-panning-flag";
 import { CanvasSelectionBar } from "@/components/canvas/editor/chrome/canvas-selection-bar";
 import { CanvasBackdrop } from "@/components/canvas/editor/chrome/canvas-backdrop";
 import { CanvasBottomDock } from "@/components/canvas/editor/chrome/canvas-bottom-dock";
@@ -246,9 +246,6 @@ function CanvasEditorInner({
     setViewportLocked,
   } = useCanvasViewport();
 
-  // Pan start/end only (not per frame): used to shed expensive paint work
-  // (edge animation, blur, shadows) while the viewport is moving.
-  const paneDragging = useStore((state) => state.paneDragging);
 
   const edges = useCanvasStore((state) => state.edges);
   const selectedNodes = useMemo(
@@ -1658,13 +1655,13 @@ function CanvasEditorInner({
         <CanvasActionsContext.Provider value={actions}>
           <div
             ref={canvasSurfaceRef}
-            data-panning={paneDragging ? "true" : undefined}
             className={`relative min-h-0 flex-1 ${
               preferences.audioPlayerBorder ? "canvas-audio-bordered" : ""
             } ${selectMode ? "canvas-selecting" : ""} ${
               spacePressed ? "canvas-space-pan" : ""
             }`}
           >
+            <CanvasPanningFlag surfaceRef={canvasSurfaceRef} />
             <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-2 p-2 pl-1">
               <div className="pointer-events-auto flex min-w-0 items-center gap-0.5">
                 <Button
