@@ -418,8 +418,3 @@ body {
 [data-panning="true"] .react-flow__edge.animated path {
   animation: none;
 }
-[data-panning="true"] .react-flow__node,
-[data-panning="true"] .react-flow__node * {
-  backdrop-filter: none !important;
-  box-shadow: none !important;
-}
