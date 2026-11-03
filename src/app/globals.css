@@ -390,9 +390,11 @@ body {
   will-change: transform;
 }
 
-/* Isolate each node's layout/paint so panning and dragging do not force a
-   repaint of the whole graph. */
+/* Isolate each node's layout so panning and dragging do not force a relayout
+   of the whole graph. Paint containment is deliberately NOT used: handles and
+   their hover badges straddle the node border, and `contain: paint` clips them
+   (the outer half of the hit area became unclickable). */
 .react-flow__node {
-  contain: layout paint style;
+  contain: layout style;
   will-change: transform;
 }
