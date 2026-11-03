@@ -1,6 +1,7 @@
 {
   "name": "@canvase/mcp",
   "version": "0.1.1",
+  "private": true,
   "type": "module",
   "bin": {
     "canvase-mcp": "./src/cli.js"
@@ -16,30 +17,5 @@
   "devDependencies": {
     "@types/node": "^20.19.0",
     "typescript": "^5.9.2"
-  },
-  "description": "MCP server for Canvase: read and edit an AI media workflow canvas (nodes, edges, groups, runs) over the Model Context Protocol.",
-  "license": "MIT",
-  "keywords": [
-    "mcp",
-    "model-context-protocol",
-    "canvase",
-    "canvas",
-    "ai-workflow"
-  ],
-  "engines": {
-    "node": ">=20"
-  },
-  "files": [
-    "src",
-    "README.md"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ninasaul/canvase-ui.git",
-    "directory": "packages/canvase-mcp"
-  },
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org"
   }
 }
