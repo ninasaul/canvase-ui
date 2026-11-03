@@ -301,17 +301,37 @@ function CanvasEditorInner({
     [viewportZoom, setCenter, visibleNodeIds],
   );
 
-  const selectionChips = useMemo(
-    () =>
-      nodes
-        .filter((node) => node.selected)
-        .slice(0, 6)
-        .map((node) => ({
-          id: node.id,
-          label: node.data.label?.trim() || nodeTypeLabel(node.type),
-        })),
-    [nodes],
+  // Keyed on the selected ids, not on the node array: a drag frame replaces
+  // `nodes`, and rebuilding this array handed the chat panel a new prop every
+  // frame (it re-rendered even though nothing about the selection changed).
+  const selectedIdsKey = useCanvasStore((state) =>
+    state.nodes
+      .filter((node) => node.selected)
+      .map((node) => node.id)
+      .join(","),
   );
+  const selectionChips = useMemo(() => {
+    if (!selectedIdsKey) {
+      return [];
+    }
+    const byId = new Map(
+      useCanvasStore.getState().nodes.map((node) => [node.id, node]),
+    );
+    return selectedIdsKey
+      .split(",")
+      .slice(0, 6)
+      .flatMap((id) => {
+        const node = byId.get(id);
+        return node
+          ? [
+              {
+                id,
+                label: node.data.label?.trim() || nodeTypeLabel(node.type),
+              },
+            ]
+          : [];
+      });
+  }, [selectedIdsKey]);
   const removeSelection = useCallback((nodeId: string) => {
     useCanvasStore.setState((state) => ({
       nodes: state.nodes.map((node) =>

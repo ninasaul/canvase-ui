@@ -39,20 +39,27 @@ export function useCanvasViewport() {
       const left = -viewport.x / zoom;
       const top = -viewport.y / zoom;
       const store = useCanvasStore.getState();
-      setVisibleNodeIds(
-        store.nodes
-          .filter((node) => {
-            const nodeWidth = node.width ?? 240;
-            const nodeHeight = node.height ?? 240;
-            return (
-              node.position.x + nodeWidth >= left &&
-              node.position.x <= left + width &&
-              node.position.y + nodeHeight >= top &&
-              node.position.y <= top + height
-            );
-          })
-          .slice(0, 40)
-          .map((node) => node.id),
+      const nextIds = store.nodes
+        .filter((node) => {
+          const nodeWidth = node.width ?? 240;
+          const nodeHeight = node.height ?? 240;
+          return (
+            node.position.x + nodeWidth >= left &&
+            node.position.x <= left + width &&
+            node.position.y + nodeHeight >= top &&
+            node.position.y <= top + height
+          );
+        })
+        .slice(0, 40)
+        .map((node) => node.id);
+      // Keep the previous array when the set is unchanged: a new identity
+      // here re-rendered every consumer (chat context → chat panel) on each
+      // pan, even when the same nodes stayed visible.
+      setVisibleNodeIds((previous) =>
+        previous.length === nextIds.length &&
+        previous.every((id, index) => id === nextIds[index])
+          ? previous
+          : nextIds,
       );
     },
     [flowHeight, flowWidth],
