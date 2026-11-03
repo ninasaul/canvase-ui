@@ -467,6 +467,7 @@ function CanvasEditorInner({
     conflictRef,
     dirtyRef,
     inFlightRef,
+    version,
     lastSavedRef,
     graphObservationRef,
     markDirty,
@@ -723,14 +724,20 @@ function CanvasEditorInner({
 
 
   // Fresh on every render: `versionRef` changes without a state update.
-  const agentChatContext = {
-    version: versionRef.current,
-    ...(selectedRunNodeIds.length > 0
-      ? { selection: selectedRunNodeIds }
-      : {}),
-    ...(configNodeId ? { focusNodeId: configNodeId } : {}),
-    ...(visibleNodeIds.length > 0 ? { visibleNodeIds } : {}),
-  };
+  // Stable identity: a fresh object here re-rendered the chat panel on every
+  // canvas frame. `version` comes from state, and the server rebuilds its own
+  // digest each turn, so a one-tick lag is harmless.
+  const agentChatContext = useMemo(
+    () => ({
+      version,
+      ...(selectedRunNodeIds.length > 0
+        ? { selection: selectedRunNodeIds }
+        : {}),
+      ...(configNodeId ? { focusNodeId: configNodeId } : {}),
+      ...(visibleNodeIds.length > 0 ? { visibleNodeIds } : {}),
+    }),
+    [configNodeId, selectedRunNodeIds, version, visibleNodeIds],
+  );
 
   useEffect(() => {
     activeRunRef.current = Boolean(activeRun || serverRunId || agentRunId);

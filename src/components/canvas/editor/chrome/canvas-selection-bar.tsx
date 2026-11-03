@@ -1,5 +1,7 @@
 "use client";
 
+import { memo } from "react";
+
 import { BoundingBox } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
@@ -8,7 +10,7 @@ import type { CanvasFlowNode } from "@/lib/canvas/canvas-store";
 import { messages } from "@/messages";
 
 /** Appears while two or more nodes are selected: count plus "create group". */
-export function CanvasSelectionBar({
+function CanvasSelectionBarInner({
   selectedNodes,
   onCreateGroup,
 }: {
@@ -34,3 +36,5 @@ export function CanvasSelectionBar({
     </div>
   );
 }
+
+export const CanvasSelectionBar = memo(CanvasSelectionBarInner);

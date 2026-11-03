@@ -1,5 +1,7 @@
 "use client";
 
+import { memo } from "react";
+
 import {
   Background,
   BackgroundVariant,
@@ -15,7 +17,7 @@ import { NODE_TYPE_COLORS } from "../lib/constants";
  * appearance preferences, and the minimap is skipped on large canvases while a
  * node is being dragged (it re-renders every frame otherwise).
  */
-export function CanvasBackdrop({
+function CanvasBackdropInner({
   preferences,
   patternSize,
   patternColor,
@@ -57,3 +59,5 @@ export function CanvasBackdrop({
     </>
   );
 }
+
+export const CanvasBackdrop = memo(CanvasBackdropInner);

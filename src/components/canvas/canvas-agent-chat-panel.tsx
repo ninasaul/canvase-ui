@@ -1,5 +1,7 @@
 "use client";
 
+import { memo } from "react";
+
 import {
   CaretDown,
   CaretRight,
@@ -720,7 +722,7 @@ function ApprovalCard({
   );
 }
 
-export function CanvasAgentChatPanel({
+function CanvasAgentChatPanelInner({
   canvasId,
   chatModels,
   defaultModelId,
@@ -2201,3 +2203,5 @@ export function CanvasAgentChatPanel({
 }
 
 export { loadOpenPreference as loadCanvasAgentChatOpenPreference };
+
+export const CanvasAgentChatPanel = memo(CanvasAgentChatPanelInner);
