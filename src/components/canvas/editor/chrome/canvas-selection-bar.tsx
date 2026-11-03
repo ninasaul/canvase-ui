@@ -1,22 +1,33 @@
 "use client";
 
 import { memo } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { BoundingBox } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import type { CanvasFlowNode } from "@/lib/canvas/canvas-store";
+import { useCanvasStore } from "@/lib/canvas/canvas-store";
 import { messages } from "@/messages";
 
 /** Appears while two or more nodes are selected: count plus "create group". */
 function CanvasSelectionBarInner({
-  selectedNodes,
   onCreateGroup,
 }: {
-  selectedNodes: CanvasFlowNode[];
-  onCreateGroup: () => void;
+  onCreateGroup: (count: number) => void;
 }) {
+  // Subscribe to the selection here instead of receiving an array from the
+  // editor: the editor re-renders on every node change, and a fresh array per
+  // render defeated memo. `useShallow` keeps identity stable while the
+  // selection is unchanged.
+  const selectedNodes = useCanvasStore(
+    useShallow((state) =>
+      state.nodes.filter(
+        (node) => node.selected && node.type !== "group" && !node.parentId,
+      ),
+    ),
+  );
+
   if (selectedNodes.length < 2) {
     return null;
   }
@@ -30,7 +41,11 @@ function CanvasSelectionBarInner({
         )}
       </span>
       <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
-      <Button variant="primary" size="sm" onClick={onCreateGroup}>
+      <Button
+        variant="primary"
+        size="sm"
+        onClick={() => onCreateGroup(selectedNodes.length)}
+      >
         {messages.canvas.createGroup}
       </Button>
     </div>

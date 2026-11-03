@@ -2144,11 +2144,8 @@ function CanvasEditorInner({
             </CanvasPreferencesProvider>
 
             <CanvasSelectionBar
-              selectedNodes={selectedNodes}
-              onCreateGroup={() => {
-                setGroupName(
-                  `${messages.canvas.groupDefault} ${selectedNodes.length}`,
-                );
+              onCreateGroup={(count) => {
+                setGroupName(`${messages.canvas.groupDefault} ${count}`);
                 setGroupOpen(true);
               }}
             />
