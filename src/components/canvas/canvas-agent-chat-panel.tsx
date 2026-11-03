@@ -2086,7 +2086,13 @@ function CanvasAgentChatPanelInner({
             className="w-full resize-none bg-transparent px-1.5 py-1 text-[13px] leading-relaxed text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-100"
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
+              // Send with Cmd/Ctrl+Enter; plain Enter keeps inserting a
+              // newline so multi-line prompts are easy to write.
+              if (
+                event.key === "Enter" &&
+                (event.metaKey || event.ctrlKey) &&
+                !event.shiftKey
+              ) {
                 event.preventDefault();
                 void handleSend();
               }
@@ -2108,6 +2114,9 @@ function CanvasAgentChatPanelInner({
               }
             }}
           />
+          <p className="px-1.5 pb-1 text-[10px] text-zinc-400">
+            {messages.canvas.agentChatSendHint}
+          </p>
           {busy ? (
             <p className="mt-1 px-1.5 text-[10px] text-zinc-400">
               {messages.canvas.agentChatSteerHint}

@@ -40,6 +40,7 @@ export const zhCanvasPlaygroundMessages = {
     agentChatCollapse: "收起 Agent",
     agentChatPlaceholder: "描述你想对画布做的事…",
     agentChatSend: "发送",
+  agentChatSendHint: "⌘/Ctrl + Enter 发送",
     agentChatStop: "停止",
     agentChatClear: "清空对话",
     agentChatNewSession: "新对话",

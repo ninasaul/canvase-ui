@@ -42,6 +42,7 @@ export const enCanvasPlaygroundMessages = {
     agentChatCollapse: "Collapse Agent",
     agentChatPlaceholder: "Describe what you want to do on the canvas…",
     agentChatSend: "Send",
+  agentChatSendHint: "⌘/Ctrl + Enter to send",
     agentChatStop: "Stop",
     agentChatClear: "Clear chat",
     agentChatNewSession: "New conversation",
