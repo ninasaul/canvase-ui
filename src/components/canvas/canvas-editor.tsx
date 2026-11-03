@@ -2028,10 +2028,10 @@ function CanvasEditorInner({
               onMoveEnd={(_, viewport) => syncViewport(viewport)}
               fitView
               proOptions={{ hideAttribution: true }}
-              // Mount/unmount churn at the viewport edge is worse than just
-              // keeping a medium graph mounted: with ~100-300 nodes the
-              // pan starts and stops as nodes enter and leave the DOM.
-              onlyRenderVisibleElements={nodes.length > 250}
+              // LOD blocks are cheap, so keep every node mounted there. In
+              // full detail, painting 100+ nodes off-screen costs more than
+              // the mount/unmount churn at the viewport edge.
+              onlyRenderVisibleElements={!canvasDetail.far && nodes.length > 40}
               defaultViewport={CANVAS_DEFAULT_VIEWPORT}
               fitViewOptions={CANVAS_DEFAULT_FIT_VIEW_OPTIONS}
               panOnDrag={
