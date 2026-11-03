@@ -1,6 +1,7 @@
 "use client";
 
 import { memo } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import {
   Copy,
@@ -60,7 +61,52 @@ export const GroupCanvasNode = memo(function GroupCanvasNode({
   const ungroup = useCanvasStore((state) => state.ungroup);
   const addNodesToGroup = useCanvasStore((state) => state.addNodesToGroup);
   const duplicateNode = useCanvasStore((state) => state.duplicateNode);
-  const nodes = useCanvasStore((state) => state.nodes);
+  // Subscribe to a compact summary of our children instead of the whole node
+  // array: dragging any node re-created that array and re-rendered every group.
+  // `useShallow` compares the summary field by field, so the group only
+  // re-renders when its own children actually change.
+  const childSummary = useCanvasStore(
+    useShallow((state) => {
+      let count = 0;
+      let busy = false;
+      let maxWidth = 0;
+      let maxHeight = 0;
+      const runnable: string[] = [];
+      for (const node of state.nodes) {
+        if (node.parentId !== id) {
+          continue;
+        }
+        const width = node.width ?? node.measured?.width ?? 220;
+        const height = node.height ?? node.measured?.height ?? 120;
+        count += 1;
+        maxWidth = Math.max(maxWidth, Math.ceil(node.position.x + width + 24));
+        maxHeight = Math.max(
+          maxHeight,
+          Math.ceil(node.position.y + height + 24),
+        );
+        if (node.data.status === "running" || node.data.status === "queued") {
+          busy = true;
+        }
+        if (
+          node.type === "image" ||
+          node.type === "video" ||
+          node.type === "text"
+        ) {
+          runnable.push(node.id);
+        }
+      }
+      return {
+        count,
+        busy,
+        maxWidth,
+        maxHeight,
+        runnableKey: runnable.join(","),
+      };
+    }),
+  );
+  const runnableChildIds = childSummary.runnableKey
+    ? childSummary.runnableKey.split(",")
+    : [];
   const {
     prepareRunSelected,
     cancelNodeRun,
@@ -78,43 +124,20 @@ export const GroupCanvasNode = memo(function GroupCanvasNode({
   const [infoOpen, setInfoOpen] = useState(false);
   const [addIds, setAddIds] = useState<string[]>([]);
   const [draft, setDraft] = useState(data.label ?? "");
-  const availableNodes = nodes.filter(
-    (node) => node.type !== "group" && !node.parentId,
-  );
-
   const { nodeStyle } = useCanvasPreferences();
-  const children = nodes.filter((node) => node.parentId === id);
-  const childCount = children.length;
-  const runnableChildIds = children
-    .filter(
-      (node) =>
-        node.type === "image" ||
-        node.type === "video" ||
-        node.type === "text",
-    )
-    .map((node) => node.id);
-  const groupBusy =
-    isBatchRunActive ||
-    children.some(
-      (node) =>
-        node.data.status === "running" || node.data.status === "queued",
-    );
+  // Only needed while the "add nodes" menu is open; reading it on demand keeps
+  // the component out of the store's node subscription.
+  const availableNodes = addOpen
+    ? useCanvasStore
+        .getState()
+        .nodes.filter((node) => node.type !== "group" && !node.parentId)
+    : [];
+  const childCount = childSummary.count;
+  const groupBusy = isBatchRunActive || childSummary.busy;
   const title = data.label?.trim() || messages.canvas.groupDefault;
   const titleAccent = dragOver || selected;
-  const minWidth = Math.max(
-    260,
-    ...children.map((node) => {
-      const width = node.width ?? node.measured?.width ?? 220;
-      return Math.ceil(node.position.x + width + 24);
-    }),
-  );
-  const minHeight = Math.max(
-    180,
-    ...children.map((node) => {
-      const height = node.height ?? node.measured?.height ?? 120;
-      return Math.ceil(node.position.y + height + 24);
-    }),
-  );
+  const minWidth = Math.max(260, childSummary.maxWidth);
+  const minHeight = Math.max(180, childSummary.maxHeight);
 
   return (
     <>
