@@ -48,6 +48,11 @@ export function useCanvasViewport() {
   const [visibleNodeIds, setVisibleNodeIds] = useState<string[]>([]);
   const [viewportLocked, setViewportLocked] = useState(false);
   const visibleTimerRef = useRef<number | null>(null);
+  // Mirror of the applied tier: syncViewport fires on every gesture tick and a
+  // functional setState still runs a render pass even when it returns the same
+  // value, so compare against a ref and only touch state when the tier really
+  // changes.
+  const tierRef = useRef({ far: CANVAS_LOD_ENABLED && 1 < CANVAS_LOD_ZOOM, showEdgeLabels: 1 >= CANVAS_EDGE_LABEL_ZOOM });
 
   const canvasDetail = useMemo(
     () => ({ far: tier.far, showEdgeLabels: tier.showEdgeLabels }),
@@ -58,21 +63,20 @@ export function useCanvasViewport() {
     (viewport: { x: number; y: number; zoom: number }) => {
       const zoom = viewport.zoom || 1;
       zoomRef.current = zoom;
-      setTier((previous) => {
-        const far = CANVAS_LOD_ENABLED
-          ? previous.far
-            ? zoom < LOD_EXIT
-            : zoom < LOD_ENTER
-          : false;
-        const showEdgeLabels = previous.showEdgeLabels
-          ? zoom >= LABELS_EXIT
-          : zoom >= LABELS_ENTER;
-        if (
-          previous.far === far &&
-          previous.showEdgeLabels === showEdgeLabels
-        ) {
-          return previous;
-        }
+      const previousTier = tierRef.current;
+      const far = CANVAS_LOD_ENABLED
+        ? previousTier.far
+          ? zoom < LOD_EXIT
+          : zoom < LOD_ENTER
+        : false;
+      const showEdgeLabels = previousTier.showEdgeLabels
+        ? zoom >= LABELS_EXIT
+        : zoom >= LABELS_ENTER;
+      if (
+        previousTier.far !== far ||
+        previousTier.showEdgeLabels !== showEdgeLabels
+      ) {
+        tierRef.current = { far, showEdgeLabels };
         pendingTierRef.current = { far, showEdgeLabels };
         if (tierTimerRef.current !== null) {
           window.clearTimeout(tierTimerRef.current);
@@ -85,8 +89,7 @@ export function useCanvasViewport() {
             setTier(next);
           }
         }, 160);
-        return previous;
-      });
+      }
       const width = (flowWidth || 1200) / zoom;
       const height = (flowHeight || 800) / zoom;
       const left = -viewport.x / zoom;
