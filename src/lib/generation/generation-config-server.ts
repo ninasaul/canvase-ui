@@ -463,6 +463,12 @@ async function resolveUserGenerationConnectionUnsafe(
   }
   candidates.push(row.activeVendorId);
 
+  // A candidate that has a base URL but no stored key cannot authenticate, so
+  // it is only used when nothing else has credentials. Otherwise a node tagged
+  // with an unconfigured vendor (e.g. "ChatGPT") would silently send an empty
+  // Authorization header and the upstream would answer "invalid api key".
+  let keyless: ServerGenerationConnection | null = null;
+
   for (const candidate of candidates) {
     const profile = profiles[candidate];
     if (!profile) {
@@ -470,13 +476,18 @@ async function resolveUserGenerationConnectionUnsafe(
     }
     const apiKey = decryptProfileKey(profile);
     const baseUrl = normalizeGenerationBaseUrl(profile.baseUrl ?? "") || envBase;
-    if (apiKey || baseUrl) {
-      return {
-        baseUrl,
-        apiKey: apiKey || envKey,
-        vendorId: candidate,
-      };
+    if (!apiKey && !baseUrl) {
+      continue;
     }
+    const resolved = {
+      baseUrl,
+      apiKey: apiKey || envKey,
+      vendorId: candidate,
+    };
+    if (resolved.apiKey) {
+      return resolved;
+    }
+    keyless ??= resolved;
   }
 
   const wantedBase = (hints?.baseUrl ?? "").trim().replace(/\/$/, "");
@@ -485,15 +496,21 @@ async function resolveUserGenerationConnectionUnsafe(
       const base = (profile.baseUrl ?? "").trim().replace(/\/$/, "");
       if (base && base === wantedBase) {
         const apiKey = decryptProfileKey(profile);
-        if (apiKey || base) {
-          return {
-            baseUrl: normalizeGenerationBaseUrl(base) || envBase,
-            apiKey: apiKey || envKey,
-            vendorId,
-          };
+        const resolved = {
+          baseUrl: normalizeGenerationBaseUrl(base) || envBase,
+          apiKey: apiKey || envKey,
+          vendorId,
+        };
+        if (resolved.apiKey) {
+          return resolved;
         }
+        keyless ??= resolved;
       }
     }
+  }
+
+  if (keyless) {
+    return keyless;
   }
 
   const active = profiles[row.activeVendorId];
