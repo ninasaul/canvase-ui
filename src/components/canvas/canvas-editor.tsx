@@ -149,7 +149,6 @@ import {
   CANVAS_CONNECTION_SNAP_RADIUS,
   CANVAS_DEFAULT_FIT_VIEW_OPTIONS,
   CANVAS_DEFAULT_VIEWPORT,
-  CANVAS_LOD_ZOOM,
   CANVAS_MAX_ZOOM,
   CANVAS_MIN_ZOOM,
   CANVAS_SNAP_DISTANCE,
@@ -238,7 +237,7 @@ function CanvasEditorInner({
   const nodes = useCanvasStore((state) => state.nodes);
 
   const {
-    viewportZoom,
+    zoomRef,
     visibleNodeIds,
     canvasDetail,
     syncViewport,
@@ -306,12 +305,12 @@ function CanvasEditorInner({
       const height = node.height ?? 240;
       if (!visibleNodeIds.includes(nodeId)) {
         setCenter(x + width / 2, y + height / 2, {
-          zoom: viewportZoom || 1,
+          zoom: zoomRef.current || 1,
           duration: 450,
         });
       }
     },
-    [viewportZoom, setCenter, visibleNodeIds],
+    [setCenter, visibleNodeIds, zoomRef],
   );
 
   // Keyed on the selected ids, not on the node array: a drag frame replaces
@@ -1975,9 +1974,7 @@ function CanvasEditorInner({
             <CanvasPreferencesProvider value={preferences}>
               <CanvasDetailProvider value={canvasDetail}>
               <ReactFlow
-                className={
-                  viewportZoom < CANVAS_LOD_ZOOM ? "canvas-far" : undefined
-                }
+                className={canvasDetail.far ? "canvas-far" : undefined}
                 nodes={nodes}
               edges={renderedEdges}
               nodeTypes={canvasNodeTypes}

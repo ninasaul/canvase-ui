@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useStore } from "@xyflow/react";
 
 import { useCanvasStore } from "@/lib/canvas/canvas-store";
@@ -18,28 +18,44 @@ import {
 export function useCanvasViewport() {
   const flowWidth = useStore((state) => state.width);
   const flowHeight = useStore((state) => state.height);
-  const [viewportZoom, setViewportZoom] = useState(1);
+  // The raw zoom lives in a ref: a zoom gesture fires on every tick, and
+  // storing it as state re-rendered the editor (and every node) per tick.
+  // Only the derived tiers are state, so a render happens when the level of
+  // detail actually changes.
+  const zoomRef = useRef(1);
+  const [tier, setTier] = useState({
+    far: 1 < CANVAS_LOD_ZOOM,
+    showEdgeLabels: 1 >= CANVAS_EDGE_LABEL_ZOOM,
+  });
   const [visibleNodeIds, setVisibleNodeIds] = useState<string[]>([]);
   const [viewportLocked, setViewportLocked] = useState(false);
+  const lastVisibleAtRef = useRef(0);
 
-  // Derived from the tier booleans, not from the raw zoom: a zoom gesture
-  // updates `viewportZoom` on every tick, and a fresh provider value on each
-  // tick re-rendered every node even while the tier stayed the same.
-  const far = viewportZoom < CANVAS_LOD_ZOOM;
-  const showEdgeLabels = viewportZoom >= CANVAS_EDGE_LABEL_ZOOM;
   const canvasDetail = useMemo(
-    () => ({ far, showEdgeLabels }),
-    [far, showEdgeLabels],
+    () => ({ far: tier.far, showEdgeLabels: tier.showEdgeLabels }),
+    [tier.far, tier.showEdgeLabels],
   );
 
   const syncViewport = useCallback(
     (viewport: { x: number; y: number; zoom: number }) => {
-      setViewportZoom(viewport.zoom || 1);
       const zoom = viewport.zoom || 1;
+      zoomRef.current = zoom;
+      const far = zoom < CANVAS_LOD_ZOOM;
+      const showEdgeLabels = zoom >= CANVAS_EDGE_LABEL_ZOOM;
+      setTier((previous) =>
+        previous.far === far && previous.showEdgeLabels === showEdgeLabels
+          ? previous
+          : { far, showEdgeLabels },
+      );
       const width = (flowWidth || 1200) / zoom;
       const height = (flowHeight || 800) / zoom;
       const left = -viewport.x / zoom;
       const top = -viewport.y / zoom;
+      const now = Date.now();
+      if (Date.now() - lastVisibleAtRef.current < 120) {
+        return;
+      }
+      lastVisibleAtRef.current = now;
       const store = useCanvasStore.getState();
       const nextIds = store.nodes
         .filter((node) => {
@@ -68,7 +84,7 @@ export function useCanvasViewport() {
   );
 
   return {
-    viewportZoom,
+    zoomRef,
     visibleNodeIds,
     canvasDetail,
     syncViewport,

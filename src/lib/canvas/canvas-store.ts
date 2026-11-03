@@ -360,11 +360,14 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   selectNode: (id) => {
+    // Copy only the nodes whose selection actually changes. Re-creating every
+    // node object here invalidated the identity check React Flow uses to skip
+    // unchanged nodes, so a single click re-rendered the whole graph.
     set({
-      nodes: get().nodes.map((node) => ({
-        ...node,
-        selected: node.id === id,
-      })),
+      nodes: get().nodes.map((node) => {
+        const selected = node.id === id;
+        return node.selected === selected ? node : { ...node, selected };
+      }),
     });
   },
 
