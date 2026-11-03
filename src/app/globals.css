@@ -425,3 +425,25 @@ body {
 [data-zooming="true"] .canvas-node-labels {
   visibility: hidden;
 }
+
+/* Nodes are virtualised around the viewport edge, so they mount as they
+   scroll in. A short opacity fade hides the pop without touching layout
+   (compositor-only) and it never re-runs for nodes that stay mounted. */
+@keyframes canvas-node-in {
+  from {
+    opacity: 0.65;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.react-flow__node {
+  animation: canvas-node-in 140ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__node {
+    animation: none;
+  }
+}
