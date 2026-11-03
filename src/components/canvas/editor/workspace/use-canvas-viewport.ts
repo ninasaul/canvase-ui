@@ -47,7 +47,7 @@ export function useCanvasViewport() {
   });
   const [visibleNodeIds, setVisibleNodeIds] = useState<string[]>([]);
   const [viewportLocked, setViewportLocked] = useState(false);
-  const lastVisibleAtRef = useRef(0);
+  const visibleTimerRef = useRef<number | null>(null);
 
   const canvasDetail = useMemo(
     () => ({ far: tier.far, showEdgeLabels: tier.showEdgeLabels }),
@@ -91,34 +91,38 @@ export function useCanvasViewport() {
       const height = (flowHeight || 800) / zoom;
       const left = -viewport.x / zoom;
       const top = -viewport.y / zoom;
-      const now = Date.now();
-      if (Date.now() - lastVisibleAtRef.current < 120) {
-        return;
+      // Debounced, not throttled: while the pane moves nothing here may set
+      // React state, otherwise every 120ms the editor (and the chat panel via
+      // its context) re-rendered for a viewport nobody is reading yet. The
+      // scan runs once the gesture has settled.
+      if (visibleTimerRef.current !== null) {
+        window.clearTimeout(visibleTimerRef.current);
       }
-      lastVisibleAtRef.current = now;
-      const store = useCanvasStore.getState();
-      const nextIds = store.nodes
-        .filter((node) => {
-          const nodeWidth = node.width ?? 240;
-          const nodeHeight = node.height ?? 240;
-          return (
-            node.position.x + nodeWidth >= left &&
-            node.position.x <= left + width &&
-            node.position.y + nodeHeight >= top &&
-            node.position.y <= top + height
-          );
-        })
-        .slice(0, 40)
-        .map((node) => node.id);
-      // Keep the previous array when the set is unchanged: a new identity
-      // here re-rendered every consumer (chat context → chat panel) on each
-      // pan, even when the same nodes stayed visible.
-      setVisibleNodeIds((previous) =>
-        previous.length === nextIds.length &&
-        previous.every((id, index) => id === nextIds[index])
-          ? previous
-          : nextIds,
-      );
+      visibleTimerRef.current = window.setTimeout(() => {
+        visibleTimerRef.current = null;
+        const store = useCanvasStore.getState();
+        const nextIds = store.nodes
+          .filter((node) => {
+            const nodeWidth = node.width ?? 240;
+            const nodeHeight = node.height ?? 240;
+            return (
+              node.position.x + nodeWidth >= left &&
+              node.position.x <= left + width &&
+              node.position.y + nodeHeight >= top &&
+              node.position.y <= top + height
+            );
+          })
+          .slice(0, 40)
+          .map((node) => node.id);
+        // Keep the previous array when the set is unchanged: a new identity
+        // here re-renders every consumer of the viewport snapshot.
+        setVisibleNodeIds((previous) =>
+          previous.length === nextIds.length &&
+          previous.every((id, index) => id === nextIds[index])
+            ? previous
+            : nextIds,
+        );
+      }, 220);
     },
     [flowHeight, flowWidth],
   );
@@ -127,6 +131,9 @@ export function useCanvasViewport() {
     () => () => {
       if (tierTimerRef.current !== null) {
         window.clearTimeout(tierTimerRef.current);
+      }
+      if (visibleTimerRef.current !== null) {
+        window.clearTimeout(visibleTimerRef.current);
       }
     },
     [],
