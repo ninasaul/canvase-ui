@@ -42,9 +42,7 @@ import {
 } from "react";
 import { CanvasActionsContext } from "@/components/canvas/canvas-actions";
 import { canvasEdgeTypes } from "@/components/canvas/canvas-edge";
-import { CanvasImageGenerationDock } from "@/components/canvas/canvas-image-generation-dock";
 import { CanvasNodeLabels } from "@/components/canvas/canvas-node-labels";
-import { CanvasNodeDockLayer } from "@/components/canvas/canvas-node-dock-layer";
 import {
   CanvasRunningTasksModal,
   type CanvasTasksTab,
@@ -54,16 +52,16 @@ import {
   type CanvasRunMode,
 } from "@/lib/canvas/canvas-dag-runner";
 import { CanvasPreferencesProvider } from "@/components/canvas/canvas-preferences-context";
-import { CanvasTextGenerationDock } from "@/components/canvas/canvas-text-generation-dock";
 import { PlaygroundMediaLibraryPicker } from "@/components/playground/playground-media-library-picker";
 import { uploadPlaygroundAssetWithMeta } from "@/lib/playground-media";
-import { CanvasVideoGenerationDock } from "@/components/canvas/canvas-video-generation-dock";
 import { CanvasHelperLinesOverlay } from "@/components/canvas/canvas-helper-lines";
 import {
   CanvasAgentChatPanel,
   loadCanvasAgentChatOpenPreference,
 } from "@/components/canvas/canvas-agent-chat-panel";
 import { CanvasDetailProvider } from "@/components/canvas/canvas-detail-context";
+import { CanvasGenerationDock } from "@/components/canvas/editor/chrome/canvas-generation-dock";
+import { CanvasNodeDockSlot } from "@/components/canvas/editor/chrome/canvas-node-dock-slot";
 import { CanvasOverlays } from "@/components/canvas/editor/chrome/canvas-overlays";
 import { CanvasSelectionBar } from "@/components/canvas/editor/chrome/canvas-selection-bar";
 import { CanvasBackdrop } from "@/components/canvas/editor/chrome/canvas-backdrop";
@@ -2121,59 +2119,17 @@ function CanvasEditorInner({
 
             {!draggingNode ? <CanvasNodeLabels nodes={nodes} /> : null}
 
-            {nodeDock ? (
-              <CanvasNodeDockLayer key={nodeDock.id} node={nodeDock}>
-                {nodeDock.type === "image" ? (
-                  <CanvasImageGenerationDock
-                    key={nodeDock.id}
-                    nodeId={nodeDock.id}
-                    onClose={() => setConfigNodeId(null)}
-                    embedded
-                  />
-                ) : nodeDock.type === "video" ? (
-                  <CanvasVideoGenerationDock
-                    key={nodeDock.id}
-                    nodeId={nodeDock.id}
-                    onClose={() => setConfigNodeId(null)}
-                    embedded
-                  />
-                ) : (
-                  <CanvasTextGenerationDock
-                    key={nodeDock.id}
-                    nodeId={nodeDock.id}
-                    onClose={() => setConfigNodeId(null)}
-                    embedded
-                  />
-                )}
-              </CanvasNodeDockLayer>
-            ) : null}
+            <CanvasNodeDockSlot
+              nodeDock={nodeDock}
+              onClose={() => setConfigNodeId(null)}
+            />
           </div>
 
-          {preferences.generationDockPlacement === "canvas" &&
-          configNode &&
-          configNode.type === "image" ? (
-            <CanvasImageGenerationDock
-              key={configNode.id}
-              nodeId={configNode.id}
-              onClose={() => setConfigNodeId(null)}
-            />
-          ) : preferences.generationDockPlacement === "canvas" &&
-            configNode &&
-            configNode.type === "video" ? (
-            <CanvasVideoGenerationDock
-              key={configNode.id}
-              nodeId={configNode.id}
-              onClose={() => setConfigNodeId(null)}
-            />
-          ) : preferences.generationDockPlacement === "canvas" &&
-            configNode &&
-            configNode.type === "text" ? (
-            <CanvasTextGenerationDock
-              key={configNode.id}
-              nodeId={configNode.id}
-              onClose={() => setConfigNodeId(null)}
-            />
-          ) : null}
+          <CanvasGenerationDock
+            configNode={configNode ?? null}
+            preferences={preferences}
+            onClose={() => setConfigNodeId(null)}
+          />
         </CanvasActionsContext.Provider>
       </div>
 
