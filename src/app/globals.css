@@ -398,3 +398,11 @@ body {
   contain: layout style;
   will-change: transform;
 }
+
+/* Paint isolation belongs on the node body, not the node root: the body has
+   overflow-hidden already, while the root must stay unclipped so connection
+   handles can straddle the border. Without this the whole graph repaints on
+   every pan. */
+.canvas-node-body {
+  contain: paint;
+}

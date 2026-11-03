@@ -246,7 +246,7 @@ function NodeShell({
       }`}
     >
       <div
-        className={`h-full min-h-0 ${
+        className={`canvas-node-body h-full min-h-0 ${
           flush ? "overflow-hidden" : "overflow-hidden p-2"
         }`}
       >
