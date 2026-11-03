@@ -270,16 +270,42 @@ export function canvasToolsAsOpenAiTools(): Array<{
   });
 }
 
-function summarizeToolResult(result: unknown): string {
+/**
+ * Result budget per tool. Reads must fit in the model's context (a canvas
+ * summary is tens of KB); write confirmations stay tiny. Truncating reads to a
+ * flat 400 chars hid the node list, so the model re-called the same tool
+ * forever — the exact loop this table exists to prevent.
+ */
+const TOOL_RESULT_LIMITS: Record<string, number> = {
+  canvas_get: 24_000,
+  canvas_get_node: 8_000,
+  canvas_search_nodes: 8_000,
+  canvas_run_status: 8_000,
+  canvas_run_snapshot: 8_000,
+  canvas_generation_options: 2_000,
+  skills_list: 8_000,
+  skills_read: 24_000,
+};
+const DEFAULT_TOOL_RESULT_LIMIT = 400;
+
+function summarizeToolResult(tool: string, result: unknown): string {
+  const limit = TOOL_RESULT_LIMITS[tool] ?? DEFAULT_TOOL_RESULT_LIMIT;
+  let text: string;
   try {
-    const text = JSON.stringify(result);
-    if (text.length <= 400) {
-      return text;
-    }
-    return `${text.slice(0, 400)}…`;
+    text = JSON.stringify(result) ?? String(result);
   } catch {
-    return String(result);
+    text = String(result);
   }
+  if (text.length <= limit) {
+    return text;
+  }
+  return (
+    `${text.slice(0, limit)}\n` +
+    `[truncated: ${text.length} chars total, showing ${limit}. ` +
+    `Call again with a narrower scope (canvas_search_nodes with labelIncludes, ` +
+    `canvas_get_node with nodeId, or canvas_generation_options with nodeId) ` +
+    `instead of repeating this call.]`
+  );
 }
 
 function parseToolArgs(raw: string | undefined): unknown {
@@ -324,6 +350,21 @@ async function loadCanvasContextLines(input: {
  * Ask the human before a spend / bulk-destructive tool runs.
  * Returns a denial summary when the action must not execute, else null.
  */
+/** (tool, args) pairs the user already denied, with an expiry timestamp. */
+const deniedToolCalls = new Map<string, number>();
+const DENIED_CALL_TTL_MS = 10 * 60_000;
+
+function deniedCallKey(input: {
+  canvasId: string;
+  sessionId?: string;
+  tool: string;
+  args: unknown;
+}): string {
+  return `${input.canvasId}:${input.sessionId ?? "-"}:${input.tool}:${JSON.stringify(
+    input.args ?? {},
+  )}`;
+}
+
 async function gateToolApproval(input: {
   tool: string;
   args: unknown;
@@ -337,6 +378,19 @@ async function gateToolApproval(input: {
     input.args && typeof input.args === "object"
       ? (input.args as Record<string, unknown>)
       : {};
+  // P0-3: the user already said no to this exact action. Do not pop the card
+  // again; tell the model to propose something else.
+  const denyKey = deniedCallKey({
+    canvasId: input.canvasId,
+    sessionId: input.sessionId,
+    tool: input.tool,
+    args,
+  });
+  const deniedUntil = deniedToolCalls.get(denyKey);
+  if (deniedUntil && deniedUntil > Date.now()) {
+    return "用户此前已拒绝过这个完全相同的操作，请不要再提议它。请换一个方案、缩小范围，或直接询问用户。";
+  }
+
   const check = await evaluateToolApproval({
     ownerId: input.ownerId,
     canvasId: input.canvasId,
@@ -367,6 +421,7 @@ async function gateToolApproval(input: {
   input.emit({ type: "approval_resolved", id, decision: answer });
 
   if (answer === "deny") {
+    deniedToolCalls.set(denyKey, Date.now() + DENIED_CALL_TTL_MS);
     return "用户拒绝了这次操作。请说明原因，或提出一个更小的替代方案（例如只运行选中的那个节点）。";
   }
   if (answer === "allow_session") {
@@ -509,6 +564,8 @@ export async function runCanvasAgentChat(input: {
 
   // Primary exits (harness-like): model stops tools, or caller aborts.
   // Soft step budget only pauses the turn for Continue — never errors the session.
+  // Per-turn memory of identical tool calls (P0-2).
+  const callsSeen = new Map<string, number>();
   try {
   for (
     let step = 0;
@@ -621,7 +678,36 @@ export async function runCanvasAgentChat(input: {
         continue;
       }
 
-      const denialSummary = await gateToolApproval({
+          // P0-2: identical (tool, args) calls make no progress. The second one
+      // is refused instead of executed, which breaks "check status → check
+      // options → check status" loops that used to burn the whole budget.
+      const callKey = `${toolName}:${JSON.stringify(args ?? {})}`;
+      const previousCall = callsSeen.get(callKey);
+      if (previousCall) {
+        callsSeen.set(callKey, previousCall + 1);
+        const repeatSummary =
+          `Duplicate call (${previousCall + 1}x) with identical arguments. ` +
+          `It returned the same result and will not return anything new. ` +
+          `Do not repeat it: change the arguments, use another tool, or finish ` +
+          `this turn and report what you already know.`;
+        input.emit({
+          type: "tool_result",
+          tool: toolName,
+          id: callId,
+          ok: false,
+          summary: repeatSummary,
+        });
+        thread.push({
+          role: "tool",
+          tool_call_id: callId,
+          name: toolName,
+          content: repeatSummary,
+        });
+        continue;
+      }
+      callsSeen.set(callKey, 1);
+
+  const denialSummary = await gateToolApproval({
         tool: toolName,
         args,
         canvasId: input.canvasId,
@@ -657,7 +743,7 @@ export async function runCanvasAgentChat(input: {
             canvasId: input.canvasId,
           },
         });
-        const summary = summarizeToolResult(data);
+        const summary = summarizeToolResult(toolName, data);
         input.emit({
           type: "tool_result",
           tool: toolName,
