@@ -11,7 +11,7 @@ import { summarizePortalModelPrice } from "@/lib/playground-model-summary";
 import { messages } from "@/messages";
 import type { PortalPublicModel } from "@/types/admin";
 
-function modelLogoLeading(model: PortalPublicModel, size = 14) {
+export function modelLogoLeading(model: PortalPublicModel, size = 14) {
   return (
     <ModelNameWithLogo
       name={model.display_name || model.id}

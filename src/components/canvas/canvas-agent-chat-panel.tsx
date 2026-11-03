@@ -7,6 +7,7 @@ import {
   CaretRight,
   ChatCircle,
   Check,
+  Cpu,
   CircleNotch,
   FileAudio,
   Paperclip,
@@ -29,11 +30,11 @@ import {
 } from "react";
 
 import { PlaygroundChatMarkdown } from "@/components/playground/playground-chat-markdown";
-import { PlaygroundModelSelect } from "@/components/playground/playground-model-select";
 import { Button } from "@/components/ui/button";
-import { selectTriggerClassName } from "@/components/ui/form-control";
 import { Icon } from "@/components/ui/icon";
 import { Tooltip } from "@/components/ui/tooltip";
+import { Popover } from "@/components/ui/popover";
+import { modelLogoLeading } from "@/components/playground/playground-model-select";
 import { toast } from "@/components/ui/toast";
 import { useMessages } from "@/hooks/use-feature-messages";
 import {
@@ -766,6 +767,8 @@ function CanvasAgentChatPanelInner({
   const [modelId, setModelId] = useState(
     () => loadModelId(canvasId) || defaultModelId || chatModels[0]?.id || "",
   );
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const modelMenuButtonRef = useRef<HTMLButtonElement>(null);
   /** Current conversation boundary; empty until history resolves. */
   const [sessionId, setSessionId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1717,19 +1720,66 @@ function CanvasAgentChatPanelInner({
         </div>
         <div className="flex min-w-0 shrink-0 items-center gap-1">
           {chatModels.length > 0 ? (
-            <Tooltip content={selectedModel?.id ?? modelId}>
-              <span className="min-w-0">
-                <PlaygroundModelSelect
-                  models={chatModels}
-                  value={modelId}
+            <>
+              <Tooltip content={selectedModel?.id ?? modelId}>
+                <Button
+                  ref={modelMenuButtonRef}
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={selectedModel?.id ?? messages.playground.model}
+                  aria-expanded={modelMenuOpen}
                   disabled={busy}
-                  menuZIndex={80}
-                  className="min-w-0 max-w-40"
-                  triggerClassName={selectTriggerClassName("soft", "mini", true)}
-                  onChange={setModelId}
-                />
-              </span>
-            </Tooltip>
+                  onClick={() => setModelMenuOpen((open) => !open)}
+                >
+                  {selectedModel ? (
+                    modelLogoLeading(selectedModel, 15)
+                  ) : (
+                    <Icon icon={Cpu} size={15} />
+                  )}
+                </Button>
+              </Tooltip>
+              <Popover
+                open={modelMenuOpen}
+                onOpenChange={setModelMenuOpen}
+                anchorRef={modelMenuButtonRef}
+                placement="bottom"
+                role="menu"
+                ariaLabel={messages.playground.model}
+                minWidth={220}
+                maxWidth={320}
+                maxHeight={320}
+                className="p-1"
+              >
+                <div className="space-y-0.5">
+                  {chatModels.map((model) => (
+                    <button
+                      key={model.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={model.id === modelId}
+                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors ${
+                        model.id === modelId
+                          ? "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
+                          : "text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
+                      }`}
+                      onClick={() => {
+                        setModelId(model.id);
+                        setModelMenuOpen(false);
+                      }}
+                    >
+                      {modelLogoLeading(model, 14)}
+                      <span className="min-w-0 flex-1 truncate">
+                        {model.display_name || model.id}
+                      </span>
+                      {model.id === modelId ? (
+                        <Icon icon={Check} size={12} />
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              </Popover>
+            </>
           ) : null}
           <span className="h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" />
           <Button
