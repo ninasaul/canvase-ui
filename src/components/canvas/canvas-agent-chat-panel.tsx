@@ -3,6 +3,7 @@
 import { memo } from "react";
 
 import {
+  ArrowUp,
   CaretDown,
   CaretRight,
   ChatCircle,
@@ -11,7 +12,6 @@ import {
   CircleNotch,
   FileAudio,
   Paperclip,
-  PaperPlaneTilt,
   Play,
   Plus,
   ShieldWarning,
@@ -615,8 +615,8 @@ function RunCard({
         <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-sky-900 dark:text-sky-200">
           {messages.canvas.runCardTitle} · {modeLabel}
         </span>
-        <span className="shrink-0 text-[10px] text-sky-700/80 dark:text-sky-300/80">
-          {statusLabel}
+        <span className="shrink-0 text-[10px] text-sky-700/70 dark:text-sky-300/70">
+          {active ? `${progress}%` : statusLabel}
         </span>
       </div>
       {total > 0 ? (
@@ -1819,7 +1819,7 @@ function CanvasAgentChatPanelInner({
 
       <div
         ref={listRef}
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-3 pt-1"
+        className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 pb-3 pt-1"
       >
         {items.length === 0 ? (
           <div className="px-1 py-3 text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">
@@ -2014,15 +2014,16 @@ function CanvasAgentChatPanelInner({
                             weight="fill"
                             className="shrink-0 text-red-500 dark:text-red-400"
                           />
-                        ) : (
-                          <Icon
-                            icon={Check}
-                            size={12}
-                            weight="fill"
-                            className="shrink-0 text-emerald-600 dark:text-emerald-400"
-                          />
-                        )}
-                        <span className="truncate font-medium">
+                        ) : null}
+                        <span
+                          className={
+                            item.status === "failed"
+                              ? "truncate font-medium text-red-600 dark:text-red-400"
+                              : item.status === "running"
+                                ? "truncate font-medium"
+                                : "truncate text-zinc-400 dark:text-zinc-500"
+                          }
+                        >
                           {item.tool}
                         </span>
                         {canExpand ? (
@@ -2221,31 +2222,17 @@ function CanvasAgentChatPanelInner({
               )}
             </Button>
             {busy ? (
-              <>
-                <Button
-                  type="button"
-                  size="icon-circle-sm"
-                  variant="primary"
-                  className="ml-auto shrink-0"
-                  aria-label={messages.canvas.agentChatSteerAction}
-                  title={messages.canvas.agentChatSteerAction}
-                  disabled={!canSend}
-                  onClick={() => void handleSend()}
-                >
-                  <Icon icon={PaperPlaneTilt} size={15} weight="fill" />
-                </Button>
-                <Button
-                  type="button"
-                  size="icon-circle-sm"
-                  variant="danger"
-                  className="shrink-0"
-                  aria-label={messages.canvas.agentChatStop}
-                  title={messages.canvas.agentChatStop}
-                  onClick={handleStop}
-                >
-                  <Icon icon={Stop} size={15} weight="fill" />
-                </Button>
-              </>
+              <Button
+                type="button"
+                size="icon-circle-sm"
+                variant="danger"
+                className="ml-auto shrink-0"
+                aria-label={messages.canvas.agentChatStop}
+                title={messages.canvas.agentChatStop}
+                onClick={handleStop}
+              >
+                <Icon icon={Stop} size={14} weight="fill" />
+              </Button>
             ) : (
               <Button
                 type="button"
@@ -2257,7 +2244,7 @@ function CanvasAgentChatPanelInner({
                 disabled={!canSend}
                 onClick={() => void handleSend()}
               >
-                <Icon icon={PaperPlaneTilt} size={15} weight="fill" />
+                <Icon icon={ArrowUp} size={16} weight="bold" />
               </Button>
             )}
           </div>
