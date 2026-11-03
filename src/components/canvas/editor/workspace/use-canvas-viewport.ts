@@ -11,6 +11,16 @@ import {
 } from "../lib/constants";
 
 /**
+ * Hysteresis around the level-of-detail switch: a gesture that hovers exactly
+ * on the threshold would otherwise flip the tier (and re-render every node)
+ * back and forth on consecutive wheel ticks.
+ */
+const LOD_ENTER = CANVAS_LOD_ZOOM; // zoom below this → simplified nodes
+const LOD_EXIT = CANVAS_LOD_ZOOM + 0.06; // zoom above this → full nodes
+const LABELS_ENTER = CANVAS_EDGE_LABEL_ZOOM;
+const LABELS_EXIT = CANVAS_EDGE_LABEL_ZOOM - 0.06;
+
+/**
  * Viewport-derived state. Panning fires on every frame, so values are only
  * refreshed when a gesture ends: the zoom tier (level of detail) and the ids
  * inside the viewport (used as agent context).
@@ -40,13 +50,15 @@ export function useCanvasViewport() {
     (viewport: { x: number; y: number; zoom: number }) => {
       const zoom = viewport.zoom || 1;
       zoomRef.current = zoom;
-      const far = zoom < CANVAS_LOD_ZOOM;
-      const showEdgeLabels = zoom >= CANVAS_EDGE_LABEL_ZOOM;
-      setTier((previous) =>
-        previous.far === far && previous.showEdgeLabels === showEdgeLabels
+      setTier((previous) => {
+        const far = previous.far ? zoom < LOD_EXIT : zoom < LOD_ENTER;
+        const showEdgeLabels = previous.showEdgeLabels
+          ? zoom >= LABELS_EXIT
+          : zoom >= LABELS_ENTER;
+        return previous.far === far && previous.showEdgeLabels === showEdgeLabels
           ? previous
-          : { far, showEdgeLabels },
-      );
+          : { far, showEdgeLabels };
+      });
       const width = (flowWidth || 1200) / zoom;
       const height = (flowHeight || 800) / zoom;
       const left = -viewport.x / zoom;
