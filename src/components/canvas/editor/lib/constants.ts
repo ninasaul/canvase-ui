@@ -23,7 +23,7 @@ export const CANVAS_DEFAULT_VIEWPORT = {
 };
 
 /** Below this zoom node media is illegible, so it is not mounted. */
-export const CANVAS_LOD_ZOOM = 0.35;
+export const CANVAS_LOD_ZOOM = 0.2;
 
 /**
  * Level of detail for nodes (simplified content below CANVAS_LOD_ZOOM).
