@@ -393,10 +393,13 @@ body {
 /* Isolate each node's layout so panning and dragging do not force a relayout
    of the whole graph. Paint containment is deliberately NOT used: handles and
    their hover badges straddle the node border, and `contain: paint` clips them
-   (the outer half of the hit area became unclickable). */
+   (the outer half of the hit area became unclickable).
+
+   No `will-change` here either: it promotes every node to its own compositor
+   layer, and with 100+ nodes that costs more memory and layer bookkeeping than
+   it saves. The viewport layer above is the one that actually moves. */
 .react-flow__node {
   contain: layout style;
-  will-change: transform;
 }
 
 /* Paint isolation belongs on the node body, not the node root: the body has
