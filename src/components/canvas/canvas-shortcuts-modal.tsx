@@ -53,6 +53,10 @@ export function CanvasShortcutsModal({
           label: messages.canvas.shortcutToggleAgent,
           keys: [mod, "\\"],
         },
+        {
+          label: messages.canvas.shortcutAgentSend,
+          keys: [mod, "Enter"],
+        },
       ],
     },
     {

@@ -435,6 +435,7 @@ export const enCanvasPlaygroundMessages = {
     shortcutRedoAlt: "Redo (alternate)",
     shortcutClose: "Close config / clear selection",
     shortcutToggleAgent: "Toggle Agent panel",
+    shortcutAgentSend: "Send the Agent message",
     selectMode: "Select",
     groupSelection: "Group",
     groupDefault: "Group",

@@ -431,6 +431,7 @@ export const zhCanvasPlaygroundMessages = {
     shortcutRedoAlt: "重做（备用）",
     shortcutClose: "关闭配置 / 清除选择",
     shortcutToggleAgent: "展开 / 收起 Agent",
+    shortcutAgentSend: "Agent 发送消息",
     selectMode: "选择",
     groupSelection: "分组",
     groupDefault: "分组",
