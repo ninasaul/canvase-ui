@@ -25,7 +25,15 @@ Optional for generation runs and thumbnails:
 
 ## Install / run
 
-No separate publish step: use the package in this monorepo.
+No separate publish step: the package is private and consumed from this
+monorepo (`pnpm --filter @canvase/mcp start`).
+
+### Version history
+
+- `0.1.1` — `canvas_add_node` / `canvas_update_node` accept `parentId`, so
+  clients can place nodes inside a group or detach them (the HTTP API already
+  supported it).
+- `0.1.0` — initial 17 tools (15 canvas + 2 skills).
 
 ```bash
 # from canvase-ui repo root

@@ -31,7 +31,7 @@ const TOOLS = [
   {
     name: "canvas_add_node",
     description:
-      "Add a node to the canvas. For image/video, data may include url (full media), thumbnailUrl (preview), and assetId/assetIds (MediaAsset ids).",
+      "Add a node to the canvas. For image/video, data may include url (full media), thumbnailUrl (preview), and assetId/assetIds (MediaAsset ids). Pass parentId to place the node inside a group (group-relative position).",
     schema: z.object({
       expectedVersion: z.number().int().positive(),
       type: z.enum(["text", "image", "video", "audio", "group"]),
@@ -45,12 +45,13 @@ const TOOLS = [
       width: z.number().optional(),
       height: z.number().optional(),
       id: z.string().optional(),
+      parentId: z.string().min(1).nullable().optional(),
     }),
   },
   {
     name: "canvas_update_node",
     description:
-      "Update node data, position, or size. For image/video, set data.url, data.thumbnailUrl, and/or data.assetId so the editor can show a preview thumbnail.",
+      "Update node data, position, or size. For image/video, set data.url, data.thumbnailUrl, and/or data.assetId so the editor can show a preview thumbnail. Set parentId to move a node into a group (null to detach).",
     schema: z.object({
       expectedVersion: z.number().int().positive(),
       nodeId: z.string().min(1),
@@ -63,6 +64,7 @@ const TOOLS = [
         .optional(),
       width: z.number().optional(),
       height: z.number().optional(),
+      parentId: z.string().min(1).nullable().optional(),
     }),
   },
   {
