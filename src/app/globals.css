@@ -409,3 +409,17 @@ body {
 .canvas-node-body {
   contain: paint;
 }
+
+/*
+ * Panning sheds the expensive paint work. With 100+ nodes a moving viewport
+ * re-rasterises every shadow, blur and dashed-edge animation per frame; the
+ * static appearance returns as soon as the gesture ends.
+ */
+[data-panning="true"] .react-flow__edge.animated path {
+  animation: none;
+}
+[data-panning="true"] .react-flow__node,
+[data-panning="true"] .react-flow__node * {
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+}

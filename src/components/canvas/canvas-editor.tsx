@@ -31,6 +31,7 @@ import {
   type OnConnect,
   type OnNodeDrag,
   useReactFlow,
+  useStore,
   ViewportPortal,
 } from "@xyflow/react";
 import {
@@ -244,6 +245,10 @@ function CanvasEditorInner({
     viewportLocked,
     setViewportLocked,
   } = useCanvasViewport();
+
+  // Pan start/end only (not per frame): used to shed expensive paint work
+  // (edge animation, blur, shadows) while the viewport is moving.
+  const paneDragging = useStore((state) => state.paneDragging);
 
   const edges = useCanvasStore((state) => state.edges);
   const selectedNodes = useMemo(
@@ -1648,6 +1653,7 @@ function CanvasEditorInner({
         <CanvasActionsContext.Provider value={actions}>
           <div
             ref={canvasSurfaceRef}
+            data-panning={paneDragging ? "true" : undefined}
             className={`relative min-h-0 flex-1 ${
               preferences.audioPlayerBorder ? "canvas-audio-bordered" : ""
             } ${selectMode ? "canvas-selecting" : ""} ${
