@@ -33,6 +33,7 @@ import { PlaygroundModelSelect } from "@/components/playground/playground-model-
 import { Button } from "@/components/ui/button";
 import { selectTriggerClassName } from "@/components/ui/form-control";
 import { Icon } from "@/components/ui/icon";
+import { Tooltip } from "@/components/ui/tooltip";
 import { toast } from "@/components/ui/toast";
 import { useMessages } from "@/hooks/use-feature-messages";
 import {
@@ -1714,7 +1715,23 @@ function CanvasAgentChatPanelInner({
             {messages.canvas.agentChatTitle}
           </h2>
         </div>
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="flex min-w-0 shrink-0 items-center gap-1">
+          {chatModels.length > 0 ? (
+            <Tooltip content={selectedModel?.id ?? modelId}>
+              <span className="min-w-0">
+                <PlaygroundModelSelect
+                  models={chatModels}
+                  value={modelId}
+                  disabled={busy}
+                  menuZIndex={80}
+                  className="min-w-0 max-w-40"
+                  triggerClassName={selectTriggerClassName("soft", "mini", true)}
+                  onChange={setModelId}
+                />
+              </span>
+            </Tooltip>
+          ) : null}
+          <span className="h-4 w-px shrink-0 bg-zinc-200 dark:bg-zinc-700" />
           <Button
             type="button"
             variant="ghost"
@@ -2153,17 +2170,6 @@ function CanvasAgentChatPanelInner({
                 <Icon icon={Paperclip} size={15} />
               )}
             </Button>
-            {chatModels.length > 0 ? (
-              <PlaygroundModelSelect
-                models={chatModels}
-                value={modelId}
-                disabled={busy}
-                menuZIndex={80}
-                className="min-w-0 max-w-44 flex-1 basis-30"
-                triggerClassName={selectTriggerClassName("soft", "mini", true)}
-                onChange={setModelId}
-              />
-            ) : null}
             {busy ? (
               <>
                 <Button
