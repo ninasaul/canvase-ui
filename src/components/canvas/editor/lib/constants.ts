@@ -24,6 +24,14 @@ export const CANVAS_DEFAULT_VIEWPORT = {
 
 /** Below this zoom node media is illegible, so it is not mounted. */
 export const CANVAS_LOD_ZOOM = 0.35;
+
+/**
+ * Level of detail for nodes (simplified content below CANVAS_LOD_ZOOM).
+ * Turned off for now: the tier switch forces a full re-render of every node,
+ * and at 100+ nodes that costs more than rendering the full content. Re-enable
+ * once node rendering itself is cheap.
+ */
+export const CANVAS_LOD_ENABLED = false;
 /** Edge role labels only mount when they can actually be read. */
 export const CANVAS_EDGE_LABEL_ZOOM = 0.5;
 /** Animated edges repaint every frame; past this many the canvas crawls. */

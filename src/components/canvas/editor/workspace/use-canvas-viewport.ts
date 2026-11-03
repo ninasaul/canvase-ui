@@ -7,6 +7,7 @@ import { useCanvasStore } from "@/lib/canvas/canvas-store";
 
 import {
   CANVAS_EDGE_LABEL_ZOOM,
+  CANVAS_LOD_ENABLED,
   CANVAS_LOD_ZOOM,
 } from "../lib/constants";
 
@@ -51,7 +52,11 @@ export function useCanvasViewport() {
       const zoom = viewport.zoom || 1;
       zoomRef.current = zoom;
       setTier((previous) => {
-        const far = previous.far ? zoom < LOD_EXIT : zoom < LOD_ENTER;
+        const far = CANVAS_LOD_ENABLED
+          ? previous.far
+            ? zoom < LOD_EXIT
+            : zoom < LOD_ENTER
+          : false;
         const showEdgeLabels = previous.showEdgeLabels
           ? zoom >= LABELS_EXIT
           : zoom >= LABELS_ENTER;
