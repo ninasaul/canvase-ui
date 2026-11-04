@@ -11,6 +11,7 @@ import {
 
 import { toast } from "@/components/ui/toast";
 import {
+  recordCanvasRun,
   cancelAgentRun,
   cancelCanvasRun,
   getActiveAgentRun,
@@ -330,6 +331,7 @@ export function useCanvasRun(input: {
           : node,
       ),
     }));
+    const startedAt = new Date().toISOString();
     try {
       const result = await runCanvasPlan({
         plan: pending.plan,
@@ -341,6 +343,34 @@ export function useCanvasRun(input: {
         update: updateNodeData,
         runNode: (nodeId, signal) => executeNode(nodeId, signal),
       });
+      // Editor runs execute in the browser, so the server only learns about
+      // them from this call — it is what puts them in the run history.
+      const finalNodes = useCanvasStore.getState().nodes;
+      const nodeStates: Record<string, { status: string; error?: string | null }> = {};
+      for (const nodeId of pending.plan.nodeIds) {
+        const node = finalNodes.find((item) => item.id === nodeId);
+        nodeStates[nodeId] = {
+          status: node?.data.status ?? "skipped",
+          ...(node?.data.error ? { error: node.data.error } : {}),
+        };
+      }
+      const status =
+        controller.signal.aborted
+          ? "cancelled"
+          : result.failed.length > 0 && result.failed.length >= pending.plan.nodeIds.length
+            ? "failed"
+            : result.failed.length > 0 || result.skipped.length > 0
+              ? "partial"
+              : "succeeded";
+      void recordCanvasRun(canvasId, {
+        mode: pending.mode,
+        status,
+        nodeIds: pending.plan.nodeIds,
+        nodeStates,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+      }).catch(() => undefined);
+
       if (controller.signal.aborted) {
         toast.info(messages.canvas.runCancelled);
       } else if (result.failed.length > 0 || result.skipped.length > 0) {
@@ -359,7 +389,14 @@ export function useCanvasRun(input: {
     } finally {
       setActiveRun(null);
     }
-  }, [executeNode, runConfirm, setActiveRun, setRunConfirm, updateNodeData]);
+  }, [
+    canvasId,
+    executeNode,
+    runConfirm,
+    setActiveRun,
+    setRunConfirm,
+    updateNodeData,
+  ]);
 
   const startPlanRun = useCallback(async () => {
     await startLocalPlanRun();

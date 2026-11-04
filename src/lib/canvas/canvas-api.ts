@@ -186,6 +186,27 @@ export async function listCanvasRuns(
   );
 }
 
+/** Records an editor-initiated run so it shows up in the run history. */
+export async function recordCanvasRun(
+  canvasId: string,
+  input: {
+    mode: "all" | "selected" | "node" | "from" | "retry-failed";
+    status: "succeeded" | "partial" | "failed" | "cancelled";
+    nodeIds: string[];
+    nodeStates: Record<
+      string,
+      { status: string; error?: string | null }
+    >;
+    startedAt?: string;
+    finishedAt?: string;
+  },
+): Promise<void> {
+  await portalRequest<{ id: string }>(`/portal/v1/canvases/${canvasId}/runs`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export async function getActiveCanvasRun(
   canvasId: string,
 ): Promise<CanvasRunDetail | null> {
