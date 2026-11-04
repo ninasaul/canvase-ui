@@ -41,8 +41,8 @@ const SUMMARY_PROMPT = [
 
 /**
  * Folds the oldest part of a conversation into a rolling summary. The client
- * sends only the slice it is about to drop; the stored `coveredCount` tells
- * later requests how much of the transcript the summary already stands for.
+ * sends only the slice it is about to drop; the stored `coveredThrough` tells
+ * later requests how far into the transcript the summary reaches.
  */
 export async function POST(request: Request) {
   const user = await requireUser();
@@ -108,10 +108,6 @@ export async function POST(request: Request) {
     return jsonError("Summarization returned nothing", 502);
   }
 
-  const covered = parsed.data.messages.filter(
-    (message) => message.role === "user" || message.role === "assistant",
-  ).length;
-
   const existing = await prisma.canvasChatSummary.findUnique({
     where: {
       canvasId_sessionId: {
@@ -119,7 +115,7 @@ export async function POST(request: Request) {
         sessionId: parsed.data.sessionId,
       },
     },
-    select: { summary: true, coveredCount: true, coveredThrough: true },
+    select: { summary: true, coveredThrough: true },
   });
 
   // Compaction can run repeatedly: fold the previous summary into the new one
@@ -127,7 +123,6 @@ export async function POST(request: Request) {
   if (existing?.summary) {
     summary = `${existing.summary}\n\n[more recent]\n${summary}`.slice(-4_000);
   }
-  const coveredCount = (existing?.coveredCount ?? 0) + covered;
   // The watermark only moves forward; a late or out-of-order fold never pulls
   // it back over turns that are still live.
   const incomingThrough = parsed.data.coveredThrough
@@ -151,11 +146,10 @@ export async function POST(request: Request) {
       canvasId: parsed.data.canvasId,
       sessionId: parsed.data.sessionId,
       summary,
-      coveredCount,
       coveredThrough,
     },
-    update: { summary, coveredCount, coveredThrough },
+    update: { summary, coveredThrough },
   });
 
-  return jsonOk({ summary, coveredCount, coveredThrough });
+  return jsonOk({ summary, coveredThrough });
 }

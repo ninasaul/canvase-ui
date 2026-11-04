@@ -393,7 +393,6 @@ export type CanvasChatHistoryMessage = {
 export type CanvasChatSummary = {
   sessionId: string;
   summary: string;
-  coveredCount: number;
   /** Everything at or before this timestamp is folded into `summary`. */
   coveredThrough?: string | null;
 };
@@ -426,12 +425,10 @@ export async function summarizeCanvasChat(input: {
   coveredThrough?: string;
 }): Promise<{
   summary: string;
-  coveredCount: number;
   coveredThrough?: string | null;
 }> {
   return portalRequest<{
     summary: string;
-    coveredCount: number;
     coveredThrough?: string | null;
   }>("/api/agent/summarize", {
     method: "POST",

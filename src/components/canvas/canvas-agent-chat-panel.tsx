@@ -472,7 +472,6 @@ function buildApiHistory(
   items: UiMessage[],
   summary?: {
     summary: string;
-    coveredCount: number;
     coveredThrough?: string | null;
   },
 ): Array<{
@@ -575,46 +574,8 @@ function buildApiHistory(
     }
   }
 
-  const covered =
-    summary && !Number.isFinite(watermark)
-      ? Math.max(0, summary.coveredCount)
-      : 0;
-  // The summary counts conversational turns; tool notes are synthesised as
-  // assistant messages and must not advance the cursor, otherwise it stops
-  // early and the folded turns are sent a second time.
-  const isToolNote = (content: string) => content.startsWith("[tool ");
-  // A summary can outlive the transcript it describes (history pruned or
-  // cleared). Trusting it then cut the whole live conversation away and left
-  // only the stale briefing, so it is ignored in that case.
-  const conversationLength = base.filter(
-    (entry) =>
-      (entry.role === "user" || entry.role === "assistant") &&
-      !isToolNote(entry.content),
-  ).length;
-  const effectiveCovered =
-    covered > 0 && covered <= conversationLength ? covered : 0;
-  if (summary && effectiveCovered > 0) {
-    let seen = 0;
-    let cut = 0;
-    while (cut < base.length && seen < effectiveCovered) {
-      const entry = base[cut]!;
-      if (
-        (entry.role === "user" || entry.role === "assistant") &&
-        !isToolNote(entry.content)
-      ) {
-        seen += 1;
-      }
-      cut += 1;
-    }
-    base = [
-      {
-        role: "assistant" as const,
-        content: `[summary of the earlier conversation]\n${summary.summary}`,
-      },
-      ...base.slice(cut),
-    ];
-  }
-
+  // No watermark means there is nothing positional to fold: legacy summaries
+  // were dropped with the coveredCount column, so this block only trims.
   const trimmed =
     base.length <= MAX_API_HISTORY_MESSAGES
       ? base
@@ -897,7 +858,7 @@ function CanvasAgentChatPanelInner({
   const [items, setItems] = useState<UiMessage[]>(() => loadMessages(canvasId));
   /** Rolling summaries per session, used to drop already-folded turns. */
   const [summaries, setSummaries] = useState<
-    Record<string, { summary: string; coveredCount: number }>
+    Record<string, { summary: string; coveredThrough?: string | null }>
   >({});
   const [draft, setDraft] = useState("");
   const [modelId, setModelId] = useState(
@@ -1081,7 +1042,10 @@ function CanvasAgentChatPanelInner({
           Object.fromEntries(
             payload.summaries.map((entry) => [
               entry.sessionId,
-              { summary: entry.summary, coveredCount: entry.coveredCount },
+              {
+                summary: entry.summary,
+                coveredThrough: entry.coveredThrough ?? null,
+              },
             ]),
           ),
         );
@@ -1412,7 +1376,18 @@ function CanvasAgentChatPanelInner({
     const foldable = sessionMessages.filter(
       (item) => item.kind === "user" || item.kind === "assistant",
     );
-    const coveredNow = summaryForSession?.coveredCount ?? 0;
+    // How many turns are already folded, derived from the watermark so it
+    // stays correct after pruning or a partial load.
+    const watermarkNow = summaryForSession?.coveredThrough
+      ? Date.parse(summaryForSession.coveredThrough)
+      : Number.NaN;
+    const coveredNow = Number.isFinite(watermarkNow)
+      ? foldable.filter((item) => {
+          const at = "createdAt" in item ? item.createdAt : undefined;
+          const stamp = at ? Date.parse(at) : Number.NaN;
+          return Number.isFinite(stamp) && stamp <= watermarkNow;
+        }).length
+      : 0;
     if (
       modelId &&
       foldable.length - coveredNow > COMPACT_TRIGGER &&

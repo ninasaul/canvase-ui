@@ -37,7 +37,6 @@ export async function GET(request: Request, context: RouteContext) {
     select: {
       sessionId: true,
       summary: true,
-      coveredCount: true,
       coveredThrough: true,
     },
   });
