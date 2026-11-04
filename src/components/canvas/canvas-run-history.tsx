@@ -19,6 +19,8 @@ function modeLabel(mode: string): string {
       return messages.canvas.runFrom;
     case "retry-failed":
       return messages.canvas.retryFailed;
+    case "node":
+      return messages.canvas.runNodeSingle;
     default:
       return messages.canvas.runAll;
   }

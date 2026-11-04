@@ -294,17 +294,37 @@ export function useCanvasRun(input: {
       }
       const controller = new AbortController();
       activeRunsRef.current.set(nodeId, controller);
+      const startedAt = new Date().toISOString();
+      let failure: string | null = null;
       try {
         await executeNode(nodeId, controller.signal);
       } catch (error) {
-        toast.danger(
-          error instanceof Error ? error.message : messages.canvas.runFailed,
-        );
+        failure =
+          error instanceof Error ? error.message : messages.canvas.runFailed;
+        toast.danger(failure);
       } finally {
         activeRunsRef.current.delete(nodeId);
+        // Single-node runs are editor-side too; record them so the run history
+        // reflects every way a node can be executed.
+        const node = useCanvasStore
+          .getState()
+          .nodes.find((item) => item.id === nodeId);
+        void recordCanvasRun(canvasId, {
+          mode: "node",
+          status: failure ? "failed" : node?.data.status === "failed" ? "failed" : "succeeded",
+          nodeIds: [nodeId],
+          nodeStates: {
+            [nodeId]: {
+              status: node?.data.status ?? (failure ? "failed" : "succeeded"),
+              ...(node?.data.error ? { error: node.data.error } : {}),
+            },
+          },
+          startedAt,
+          finishedAt: new Date().toISOString(),
+        }).catch(() => undefined);
       }
     },
-    [activeRun, activeRunsRef, executeNode],
+    [activeRun, activeRunsRef, canvasId, executeNode],
   );
 
   const startLocalPlanRun = useCallback(async () => {

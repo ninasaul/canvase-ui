@@ -269,6 +269,7 @@ export const enCanvasPlaygroundMessages = {
     thumbnail: "Cover",
     thumbnailUploaded: "Cover updated",
     thumbnailFailed: "Cover upload failed",
+    runNodeSingle: "Single node",
     runSelected: "Run selected",
     runIncludeUpstream: "Also run upstream nodes",
     runStatNodes: "nodes",

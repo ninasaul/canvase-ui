@@ -265,6 +265,7 @@ export const zhCanvasPlaygroundMessages = {
     thumbnail: "封面",
     thumbnailUploaded: "封面已更新",
     thumbnailFailed: "封面上传失败",
+    runNodeSingle: "单节点运行",
     runSelected: "运行选中",
     runIncludeUpstream: "同时运行上游节点",
     runStatNodes: "个节点",
