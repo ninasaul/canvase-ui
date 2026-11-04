@@ -5,10 +5,23 @@ import { buildCanvasRunPlan, type CanvasRunMode } from "@/lib/canvas/canvas-run-
 
 export type ApprovalDecision = "allow_once" | "allow_session" | "deny";
 
+export type ApprovalItem = {
+  id: string;
+  label: string;
+  type: string;
+  model?: string;
+  size?: string;
+  overwrite?: boolean;
+};
+
 export type ApprovalDetails = {
   nodes?: number;
   overwrite?: number;
   mode?: string;
+  /** What exactly will be generated, so the user can confirm knowingly. */
+  items?: ApprovalItem[];
+  /** Total targets when the list is capped. */
+  total?: number;
 };
 
 export type ApprovalCheck =
@@ -162,9 +175,40 @@ async function summarizeRun(
   if (overwrite > 0) {
     parts.push(`其中 ${overwrite} 个已有结果，会被覆盖`);
   }
+  // The confirmation card must show what is about to be generated, not just a
+  // count: node label, type, model and size, capped so the card stays readable.
+  const items: ApprovalItem[] = targets.slice(0, 12).flatMap((id) => {
+    const node = byId.get(id);
+    if (!node) {
+      return [];
+    }
+    const width = node.width;
+    const height = node.height;
+    const params = node.data.params ?? {};
+    const size =
+      typeof params.size === "string"
+        ? params.size
+        : typeof params.aspectRatio === "string"
+          ? params.aspectRatio
+          : width && height
+            ? `${Math.round(width)}×${Math.round(height)}`
+            : undefined;
+    return [
+      {
+        id,
+        label: node.data.label?.trim() || id,
+        type: node.type ?? "text",
+        model: node.data.model?.trim() || undefined,
+        size,
+        overwrite:
+          Boolean(node.data.url?.trim()) || node.data.status === "succeeded",
+      },
+    ];
+  });
+
   return {
     summary: parts.join("，"),
-    details: { nodes: targets.length, overwrite, mode },
+    details: { nodes: targets.length, overwrite, mode, items, total: targets.length },
   };
 }
 

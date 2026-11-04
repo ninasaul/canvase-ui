@@ -350,9 +350,12 @@ async function loadCanvasContextLines(input: {
  * Ask the human before a spend / bulk-destructive tool runs.
  * Returns a denial summary when the action must not execute, else null.
  */
-/** (tool, args) pairs the user already denied, with an expiry timestamp. */
+/**
+ * (tool, args) pairs the user already denied, with the time of the denial.
+ * Used as guidance for the model ("the user refused this at 15:23"), never as
+ * a lock: the user is free to approve the same action later.
+ */
 const deniedToolCalls = new Map<string, number>();
-const DENIED_CALL_TTL_MS = 10 * 60_000;
 
 function deniedCallKey(input: {
   canvasId: string;
@@ -386,10 +389,8 @@ async function gateToolApproval(input: {
     tool: input.tool,
     args,
   });
-  const deniedUntil = deniedToolCalls.get(denyKey);
-  if (deniedUntil && deniedUntil > Date.now()) {
-    return "用户此前已拒绝过这个完全相同的操作，请不要再提议它。请换一个方案、缩小范围，或直接询问用户。";
-  }
+  // User intent wins: a previous denial is a hint for the model, never a lock.
+  // The card is shown again if the model asks again.
 
   const check = await evaluateToolApproval({
     ownerId: input.ownerId,
@@ -421,7 +422,9 @@ async function gateToolApproval(input: {
   input.emit({ type: "approval_resolved", id, decision: answer });
 
   if (answer === "deny") {
-    deniedToolCalls.set(denyKey, Date.now() + DENIED_CALL_TTL_MS);
+    // Keep the timestamp so the model can be told it was already refused, but
+    // do not block a later ask — the user decides.
+    deniedToolCalls.set(denyKey, Date.now());
     return "用户拒绝了这次操作。请说明原因，或提出一个更小的替代方案（例如只运行选中的那个节点）。";
   }
   if (answer === "allow_session") {

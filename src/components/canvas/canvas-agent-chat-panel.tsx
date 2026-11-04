@@ -682,6 +682,63 @@ function ApprovalCard({
           <p className="mt-0.5 text-[11px] leading-relaxed text-amber-800/90 dark:text-amber-200/80">
             {item.summary}
           </p>
+          {(() => {
+            const details = item.details ?? {};
+            const items = Array.isArray(details.items)
+              ? (details.items as Array<{
+                  id?: string;
+                  label?: string;
+                  type?: string;
+                  model?: string;
+                  size?: string;
+                  overwrite?: boolean;
+                }>)
+              : [];
+            if (items.length === 0) {
+              return null;
+            }
+            const total =
+              typeof details.total === "number" ? details.total : items.length;
+            return (
+              <div className="mt-1.5 rounded-lg bg-white/70 px-2 py-1.5 dark:bg-zinc-900/50">
+                <ul className="space-y-0.5">
+                  {items.map((entry, index) => (
+                    <li
+                      key={entry.id ?? index}
+                      className="flex items-center gap-1.5 text-[10px] text-amber-900/90 dark:text-amber-100/85"
+                    >
+                      <span className="shrink-0 rounded bg-amber-100 px-1 text-[9px] uppercase tracking-wide text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                        {entry.type ?? "node"}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {entry.label ?? entry.id}
+                      </span>
+                      {entry.model ? (
+                        <span className="shrink-0 font-mono text-[9px] text-amber-700/70 dark:text-amber-300/70">
+                          {entry.model}
+                        </span>
+                      ) : null}
+                      {entry.size ? (
+                        <span className="shrink-0 tabular-nums text-amber-700/60 dark:text-amber-300/60">
+                          {entry.size}
+                        </span>
+                      ) : null}
+                      {entry.overwrite ? (
+                        <span className="shrink-0 text-[9px] font-medium text-red-500 dark:text-red-400">
+                          {messages.canvas.conflictOverwriteShort}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+                {total > items.length ? (
+                  <p className="mt-1 text-[9px] text-amber-700/70 dark:text-amber-300/70">
+                    +{total - items.length}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })()}
           {pending ? (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <Button

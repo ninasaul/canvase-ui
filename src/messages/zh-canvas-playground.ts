@@ -326,6 +326,7 @@ export const zhCanvasPlaygroundMessages = {
     versionConflict: "保存冲突",
     versionConflictBody: "画布已被其他会话更新（另一个标签页或 AI 助手）。",
     versionConflictKeepMine: "保留我的修改",
+    conflictOverwriteShort: "覆盖",
     conflictLoadRemote: "加载对方的版本",
     conflictLoadedRemote: "已加载对方的版本，本地未保存的修改已丢弃",
     externalUpdateApplied: "已同步画布的最新修改",

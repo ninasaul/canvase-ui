@@ -330,6 +330,7 @@ export const enCanvasPlaygroundMessages = {
     versionConflict: "Save conflict",
     versionConflictBody: "This canvas was updated elsewhere (another tab or an AI assistant).",
     versionConflictKeepMine: "Keep mine",
+    conflictOverwriteShort: "overwrite",
     conflictLoadRemote: "Load theirs",
     conflictLoadedRemote: "Loaded the other version; unsaved local changes were discarded",
     externalUpdateApplied: "Synced the latest canvas changes",
