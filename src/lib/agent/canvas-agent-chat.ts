@@ -246,7 +246,11 @@ function toOpenAiUserContent(
     if (!publicUrl) {
       continue;
     }
-    catalogLines.push(`- ${kind}: ${publicUrl}`);
+    catalogLines.push(
+      item.inlined
+        ? `- ${kind}: ${publicUrl}`
+        : `- ${kind}: ${publicUrl} (could not be delivered to the model; ${item.skipNote ?? "not inlined"})`,
+    );
     const part = mediaPartForAttachment(kind, item, profile);
     if (part) {
       multimodalParts.push(part);

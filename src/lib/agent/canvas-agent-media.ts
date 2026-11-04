@@ -5,9 +5,11 @@ import { getObjectBytes } from "@/lib/storage/s3-client";
 import { resolveStorageConfig } from "@/lib/storage/s3-config";
 
 /** Max bytes to inline as data URL for vision image parts. */
-export const AGENT_INLINE_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+// Generated 4K images regularly exceed 8MB; the models here take far
+// larger inputs, so the cap is only about request size.
+export const AGENT_INLINE_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
 /** Max bytes to inline for video/audio multimodal parts. */
-export const AGENT_INLINE_AV_MAX_BYTES = 2 * 1024 * 1024;
+export const AGENT_INLINE_AV_MAX_BYTES = 12 * 1024 * 1024;
 
 export type AgentChatAttachmentInput = {
   url: string;
