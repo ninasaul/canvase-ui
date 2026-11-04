@@ -69,13 +69,14 @@ export const zhCanvasPlaygroundMessages = {
     agentChatOpenSettings: "打开模型配置",
     agentChatAttach: "添加媒体",
     agentChatAttachHint:
-      "可上传图片 / 视频 / 音频。当前模型支持多模态理解，服务端会内联可读媒体。",
+      "可上传图片 / 视频 / 音频，或文本文件（md / json / csv / 源码等）。当前模型支持多模态理解，服务端会内联可读媒体。",
     agentChatAttachHintUrlOnly:
-      "可上传图片 / 视频 / 音频。当前模型不支持看图，附件只会作为 URL 供挂到画布，模型无法直接读取内容。",
+      "可上传图片 / 视频 / 音频，或文本文件（md / json / csv / 源码等，会直接读入对话）。当前模型不支持看图，媒体附件只会作为 URL 供挂到画布，模型无法直接读取内容。",
     agentChatAttachUnsupported:
-      "仅支持图片、视频、音频文件（不支持 PDF / 文档）。",
+      "仅支持图片、视频、音频和纯文本文件（不支持 PDF / Office 文档）。",
     agentChatAttachUploading: "上传中…",
     agentChatAttachFailed: "媒体上传失败",
+    agentChatTextTooLarge: "文本文件单个不超过 64KB、合计 160KB",
     agentChatAttachLimit: "最多 4 个附件",
     agentChatRemoveAttach: "移除附件",
     agentChatThinking: "思考中…",

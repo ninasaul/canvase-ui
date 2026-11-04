@@ -1226,14 +1226,21 @@ function CanvasAgentChatPanelInner({
     if (textFiles.length > 0) {
       const accepted: PendingTextAttachment[] = [];
       let budget = MAX_TEXT_TOTAL_BYTES;
+      let slots =
+        MAX_ATTACHMENTS - pendingAttachments.length - pendingTexts.length;
       for (const file of textFiles) {
-        if (file.size > MAX_TEXT_ATTACHMENT_BYTES || file.size > budget) {
+        if (slots <= 0) {
           toast.danger(messages.canvas.agentChatAttachLimit);
+          break;
+        }
+        if (file.size > MAX_TEXT_ATTACHMENT_BYTES || file.size > budget) {
+          toast.danger(messages.canvas.agentChatTextTooLarge);
           continue;
         }
         try {
           const text = await file.text();
           budget -= file.size;
+          slots -= 1;
           accepted.push({ id: newId("text"), name: file.name, text });
         } catch {
           toast.danger(messages.canvas.agentChatAttachFailed);

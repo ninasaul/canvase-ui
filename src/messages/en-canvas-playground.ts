@@ -73,13 +73,14 @@ export const enCanvasPlaygroundMessages = {
     agentChatOpenSettings: "Open model settings",
     agentChatAttach: "Add media",
     agentChatAttachHint:
-      "Upload image / video / audio. This model supports multimodal understanding; readable media is inlined server-side.",
+      "Upload image / video / audio, or text files (md / json / csv / source). This model supports multimodal understanding; readable media is inlined server-side.",
     agentChatAttachHintUrlOnly:
-      "Upload image / video / audio. This model cannot see media; attachments are URL-only for canvas tools.",
+      "Upload image / video / audio, or text files (md / json / csv / source, read straight into the chat). This model cannot see media; media attachments are URL-only for canvas tools.",
     agentChatAttachUnsupported:
-      "Only image, video, and audio files are supported (not PDF / documents).",
+      "Only image, video, audio and plain-text files are supported (not PDF / Office documents).",
     agentChatAttachUploading: "Uploading…",
     agentChatAttachFailed: "Media upload failed",
+    agentChatTextTooLarge: "Each text file must be 64KB or smaller (160KB total)",
     agentChatAttachLimit: "Up to 4 attachments",
     agentChatRemoveAttach: "Remove attachment",
     agentChatThinking: "Thinking…",
