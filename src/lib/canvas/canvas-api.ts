@@ -355,6 +355,7 @@ export type CanvasAgentChatSseEvent =
   | { type: "approval_resolved"; id: string; decision: string }
   | { type: "steer_applied"; id: string; text: string }
   | { type: "step_budget" }
+  | { type: "attachment_warning"; message: string }
   | { type: "error"; message: string }
   | { type: "done" };
 

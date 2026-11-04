@@ -92,6 +92,8 @@ export type CanvasAgentChatSseEvent =
   | { type: "steer_applied"; id: string; text: string }
   /** Soft pause after step budget; UI may offer Continue. Never an Agent error. */
   | { type: "step_budget" }
+  /** An attachment could not be delivered to the model (URL kept). */
+  | { type: "attachment_warning"; message: string }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -557,6 +559,15 @@ export async function runCanvasAgentChat(input: {
               inline: index === lastUserMessageIndex,
             })
           : [];
+      const undelivered = resolvedAttachments.filter((item) => !item.inlined);
+      if (undelivered.length > 0) {
+        input.emit({
+          type: "attachment_warning",
+          message: `附件未能发送给模型（${undelivered
+            .map((item) => item.kind)
+            .join(", ")}）：${undelivered[0]?.skipNote ?? "无法内联"}。模型只能看到链接。`,
+        });
+      }
       thread.push({
         role: "user",
         content: toOpenAiUserContent(

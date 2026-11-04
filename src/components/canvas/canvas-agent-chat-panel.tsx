@@ -1433,6 +1433,10 @@ function CanvasAgentChatPanelInner({
     let sawOutput = false;
 
     const applyEvent = (event: CanvasAgentChatSseEvent) => {
+      if (event.type === "attachment_warning") {
+        toast.danger(event.message);
+        return;
+      }
       if (event.type === "text_delta") {
         if (!event.text) {
           return;
