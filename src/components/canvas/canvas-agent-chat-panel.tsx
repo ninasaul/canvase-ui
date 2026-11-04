@@ -38,6 +38,7 @@ import { Popover } from "@/components/ui/popover";
 import { modelLogoLeading } from "@/components/playground/playground-model-select";
 import { toast } from "@/components/ui/toast";
 import { useMessages } from "@/hooks/use-feature-messages";
+import { useCanvasStore, type CanvasFlowNode } from "@/lib/canvas/canvas-store";
 import {
   cancelAgentRun,
   getCanvasRun,
@@ -881,6 +882,15 @@ function CanvasAgentChatPanelInner({
     Array<{ id: string; name: string; description: string; tags: string[] }>
   >([]);
   const [skillQuery, setSkillQuery] = useState<string | null>(null);
+  // "@" mentions: reference a canvas node in the prompt.
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [pendingMentions, setPendingMentions] = useState<
+    Array<{ id: string; label: string }>
+  >([]);
+  const canvasNodes = useCanvasStore(
+    (state) => state.nodes,
+  ) as CanvasFlowNode[];
   const [skillIndex, setSkillIndex] = useState(0);
   const [pendingAttachments, setPendingAttachments] = useState<
     ChatAttachment[]
@@ -964,6 +974,34 @@ function CanvasAgentChatPanelInner({
         skill.tags.some((tag) => tag.toLowerCase().includes(query)),
     );
   }, [skillCatalog, skillQuery]);
+
+  const mentionMatches = useMemo(() => {
+    if (mentionQuery === null) {
+      return [];
+    }
+    const query = mentionQuery.toLowerCase();
+    return canvasNodes
+      .filter((node) => {
+        const label = (node.data.label ?? "").toLowerCase();
+        return (
+          !query || label.includes(query) || node.id.toLowerCase().includes(query)
+        );
+      })
+      .slice(0, 8)
+      .map((node) => ({
+        id: node.id,
+        label: node.data.label?.trim() || node.id,
+        type: node.type ?? "text",
+      }));
+  }, [canvasNodes, mentionQuery]);
+
+  const pickMention = useCallback((id: string, label: string) => {
+    setMentionQuery(null);
+    setDraft((current) => current.replace(/@\S*$/, "").trimEnd());
+    setPendingMentions((current) =>
+      current.some((item) => item.id === id) ? current : [...current, { id, label }],
+    );
+  }, []);
 
   const pickSkill = useCallback(
     async (id: string) => {
@@ -1786,7 +1824,13 @@ function CanvasAgentChatPanelInner({
         return `[附件 ${item.name}]\n\`\`\`${language}\n${item.text}\n\`\`\``;
       })
       .join("\n\n");
-    const content = [draft.trim(), skillBlocks, textBlocks]
+    const mentionBlock =
+      pendingMentions.length > 0
+        ? `[引用节点]\n${pendingMentions
+            .map((item) => `- ${item.label} (id: ${item.id})`)
+            .join("\n")}`
+        : "";
+    const content = [draft.trim(), mentionBlock, skillBlocks, textBlocks]
       .filter(Boolean)
       .join("\n\n");
     const attachments = pendingAttachments;
@@ -1823,6 +1867,7 @@ function CanvasAgentChatPanelInner({
     setPendingAttachments([]);
     setPendingTexts([]);
     setPendingSkills([]);
+    setPendingMentions([]);
     for (const item of attachments) {
       if (item.previewUrl.startsWith("blob:")) {
         URL.revokeObjectURL(item.previewUrl);
@@ -2393,6 +2438,57 @@ function CanvasAgentChatPanelInner({
             ))}
           </div>
         ) : null}
+          {mentionQuery !== null && mentionMatches.length > 0 ? (
+            <div className="mb-1 max-h-44 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-1 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+              {mentionMatches.map((node, index) => (
+                <button
+                  key={node.id}
+                  type="button"
+                  className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${
+                    index === mentionIndex
+                      ? "bg-zinc-100 dark:bg-zinc-800"
+                      : "hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                  }`}
+                  onMouseEnter={() => setMentionIndex(index)}
+                  onClick={() => pickMention(node.id, node.label)}
+                >
+                  <span className="shrink-0 rounded bg-zinc-100 px-1 text-[9px] uppercase tracking-wide text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                    {node.type}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[11px] text-zinc-800 dark:text-zinc-100">
+                    {node.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {pendingMentions.length > 0 ? (
+            <div className="mb-1 flex flex-wrap gap-1.5">
+              {pendingMentions.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex max-w-[220px] items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-1 text-[10px] text-amber-700 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-200"
+                >
+                  <span className="shrink-0 font-mono">@</span>
+                  <span className="min-w-0 truncate">{item.label}</span>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded px-0.5 text-amber-500 hover:text-amber-800 dark:hover:text-amber-100"
+                    aria-label={messages.close}
+                    onClick={() =>
+                      setPendingMentions((current) =>
+                        current.filter((entry) => entry.id !== item.id),
+                      )
+                    }
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
           {skillQuery !== null && skillMatches.length > 0 ? (
             <div className="mb-1 max-h-44 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-1 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
               {skillMatches.map((skill, index) => (
@@ -2453,6 +2549,13 @@ function CanvasAgentChatPanelInner({
               const value = event.target.value;
               setDraft(value);
               // "/" at the very start opens the skill picker; a space closes it.
+              const mentionMatch = /(?:^|\s)@(\S*)$/.exec(value);
+              if (mentionMatch) {
+                setMentionQuery(mentionMatch[1] ?? "");
+                setMentionIndex(0);
+              } else if (mentionQuery !== null) {
+                setMentionQuery(null);
+              }
               if (value.startsWith("/") && !value.includes(" ")) {
                 const query = value.slice(1);
                 setSkillQuery(query);
@@ -2467,6 +2570,34 @@ function CanvasAgentChatPanelInner({
               }
             }}
             onKeyDown={(event) => {
+              if (mentionQuery !== null && mentionMatches.length > 0) {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setMentionIndex((index) => (index + 1) % mentionMatches.length);
+                  return;
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setMentionIndex(
+                    (index) =>
+                      (index - 1 + mentionMatches.length) % mentionMatches.length,
+                  );
+                  return;
+                }
+                if (event.key === "Enter" && !event.metaKey && !event.ctrlKey) {
+                  event.preventDefault();
+                  const target = mentionMatches[mentionIndex];
+                  if (target) {
+                    pickMention(target.id, target.label);
+                  }
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setMentionQuery(null);
+                  return;
+                }
+              }
               if (skillQuery !== null && skillMatches.length > 0) {
                 if (event.key === "ArrowDown") {
                   event.preventDefault();
