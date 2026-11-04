@@ -315,6 +315,7 @@ export const enCanvasPlaygroundMessages = {
     runCardFailures: "{count} node(s) failed",
     runCardCancel: "Cancel run",
     runCardCancelFailed: "Could not cancel",
+    runHistoryRerun: "Run these nodes again",
     runHistory: "Run history",
     runHistoryEmpty: "No runs yet",
     runHistoryLoadFailed: "Failed to load run history",

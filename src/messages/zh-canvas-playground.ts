@@ -311,6 +311,7 @@ export const zhCanvasPlaygroundMessages = {
     runCardFailures: "{count} 个节点失败",
     runCardCancel: "取消运行",
     runCardCancelFailed: "取消失败",
+    runHistoryRerun: "重新运行这些节点",
     runHistory: "运行历史",
     runHistoryEmpty: "暂无运行记录",
     runHistoryLoadFailed: "运行历史加载失败",

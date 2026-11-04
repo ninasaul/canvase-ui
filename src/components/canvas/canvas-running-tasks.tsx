@@ -47,6 +47,7 @@ export function CanvasRunningTasksModal({
   onTabChange,
   runActive = false,
   onCancelRun,
+  onRerun,
 }: {
   open: boolean;
   onClose: () => void;
@@ -55,6 +56,7 @@ export function CanvasRunningTasksModal({
   onTabChange: (tab: CanvasTasksTab) => void;
   runActive?: boolean;
   onCancelRun?: () => void;
+  onRerun?: (nodeIds: string[]) => void;
 }) {
   const nodes = useCanvasStore((state) => state.nodes);
   const runStatusById = useCanvasRunStatusStore((state) => state.statusById);
@@ -229,6 +231,7 @@ export function CanvasRunningTasksModal({
             active={open && tab === "history"}
             refreshToken={historyRefreshToken}
             onLoadingChange={handleHistoryLoadingChange}
+            onRerun={onRerun}
           />
         )}
       </div>

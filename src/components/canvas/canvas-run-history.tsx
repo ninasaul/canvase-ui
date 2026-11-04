@@ -2,6 +2,7 @@
 
 import { Clock } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Empty } from "@/components/ui/empty";
 import {
   getCanvasRun,
@@ -75,12 +76,15 @@ export function CanvasRunHistoryPanel({
   active,
   refreshToken = 0,
   onLoadingChange,
+  onRerun,
 }: {
   canvasId: string;
   active: boolean;
   /** Increment to force a reload while active. */
   refreshToken?: number;
   onLoadingChange?: (loading: boolean) => void;
+  /** Re-run the same nodes from this record (opens the confirm dialog). */
+  onRerun?: (nodeIds: string[]) => void;
 }) {
   const [runs, setRuns] = useState<CanvasRunSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -214,6 +218,21 @@ export function CanvasRunHistoryPanel({
                   {messages.loading}
                 </p>
               ) : (
+                <>
+                {onRerun && detail.nodes.length > 0 ? (
+                  <div className="mb-2 flex justify-end">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() =>
+                        onRerun(detail.nodes.map((node) => node.nodeId))
+                      }
+                    >
+                      {messages.canvas.runHistoryRerun}
+                    </Button>
+                  </div>
+                ) : null}
                 <ul className="space-y-1">
                   {detail.nodes.map((node) => (
                     <li
@@ -256,6 +275,7 @@ export function CanvasRunHistoryPanel({
                     </li>
                   ))}
                 </ul>
+                </>
               )}
             </div>
           ) : null}

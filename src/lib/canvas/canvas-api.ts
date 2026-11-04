@@ -148,7 +148,7 @@ export type CanvasRunNodeDetail = {
 export type CanvasRunDetail = {
   id: string;
   canvasId: string;
-  mode: "all" | "selected" | "from" | "retry-failed";
+  mode: "all" | "selected" | "node" | "from" | "retry-failed";
   status:
     | "queued"
     | "running"

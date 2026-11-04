@@ -2276,6 +2276,7 @@ function CanvasEditorInner({
       {tasksOpen ? (
       <CanvasRunningTasksModal
         open={tasksOpen}
+        onRerun={(nodeIds) => prepareRun("node", nodeIds)}
         onClose={() => setTasksOpen(false)}
         canvasId={canvasDocument.id}
         tab={tasksTab}
