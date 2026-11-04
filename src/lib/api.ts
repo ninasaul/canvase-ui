@@ -38,6 +38,9 @@ function remapPortalPath(path: string): string {
   if (path.startsWith("/portal/v1/tasks/")) {
     return path.replace("/portal/v1/tasks/", "/api/tasks/");
   }
+  if (path.startsWith("/portal/v1/agent")) {
+    return path.replace("/portal/v1/agent", "/api/agent");
+  }
   if (path.startsWith("/portal/v1/assets")) {
     return path.replace("/portal/v1/assets", "/api/assets");
   }

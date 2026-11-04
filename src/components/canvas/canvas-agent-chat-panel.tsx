@@ -49,6 +49,8 @@ import {
   type CanvasChatHistoryMessage,
   clearCanvasChatMessages,
   listCanvasChatMessages,
+  listCanvasSkills,
+  readCanvasSkill,
 } from "@/lib/canvas/canvas-api";
 import {
   getChatMediaAccept,
@@ -910,6 +912,15 @@ function CanvasAgentChatPanelInner({
   const [uploading, setUploading] = useState(false);
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
   const [pendingTexts, setPendingTexts] = useState<PendingTextAttachment[]>([]);
+  // "/" picker: choose a skill to run for the next turn.
+  const [pendingSkills, setPendingSkills] = useState<
+    Array<{ id: string; name: string; content: string }>
+  >([]);
+  const [skillCatalog, setSkillCatalog] = useState<
+    Array<{ id: string; name: string; description: string; tags: string[] }>
+  >([]);
+  const [skillQuery, setSkillQuery] = useState<string | null>(null);
+  const [skillIndex, setSkillIndex] = useState(0);
   const [pendingAttachments, setPendingAttachments] = useState<
     ChatAttachment[]
   >([]);
@@ -979,6 +990,41 @@ function CanvasAgentChatPanelInner({
     () => chatModels.find((item) => item.id === modelId),
     [chatModels, modelId],
   );
+  const skillMatches = useMemo(() => {
+    if (skillQuery === null) {
+      return [];
+    }
+    const query = skillQuery.trim().toLowerCase();
+    return skillCatalog.filter(
+      (skill) =>
+        !query ||
+        skill.id.includes(query) ||
+        skill.name.toLowerCase().includes(query) ||
+        skill.tags.some((tag) => tag.toLowerCase().includes(query)),
+    );
+  }, [skillCatalog, skillQuery]);
+
+  const pickSkill = useCallback(
+    async (id: string) => {
+      setSkillQuery(null);
+      setDraft("");
+      try {
+        const detail = await readCanvasSkill(id);
+        setPendingSkills((current) =>
+          current.some((item) => item.id === detail.id)
+            ? current
+            : [
+                ...current,
+                { id: detail.id, name: detail.name, content: detail.content },
+              ],
+        );
+      } catch {
+        toast.danger(messages.canvas.agentChatAttachFailed);
+      }
+    },
+    [messages.canvas.agentChatAttachFailed],
+  );
+
   const mediaProfile = useMemo(
     () => getChatMediaCapabilityProfile(modelId, selectedModel?.vendor),
     [modelId, selectedModel?.vendor],
@@ -1756,7 +1802,18 @@ function CanvasAgentChatPanelInner({
   }
 
   async function handleSend() {
-    const content = draft.trim();
+    const skillBlocks = pendingSkills
+      .map((item) => `[skill ${item.id}]\n执行下面的 skill 指令：\n${item.content}`)
+      .join("\n\n");
+    const textBlocks = pendingTexts
+      .map((item) => {
+        const language = item.name.split(".").pop()?.toLowerCase() ?? "";
+        return `[附件 ${item.name}]\n\`\`\`${language}\n${item.text}\n\`\`\``;
+      })
+      .join("\n\n");
+    const content = [draft.trim(), skillBlocks, textBlocks]
+      .filter(Boolean)
+      .join("\n\n");
     const attachments = pendingAttachments;
     if ((!content && attachments.length === 0) || uploading) {
       return;
@@ -1790,6 +1847,7 @@ function CanvasAgentChatPanelInner({
     setDraft("");
     setPendingAttachments([]);
     setPendingTexts([]);
+    setPendingSkills([]);
     for (const item of attachments) {
       if (item.previewUrl.startsWith("blob:")) {
         URL.revokeObjectURL(item.previewUrl);
@@ -2360,13 +2418,108 @@ function CanvasAgentChatPanelInner({
             ))}
           </div>
         ) : null}
+          {skillQuery !== null && skillMatches.length > 0 ? (
+            <div className="mb-1 max-h-44 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-1 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+              {skillMatches.map((skill, index) => (
+                <button
+                  key={skill.id}
+                  type="button"
+                  className={`flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors ${
+                    index === skillIndex
+                      ? "bg-zinc-100 dark:bg-zinc-800"
+                      : "hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                  }`}
+                  onMouseEnter={() => setSkillIndex(index)}
+                  onClick={() => void pickSkill(skill.id)}
+                >
+                  <span className="text-[11px] font-medium text-zinc-800 dark:text-zinc-100">
+                    /{skill.id}
+                  </span>
+                  <span className="line-clamp-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+                    {skill.description}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {pendingSkills.length > 0 ? (
+            <div className="mb-1 flex flex-wrap gap-1.5">
+              {pendingSkills.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex max-w-[220px] items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-1 text-[10px] text-sky-700 dark:border-sky-500/40 dark:bg-sky-950/40 dark:text-sky-200"
+                >
+                  <span className="shrink-0 font-mono">/</span>
+                  <span className="min-w-0 truncate">{item.id}</span>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded px-0.5 text-sky-500 hover:text-sky-800 dark:hover:text-sky-100"
+                    aria-label={messages.close}
+                    onClick={() =>
+                      setPendingSkills((current) =>
+                        current.filter((entry) => entry.id !== item.id),
+                      )
+                    }
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
           <textarea
             value={draft}
             rows={2}
             placeholder={messages.canvas.agentChatPlaceholder}
             className="w-full resize-none bg-transparent px-1.5 py-1 text-[13px] leading-relaxed text-zinc-800 outline-none placeholder:text-zinc-400 dark:text-zinc-100"
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              const value = event.target.value;
+              setDraft(value);
+              // "/" at the very start opens the skill picker; a space closes it.
+              if (value.startsWith("/") && !value.includes(" ")) {
+                const query = value.slice(1);
+                setSkillQuery(query);
+                setSkillIndex(0);
+                if (skillCatalog.length === 0) {
+                  void listCanvasSkills()
+                    .then(setSkillCatalog)
+                    .catch(() => undefined);
+                }
+              } else if (skillQuery !== null) {
+                setSkillQuery(null);
+              }
+            }}
             onKeyDown={(event) => {
+              if (skillQuery !== null && skillMatches.length > 0) {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setSkillIndex((index) => (index + 1) % skillMatches.length);
+                  return;
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setSkillIndex(
+                    (index) =>
+                      (index - 1 + skillMatches.length) % skillMatches.length,
+                  );
+                  return;
+                }
+                if (event.key === "Enter" && !event.metaKey && !event.ctrlKey) {
+                  event.preventDefault();
+                  const target = skillMatches[skillIndex];
+                  if (target) {
+                    void pickSkill(target.id);
+                  }
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setSkillQuery(null);
+                  return;
+                }
+              }
               // Send with Cmd/Ctrl+Enter; plain Enter keeps inserting a
               // newline so multi-line prompts are easy to write.
               if (

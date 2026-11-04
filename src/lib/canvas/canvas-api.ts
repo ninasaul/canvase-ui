@@ -606,3 +606,32 @@ export async function streamCanvasAgentChat(input: {
     buffer = "";
   }
 }
+
+export type CanvasSkillSummary = {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+};
+
+export type CanvasSkillDetail = CanvasSkillSummary & {
+  content: string;
+  files: string[];
+};
+
+/** Skill catalog for the composer's "/" picker. */
+export async function listCanvasSkills(): Promise<CanvasSkillSummary[]> {
+  const payload = await portalRequest<{ skills: CanvasSkillSummary[] }>(
+    "/portal/v1/agent/skills",
+  );
+  return payload.skills;
+}
+
+/** Full SKILL.md text, loaded when the user picks a skill. */
+export async function readCanvasSkill(
+  name: string,
+): Promise<CanvasSkillDetail> {
+  return portalRequest<CanvasSkillDetail>(
+    `/portal/v1/agent/skills?name=${encodeURIComponent(name)}`,
+  );
+}
