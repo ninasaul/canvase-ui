@@ -76,7 +76,7 @@ export const zhCanvasPlaygroundMessages = {
       "仅支持图片、视频、音频和纯文本文件（不支持 PDF / Office 文档）。",
     agentChatAttachUploading: "上传中…",
     agentChatAttachFailed: "媒体上传失败",
-    agentChatTextTooLarge: "文本文件单个不超过 64KB、合计 160KB",
+    agentChatTextTooLarge: "文本文件单个不超过 1MB、合计 4MB",
     agentChatAttachLimit: "最多 4 个附件",
     agentChatRemoveAttach: "移除附件",
     agentChatThinking: "思考中…",

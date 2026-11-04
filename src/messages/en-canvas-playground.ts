@@ -80,7 +80,7 @@ export const enCanvasPlaygroundMessages = {
       "Only image, video, audio and plain-text files are supported (not PDF / Office documents).",
     agentChatAttachUploading: "Uploading…",
     agentChatAttachFailed: "Media upload failed",
-    agentChatTextTooLarge: "Each text file must be 64KB or smaller (160KB total)",
+    agentChatTextTooLarge: "Each text file must be 1MB or smaller (4MB total)",
     agentChatAttachLimit: "Up to 4 attachments",
     agentChatRemoveAttach: "Remove attachment",
     agentChatThinking: "Thinking…",

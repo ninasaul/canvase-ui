@@ -77,8 +77,8 @@ const TEXT_ATTACHMENT_EXTENSIONS = new Set([
   "txt", "md", "markdown", "json", "csv", "yaml", "yml", "log", "ts", "tsx",
   "js", "jsx", "py", "sql", "html", "css", "xml", "toml", "ini", "sh", "env",
 ]);
-const MAX_TEXT_ATTACHMENT_BYTES = 64 * 1024;
-const MAX_TEXT_TOTAL_BYTES = 160 * 1024;
+const MAX_TEXT_ATTACHMENT_BYTES = 1024 * 1024;
+const MAX_TEXT_TOTAL_BYTES = 4 * 1024 * 1024;
 
 type PendingTextAttachment = { id: string; name: string; text: string };
 
@@ -457,7 +457,7 @@ function AttachmentPreview({
 /** Keep API payload under route message limit after tool expansion. */
 const MAX_API_HISTORY_MESSAGES = 80;
 /** Character budget for one request; older turns are summarized away. */
-const MAX_API_HISTORY_CHARS = 24_000;
+const MAX_API_HISTORY_CHARS = 120_000;
 /** Always keep the tail verbatim, even when it blows the budget. */
 const KEEP_RECENT_MESSAGES = 6;
 /** Start folding once this many messages sit outside the summary. */

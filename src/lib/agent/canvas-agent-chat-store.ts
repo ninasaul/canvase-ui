@@ -22,7 +22,9 @@ export type CanvasChatStoredMessage = {
 
 /** Keep the transcript bounded; oldest rows are pruned on write. */
 const MAX_MESSAGES_PER_CANVAS = 400;
-const MAX_CONTENT_CHARS = 20_000;
+// Large enough for pasted documents: the model context is far bigger than
+// this, and trimming here silently lost attachment text on replay.
+const MAX_CONTENT_CHARS = 400_000;
 
 function normalizeAttachments(value: unknown): CanvasChatAttachment[] | null {
   if (!Array.isArray(value)) {
