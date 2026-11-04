@@ -345,6 +345,7 @@ export async function runCanvasImageNode(options: {
         url: assets.url,
         at: Date.now(),
         requestId: response.id,
+        ...(model ? { model } : {}),
       }),
       requestId: response.id,
       error: undefined,
@@ -629,6 +630,7 @@ export async function runCanvasVideoNode(options: {
         url: assets.url,
         at: Date.now(),
         requestId: response.id,
+        ...(model ? { model } : {}),
       }),
       requestId: response.id,
       error: undefined,
@@ -645,7 +647,9 @@ export async function runCanvasVideoNode(options: {
 }
 
 /** Keeps the last few results so a regeneration can be undone. */
-const MAX_NODE_HISTORY = 5;
+// Kept small on purpose: the graph has a 512 KB write budget and every
+// node carries its own list.
+const MAX_NODE_HISTORY = 10;
 
 function appendNodeHistory(
   previous: CanvasNodeData["history"] | undefined,

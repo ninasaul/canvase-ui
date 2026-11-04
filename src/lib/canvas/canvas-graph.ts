@@ -41,6 +41,8 @@ export type CanvasNodeHistoryEntry = {
   url: string;
   at: number;
   requestId?: string;
+  /** Model that produced this result, shown in the history strip. */
+  model?: string;
 };
 
 export type CanvasNodeData = {

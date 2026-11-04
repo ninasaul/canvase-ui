@@ -149,7 +149,12 @@ export function CanvasNodeInfoModal({
                 <button
                   key={`${entry.at}-${entry.url}`}
                   type="button"
-                  title={new Date(entry.at).toLocaleString()}
+                  title={[
+                    new Date(entry.at).toLocaleString(),
+                    entry.model,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                   className={`h-14 w-14 overflow-hidden rounded-md ring-1 transition-all ${
                     active
                       ? "ring-2 ring-sky-500"
