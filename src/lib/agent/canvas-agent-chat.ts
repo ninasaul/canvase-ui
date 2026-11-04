@@ -203,6 +203,33 @@ function mediaPartForAttachment(
   return null;
 }
 
+/**
+ * Drops image/video/audio parts, keeping the text and the URL catalog. Used
+ * when an upstream rejects multimodal content: the turn still runs, and the
+ * model can reference the attachments by URL through canvas tools.
+ */
+function stripMediaParts(
+  thread: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  return thread.map((message) => {
+    if (!Array.isArray(message.content)) {
+      return message;
+    }
+    const text = (message.content as Array<Record<string, unknown>>)
+      .filter((part) => part.type === "text")
+      .map((part) => String(part.text ?? ""))
+      .join("\n")
+      .trim();
+    return { ...message, content: text };
+  });
+}
+
+function looksLikeMediaRejection(message: string): boolean {
+  return /image|vision|multimodal|content|media|type.*not.*support|unsupported/i.test(
+    message,
+  );
+}
+
 function toOpenAiUserContent(
   text: string,
   attachments: ResolvedAgentChatAttachment[],
@@ -572,6 +599,8 @@ export async function runCanvasAgentChat(input: {
   // Soft step budget only pauses the turn for Continue — never errors the session.
   // Per-turn memory of identical tool calls (P0-2).
   const callsSeen = new Map<string, number>();
+  // One multimodal → text-only retry per turn.
+  let mediaFallbackUsed = false;
   try {
   for (
     let step = 0;
@@ -615,11 +644,17 @@ export async function runCanvasAgentChat(input: {
         input.emit({ type: "done" });
         return;
       }
-      input.emit({
-        type: "error",
-        message:
-          error instanceof Error ? error.message : "Chat completion failed",
-      });
+      const message =
+        error instanceof Error ? error.message : "Chat completion failed";
+      const hasMedia = thread.some((entry) => Array.isArray(entry.content));
+      if (!mediaFallbackUsed && hasMedia && looksLikeMediaRejection(message)) {
+        // The upstream cannot take image/audio parts: retry the same step with
+        // text only, so the attachment still shows up as a URL for canvas tools.
+        mediaFallbackUsed = true;
+        thread.splice(0, thread.length, ...stripMediaParts(thread));
+        continue;
+      }
+      input.emit({ type: "error", message });
       input.emit({ type: "done" });
       return;
     }

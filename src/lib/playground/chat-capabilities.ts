@@ -69,8 +69,11 @@ export function modelSupportsChatImages(
   ) {
     return true;
   }
-  // Conservative default: unknown chat models stay text-only in playground.
-  return false;
+  // Unknown chat models: assume they accept images. New families (gpt-6-*,
+  // kimi-k3, deepseek-v4-*, custom gateway aliases) appear faster than this
+  // list; treating them as text-only silently dropped every attachment. When
+  // an upstream really cannot take images the agent retries without media.
+  return true;
 }
 
 /** Models that accept short video clips in chat (Gemini / omni / some VL). */
