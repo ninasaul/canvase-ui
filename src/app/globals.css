@@ -447,3 +447,13 @@ body {
     animation: none;
   }
 }
+
+/*
+ * Long agent transcripts: skip layout/paint for rows outside the viewport.
+ * Cheaper than a virtual list (no measurement, no scroll maths) and it keeps
+ * Ctrl+F and text selection working, which a windowed list would break.
+ */
+.canvas-chat-list > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
+}

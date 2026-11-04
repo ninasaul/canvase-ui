@@ -1,5 +1,7 @@
 "use client";
 
+import { memo } from "react";
+
 import { isValidElement, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -160,7 +162,7 @@ function normalizeChatMarkdown(content: string): string {
   return content.replace(/^(#{1,6})([^\s#])/gm, "$1 $2");
 }
 
-export function PlaygroundChatMarkdown({
+function PlaygroundChatMarkdownInner({
   content,
   streaming = false,
   compact = false,
@@ -214,3 +216,6 @@ export function StreamingCursor() {
     />
   );
 }
+
+/** Markdown parsing is per message; skip it when nothing changed. */
+export const PlaygroundChatMarkdown = memo(PlaygroundChatMarkdownInner);

@@ -1936,7 +1936,7 @@ function CanvasAgentChatPanelInner({
 
       <div
         ref={listRef}
-        className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 pb-3 pt-1"
+        className="canvas-chat-list min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3 pb-3 pt-1"
       >
         {items.length === 0 ? (
           <div className="px-1 py-3 text-[12px] leading-relaxed text-zinc-500 dark:text-zinc-400">
