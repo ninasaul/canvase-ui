@@ -16,6 +16,7 @@ import {
   Play,
   Plus,
   ShieldWarning,
+  Star,
   Stop,
   Trash,
   WarningCircle,
@@ -164,6 +165,33 @@ const DEFAULT_PANEL_WIDTH = 360;
 const MIN_PANEL_WIDTH = 300;
 const MAX_PANEL_WIDTH = 640;
 const MAX_ATTACHMENTS = 4;
+
+/** Saved prompts per canvas; purely local, so no server round trip. */
+const FAVORITES_KEY = (canvasId: string) =>
+  `canvase.canvas-agent-chat.prompts.${canvasId}`;
+
+function loadPromptFavorites(canvasId: string): string[] {
+  try {
+    const raw = window.localStorage.getItem(FAVORITES_KEY(canvasId));
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string").slice(0, 30)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePromptFavorites(canvasId: string, prompts: string[]): void {
+  try {
+    window.localStorage.setItem(
+      FAVORITES_KEY(canvasId),
+      JSON.stringify(prompts.slice(0, 30)),
+    );
+  } catch {
+    // Storage is best effort (private mode, quota).
+  }
+}
 
 function storageKey(canvasId: string): string {
   return `canvase.canvas-agent-chat.messages.${canvasId}`;
@@ -862,6 +890,10 @@ function CanvasAgentChatPanelInner({
     Record<string, { summary: string; coveredThrough?: string | null }>
   >({});
   const [draft, setDraft] = useState("");
+  const [promptFavorites, setPromptFavorites] = useState<string[]>(() =>
+    loadPromptFavorites(canvasId),
+  );
+  const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [modelId, setModelId] = useState(
     () => loadModelId(canvasId) || defaultModelId || chatModels[0]?.id || "",
   );
@@ -2659,6 +2691,64 @@ function CanvasAgentChatPanelInner({
               {messages.canvas.agentChatSteerHint}
             </p>
           ) : null}
+          {favoritesOpen ? (
+            <div className="mb-1 max-h-48 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-1 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+              <button
+                type="button"
+                className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60"
+                disabled={!draft.trim()}
+                onClick={() => {
+                  const value = draft.trim();
+                  if (!value) {
+                    return;
+                  }
+                  const next = [value, ...promptFavorites.filter((item) => item !== value)];
+                  setPromptFavorites(next);
+                  savePromptFavorites(canvasId, next);
+                }}
+              >
+                <Icon icon={Plus} size={12} />
+                {messages.canvas.agentChatPromptSave}
+              </button>
+              {promptFavorites.length === 0 ? (
+                <p className="px-2 py-1.5 text-[10px] text-zinc-400">
+                  {messages.canvas.agentChatPromptEmpty}
+                </p>
+              ) : (
+                promptFavorites.map((prompt) => (
+                  <div
+                    key={prompt}
+                    className="flex items-center gap-1 rounded-md px-2 py-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                  >
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 truncate text-left text-[11px] text-zinc-700 dark:text-zinc-200"
+                      title={prompt}
+                      onClick={() => {
+                        setDraft(prompt);
+                        setFavoritesOpen(false);
+                      }}
+                    >
+                      {prompt}
+                    </button>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded px-0.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-100"
+                      aria-label={messages.close}
+                      onClick={() => {
+                        const next = promptFavorites.filter((item) => item !== prompt);
+                        setPromptFavorites(next);
+                        savePromptFavorites(canvasId, next);
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : null}
+
           <div className="mt-1 flex items-center gap-1.5">
             <input
               ref={fileInputRef}
@@ -2670,6 +2760,17 @@ function CanvasAgentChatPanelInner({
                 void handlePickFiles(event.target.files);
               }}
             />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0"
+              aria-label={messages.canvas.agentChatPromptFavorites}
+              title={messages.canvas.agentChatPromptFavorites}
+              onClick={() => setFavoritesOpen((open) => !open)}
+            >
+              <Icon icon={Star} size={15} />
+            </Button>
             <Button
               type="button"
               variant="ghost"
