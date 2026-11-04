@@ -517,12 +517,29 @@ function buildApiHistory(
   // Fold already-summarized turns away: the model gets the briefing instead.
   const covered = summary ? Math.max(0, summary.coveredCount) : 0;
   let base = history;
-  if (summary && covered > 0) {
+  // The summary counts conversational turns; tool notes are synthesised as
+  // assistant messages and must not advance the cursor, otherwise it stops
+  // early and the folded turns are sent a second time.
+  const isToolNote = (content: string) => content.startsWith("[tool ");
+  // A summary can outlive the transcript it describes (history pruned or
+  // cleared). Trusting it then cut the whole live conversation away and left
+  // only the stale briefing, so it is ignored in that case.
+  const conversationLength = base.filter(
+    (entry) =>
+      (entry.role === "user" || entry.role === "assistant") &&
+      !isToolNote(entry.content),
+  ).length;
+  const effectiveCovered =
+    covered > 0 && covered <= conversationLength ? covered : 0;
+  if (summary && effectiveCovered > 0) {
     let seen = 0;
     let cut = 0;
-    while (cut < base.length && seen < covered) {
+    while (cut < base.length && seen < effectiveCovered) {
       const entry = base[cut]!;
-      if (entry.role === "user" || entry.role === "assistant") {
+      if (
+        (entry.role === "user" || entry.role === "assistant") &&
+        !isToolNote(entry.content)
+      ) {
         seen += 1;
       }
       cut += 1;

@@ -144,6 +144,12 @@ export async function clearChatMessages(input: {
   const result = await prisma.canvasChatMessage.deleteMany({
     where: { canvasId: input.canvasId, ownerId: input.ownerId },
   });
+  // Summaries are positional ("the first N turns are folded into this text").
+  // Keeping them after the transcript is gone made the next turn fold a
+  // transcript that no longer existed and drop the live conversation.
+  await prisma.canvasChatSummary
+    .deleteMany({ where: { canvasId: input.canvasId } })
+    .catch(() => undefined);
   return result.count;
 }
 
