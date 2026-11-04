@@ -468,6 +468,7 @@ export const zhCanvasPlaygroundMessages = {
     nodeModel: "模型",
     nodeSize: "尺寸",
     nodeGroup: "所属分组",
+    nodeHistoryTitle: "生成历史",
     nodeInfoUrl: "资源地址",
     nodeErrorTitle: "生成失败",
     nodeTaskId: "任务 ID",

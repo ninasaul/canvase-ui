@@ -341,6 +341,11 @@ export async function runCanvasImageNode(options: {
     update(nodeId, {
       status: "succeeded",
       ...withGeneratedAssets({}, assets),
+      history: appendNodeHistory(node.data.history, {
+        url: assets.url,
+        at: Date.now(),
+        requestId: response.id,
+      }),
       requestId: response.id,
       error: undefined,
       finishedAt: Date.now(),
@@ -620,6 +625,11 @@ export async function runCanvasVideoNode(options: {
     update(nodeId, {
       status: "succeeded",
       ...withGeneratedAssets({}, assets),
+      history: appendNodeHistory(node.data.history, {
+        url: assets.url,
+        at: Date.now(),
+        requestId: response.id,
+      }),
       requestId: response.id,
       error: undefined,
       finishedAt: Date.now(),
@@ -632,4 +642,15 @@ export async function runCanvasVideoNode(options: {
     });
     throw error;
   }
+}
+
+/** Keeps the last few results so a regeneration can be undone. */
+const MAX_NODE_HISTORY = 5;
+
+function appendNodeHistory(
+  previous: CanvasNodeData["history"] | undefined,
+  entry: NonNullable<CanvasNodeData["history"]>[number],
+): NonNullable<CanvasNodeData["history"]> {
+  const list = [...(previous ?? []), entry];
+  return list.slice(-MAX_NODE_HISTORY);
 }

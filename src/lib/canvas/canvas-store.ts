@@ -56,6 +56,7 @@ export type CanvasStore = {
     thumbnailUrl?: string,
   ) => void;
   updateNodeData: (id: string, patch: Partial<CanvasNodeData>) => void;
+  restoreNodeHistory: (id: string, at: number) => void;
   setNodeSize: (id: string, width: number, height: number) => void;
   setNodePosition: (id: string, x: number, y: number) => void;
   selectNode: (id: string) => void;
@@ -311,6 +312,31 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       status: "succeeded",
     };
     set({ nodes: [...get().nodes, node] });
+  },
+
+  /** Re-applies one stored result (from data.history) as the current one. */
+  restoreNodeHistory: (id, at) => {
+    const node = get().nodes.find((item) => item.id === id);
+    const entry = node?.data.history?.find((item) => item.at === at);
+    if (!entry) {
+      return;
+    }
+    set({
+      nodes: get().nodes.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              data: {
+                ...item.data,
+                url: entry.url,
+                urls: [entry.url],
+                status: "succeeded",
+                error: undefined,
+              },
+            }
+          : item,
+      ),
+    });
   },
 
   updateNodeData: (id, patch) => {

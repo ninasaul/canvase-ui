@@ -472,6 +472,7 @@ export const enCanvasPlaygroundMessages = {
     nodeModel: "Model",
     nodeSize: "Size",
     nodeGroup: "Group",
+    nodeHistoryTitle: "Generation history",
     nodeInfoUrl: "Asset URL",
     nodeErrorTitle: "Generation failed",
     nodeTaskId: "Task ID",

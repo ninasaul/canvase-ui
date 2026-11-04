@@ -57,6 +57,9 @@ export function CanvasNodeInfoModal({
   const parent = useCanvasStore((state) =>
     node?.parentId ? getNodeById(state.nodes, node.parentId) : undefined,
   );
+  const restoreNodeHistory = useCanvasStore(
+    (state) => state.restoreNodeHistory,
+  );
 
   if (!node) {
     return null;
@@ -133,6 +136,50 @@ export function CanvasNodeInfoModal({
           </div>
         ))}
       </dl>
+
+      {(node.data.history?.length ?? 0) > 0 ? (
+        <section className="mt-3">
+          <h3 className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+            {messages.canvas.nodeHistoryTitle}
+          </h3>
+          <div className="flex flex-wrap gap-1.5">
+            {[...(node.data.history ?? [])].reverse().map((entry) => {
+              const active = entry.url === node.data.url;
+              return (
+                <button
+                  key={`${entry.at}-${entry.url}`}
+                  type="button"
+                  title={new Date(entry.at).toLocaleString()}
+                  className={`h-14 w-14 overflow-hidden rounded-md ring-1 transition-all ${
+                    active
+                      ? "ring-2 ring-sky-500"
+                      : "ring-zinc-200 hover:ring-sky-300 dark:ring-zinc-700"
+                  }`}
+                  onClick={() => restoreNodeHistory(node.id, entry.at)}
+                >
+                  {node.type === "video" ? (
+                    <video
+                      src={entry.url}
+                      className="h-full w-full object-cover"
+                      muted
+                      playsInline
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element -- canvas media preview
+                    <img
+                      src={entry.url}
+                      alt=""
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
     </Modal>
   );
 }

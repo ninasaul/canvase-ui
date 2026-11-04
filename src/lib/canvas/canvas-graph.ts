@@ -33,6 +33,16 @@ export type CanvasMediaReference = {
   assetId?: string;
 };
 
+/**
+ * One past result. Deliberately compact: the graph has a 512 KB write budget,
+ * so a history entry stores only what is needed to restore the node.
+ */
+export type CanvasNodeHistoryEntry = {
+  url: string;
+  at: number;
+  requestId?: string;
+};
+
 export type CanvasNodeData = {
   label?: string;
   /** Text node content / generated text. */
@@ -53,6 +63,8 @@ export type CanvasNodeData = {
   /** Manual references configured in the generation dock. */
   references?: CanvasMediaReference[];
   params?: Record<string, unknown>;
+  /** Previous results, newest last. Kept so a regenerated node is reversible. */
+  history?: CanvasNodeHistoryEntry[];
   status?: CanvasNodeRunStatus;
   requestId?: string;
   taskId?: string;
