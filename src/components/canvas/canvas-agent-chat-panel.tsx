@@ -2302,6 +2302,8 @@ function CanvasAgentChatPanelInner({
           </div>
         ) : null}
 
+        <div className="rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+
         {pendingTexts.length > 0 ? (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {pendingTexts.map((item) => (
@@ -2354,8 +2356,6 @@ function CanvasAgentChatPanelInner({
             ))}
           </div>
         ) : null}
-
-        <div className="rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
           <textarea
             value={draft}
             rows={2}
