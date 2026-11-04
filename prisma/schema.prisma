@@ -111,8 +111,12 @@ model CanvasChatSummary {
   canvas       Canvas   @relation(fields: [canvasId], references: [id], onDelete: Cascade)
   sessionId    String
   summary      String
-  /// How many user/assistant messages are covered by this summary.
+  /// Legacy: how many user/assistant messages are covered. Kept for reads of
+  /// older rows; new writes use `coveredThrough`.
   coveredCount Int      @default(0)
+  /// Everything at or before this timestamp is folded into the summary. A
+  /// watermark survives pruning, clearing and partial loads, unlike a count.
+  coveredThrough DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

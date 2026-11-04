@@ -15,6 +15,8 @@ const bodySchema = z.object({
   sessionId: z.string().trim().min(1).max(80),
   model: z.string().trim().min(1).max(200),
   vendor: z.string().trim().max(120).optional(),
+  /** Timestamp of the newest message folded into this summary (watermark). */
+  coveredThrough: z.string().datetime().optional(),
   /** Oldest slice of the conversation, already trimmed by the client. */
   messages: z
     .array(
@@ -117,7 +119,7 @@ export async function POST(request: Request) {
         sessionId: parsed.data.sessionId,
       },
     },
-    select: { summary: true, coveredCount: true },
+    select: { summary: true, coveredCount: true, coveredThrough: true },
   });
 
   // Compaction can run repeatedly: fold the previous summary into the new one
@@ -126,6 +128,17 @@ export async function POST(request: Request) {
     summary = `${existing.summary}\n\n[more recent]\n${summary}`.slice(-4_000);
   }
   const coveredCount = (existing?.coveredCount ?? 0) + covered;
+  // The watermark only moves forward; a late or out-of-order fold never pulls
+  // it back over turns that are still live.
+  const incomingThrough = parsed.data.coveredThrough
+    ? new Date(parsed.data.coveredThrough)
+    : null;
+  const coveredThrough =
+    incomingThrough && existing?.coveredThrough
+      ? incomingThrough > existing.coveredThrough
+        ? incomingThrough
+        : existing.coveredThrough
+      : (incomingThrough ?? existing?.coveredThrough ?? null);
 
   await prisma.canvasChatSummary.upsert({
     where: {
@@ -139,9 +152,10 @@ export async function POST(request: Request) {
       sessionId: parsed.data.sessionId,
       summary,
       coveredCount,
+      coveredThrough,
     },
-    update: { summary, coveredCount },
+    update: { summary, coveredCount, coveredThrough },
   });
 
-  return jsonOk({ summary, coveredCount });
+  return jsonOk({ summary, coveredCount, coveredThrough });
 }

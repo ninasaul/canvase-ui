@@ -443,7 +443,11 @@ const COMPACT_KEEP_RECENT = 24;
 /** Flatten UI transcript into API history (tools become assistant notes). */
 function buildApiHistory(
   items: UiMessage[],
-  summary?: { summary: string; coveredCount: number },
+  summary?: {
+    summary: string;
+    coveredCount: number;
+    coveredThrough?: string | null;
+  },
 ): Array<{
   role: "user" | "assistant";
   content: string;
@@ -515,8 +519,39 @@ function buildApiHistory(
     }
   }
   // Fold already-summarized turns away: the model gets the briefing instead.
-  const covered = summary ? Math.max(0, summary.coveredCount) : 0;
+  // Watermark first: everything at or before `coveredThrough` is folded. It
+  // does not depend on how many messages happen to be loaded, so pruning or a
+  // partial load can no longer mis-place the cut.
+  const watermark = summary?.coveredThrough
+    ? Date.parse(summary.coveredThrough)
+    : Number.NaN;
   let base = history;
+  if (summary && Number.isFinite(watermark)) {
+    const cutItemIndex = items.findIndex((item) => {
+      const at = "createdAt" in item ? item.createdAt : undefined;
+      const stamp = at ? Date.parse(at) : Number.NaN;
+      return Number.isFinite(stamp) && stamp > watermark;
+    });
+    const conversationalBefore = (limit: number) =>
+      items
+        .slice(0, limit < 0 ? items.length : limit)
+        .filter((entry) => entry.kind === "user" || entry.kind === "assistant")
+        .length;
+    if (cutItemIndex > 0) {
+      base = [
+        {
+          role: "assistant" as const,
+          content: `[summary of the earlier conversation]\n${summary.summary}`,
+        },
+        ...history.slice(conversationalBefore(cutItemIndex)),
+      ];
+    }
+  }
+
+  const covered =
+    summary && !Number.isFinite(watermark)
+      ? Math.max(0, summary.coveredCount)
+      : 0;
   // The summary counts conversational turns; tool notes are synthesised as
   // assistant messages and must not advance the cursor, otherwise it stops
   // early and the folded turns are sent a second time.
@@ -1285,12 +1320,20 @@ function CanvasAgentChatPanelInner({
         .slice(0, 60);
       if (toFold.length >= 8) {
         try {
+          // Watermark = timestamp of the newest turn being folded. Everything
+          // at or before it is considered covered from now on.
+          const foldedSource = foldable.slice(0, foldCount);
+          const coveredThrough = [...foldedSource]
+            .reverse()
+            .map((item) => ("createdAt" in item ? item.createdAt : undefined))
+            .find((value): value is string => Boolean(value));
           const compacted = await summarizeCanvasChat({
             canvasId,
             sessionId: sessionIdForTurn,
             model: modelId,
             vendor: selectedModel?.vendor,
             messages: toFold,
+            ...(coveredThrough ? { coveredThrough } : {}),
           });
           effectiveSummary = compacted;
           setSummaries((current) => ({

@@ -372,6 +372,8 @@ export type CanvasChatSummary = {
   sessionId: string;
   summary: string;
   coveredCount: number;
+  /** Everything at or before this timestamp is folded into `summary`. */
+  coveredThrough?: string | null;
 };
 
 export async function listCanvasChatMessages(
@@ -398,20 +400,28 @@ export async function summarizeCanvasChat(input: {
   model: string;
   vendor?: string;
   messages: Array<{ role: "user" | "assistant"; content: string }>;
-}): Promise<{ summary: string; coveredCount: number }> {
-  return portalRequest<{ summary: string; coveredCount: number }>(
-    "/api/agent/summarize",
-    {
-      method: "POST",
-      body: JSON.stringify({
-        canvasId: input.canvasId,
-        sessionId: input.sessionId,
-        model: input.model,
-        ...(input.vendor ? { vendor: input.vendor } : {}),
-        messages: input.messages,
-      }),
-    },
-  );
+  /** Timestamp of the newest message folded into this summary. */
+  coveredThrough?: string;
+}): Promise<{
+  summary: string;
+  coveredCount: number;
+  coveredThrough?: string | null;
+}> {
+  return portalRequest<{
+    summary: string;
+    coveredCount: number;
+    coveredThrough?: string | null;
+  }>("/api/agent/summarize", {
+    method: "POST",
+    body: JSON.stringify({
+      canvasId: input.canvasId,
+      sessionId: input.sessionId,
+      model: input.model,
+      ...(input.vendor ? { vendor: input.vendor } : {}),
+      messages: input.messages,
+      ...(input.coveredThrough ? { coveredThrough: input.coveredThrough } : {}),
+    }),
+  });
 }
 
 export async function clearCanvasChatMessages(canvasId: string): Promise<void> {

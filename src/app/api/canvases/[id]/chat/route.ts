@@ -34,7 +34,12 @@ export async function GET(request: Request, context: RouteContext) {
 
   const summaries = await prisma.canvasChatSummary.findMany({
     where: { canvasId: id },
-    select: { sessionId: true, summary: true, coveredCount: true },
+    select: {
+      sessionId: true,
+      summary: true,
+      coveredCount: true,
+      coveredThrough: true,
+    },
   });
 
   return jsonOk({ messages, summaries });
