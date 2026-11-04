@@ -11,6 +11,7 @@ import {
   Cpu,
   CircleNotch,
   FileAudio,
+  FileText,
   Paperclip,
   Play,
   Plus,
@@ -63,7 +64,31 @@ const AGENT_MEDIA_KINDS: readonly ChatMediaKind[] = [
   "video",
   "audio",
 ];
-const AGENT_MEDIA_ACCEPT = getChatMediaAccept(AGENT_MEDIA_KINDS);
+const AGENT_MEDIA_ACCEPT = [
+  getChatMediaAccept(AGENT_MEDIA_KINDS),
+  // Plain text / notes / source files are read in the browser and merged into
+  // the prompt, so they need no upload.
+  ".txt,.md,.markdown,.json,.csv,.yaml,.yml,.log,.ts,.tsx,.js,.jsx,.py,.sql,.html,.css,.xml,.toml,.ini,.sh,.env",
+  "text/*",
+].join(",");
+
+/** File extensions treated as plain text attachments. */
+const TEXT_ATTACHMENT_EXTENSIONS = new Set([
+  "txt", "md", "markdown", "json", "csv", "yaml", "yml", "log", "ts", "tsx",
+  "js", "jsx", "py", "sql", "html", "css", "xml", "toml", "ini", "sh", "env",
+]);
+const MAX_TEXT_ATTACHMENT_BYTES = 64 * 1024;
+const MAX_TEXT_TOTAL_BYTES = 160 * 1024;
+
+type PendingTextAttachment = { id: string; name: string; text: string };
+
+function isTextAttachmentFile(file: File): boolean {
+  if (file.type.startsWith("text/")) {
+    return true;
+  }
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return TEXT_ATTACHMENT_EXTENSIONS.has(ext);
+}
 
 type ChatAttachment = {
   id: string;
@@ -884,6 +909,7 @@ function CanvasAgentChatPanelInner({
   const [continuePending, setContinuePending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
+  const [pendingTexts, setPendingTexts] = useState<PendingTextAttachment[]>([]);
   const [pendingAttachments, setPendingAttachments] = useState<
     ChatAttachment[]
   >([]);
@@ -1194,11 +1220,43 @@ function CanvasAgentChatPanelInner({
       return;
     }
     const picked = Array.from(fileList);
+    // Text files are read locally and folded into the prompt; media files are
+    // uploaded. Both share the per-message attachment budget.
+    const textFiles = picked.filter(isTextAttachmentFile);
+    if (textFiles.length > 0) {
+      const accepted: PendingTextAttachment[] = [];
+      let budget = MAX_TEXT_TOTAL_BYTES;
+      for (const file of textFiles) {
+        if (file.size > MAX_TEXT_ATTACHMENT_BYTES || file.size > budget) {
+          toast.danger(messages.canvas.agentChatAttachLimit);
+          continue;
+        }
+        try {
+          const text = await file.text();
+          budget -= file.size;
+          accepted.push({ id: newId("text"), name: file.name, text });
+        } catch {
+          toast.danger(messages.canvas.agentChatAttachFailed);
+        }
+      }
+      if (accepted.length > 0) {
+        setPendingTexts((current) => [...current, ...accepted]);
+      }
+    }
+
     const files = picked
-      .filter((file) => inferChatMediaKind(file.type) !== null)
-      .slice(0, remaining);
+      .filter(
+        (file) =>
+          inferChatMediaKind(file.type) !== null && !isTextAttachmentFile(file),
+      )
+      .slice(0, Math.max(0, remaining - textFiles.length));
     if (files.length === 0) {
-      toast.danger(messages.canvas.agentChatAttachUnsupported);
+      if (textFiles.length === 0) {
+        toast.danger(messages.canvas.agentChatAttachUnsupported);
+      }
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
       return;
     }
 
@@ -1720,6 +1778,7 @@ function CanvasAgentChatPanelInner({
 
     setDraft("");
     setPendingAttachments([]);
+    setPendingTexts([]);
     for (const item of attachments) {
       if (item.previewUrl.startsWith("blob:")) {
         URL.revokeObjectURL(item.previewUrl);
@@ -2232,6 +2291,32 @@ function CanvasAgentChatPanelInner({
                   </button>
                 ) : null}
               </span>
+            ))}
+          </div>
+        ) : null}
+
+        {pendingTexts.length > 0 ? (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {pendingTexts.map((item) => (
+              <div
+                key={item.id}
+                className="flex max-w-[220px] items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-1.5 py-1 text-[10px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+              >
+                <Icon icon={FileText} size={12} className="shrink-0" />
+                <span className="min-w-0 truncate">{item.name}</span>
+                <button
+                  type="button"
+                  className="shrink-0 rounded px-0.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-100"
+                  aria-label={messages.close}
+                  onClick={() =>
+                    setPendingTexts((current) =>
+                      current.filter((entry) => entry.id !== item.id),
+                    )
+                  }
+                >
+                  ×
+                </button>
+              </div>
             ))}
           </div>
         ) : null}
