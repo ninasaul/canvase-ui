@@ -15,6 +15,8 @@ export const enCanvasPlaygroundMessages = {
     skillsInsert: "Insert into chat",
     skillsEmpty: "No built-in skills (check the skills/ directory)",
     skillsFiles: "Reference files",
+    skillsSelectHint: "Pick a skill to read it",
+    skillsTruncated: "Preview limited to {shown} of {total} characters; the model reads the full text after inserting",
     skillsNoMatch: "No matching skill",
     settingsTabStorage: "Storage",
     modelSettings: "Models",

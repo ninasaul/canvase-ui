@@ -1,6 +1,7 @@
 ---
 name: image-to-video
 description: Animate a still image on the canvas — pick the anchor frame, write motion prompts that respect the frame, set duration and ratio, then run. Use for 图生视频 / 让这张图动起来 / 首帧动画 / 运镜.
+description_zh: 图生视频：首帧、运镜、时长与比例
 tags: canvas, video, animation, image
 ---
 

@@ -608,6 +608,7 @@ export type CanvasSkillSummary = {
   id: string;
   name: string;
   description: string;
+  descriptionZh?: string;
   tags: string[];
 };
 

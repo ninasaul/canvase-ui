@@ -150,7 +150,7 @@ export function CanvasSettingsModal({
           size="sm"
           onClick={() => setSettingsOpen(false)}
         >
-          {messages.canvas.cancel}
+          {settingsTab === "skills" ? messages.close : messages.canvas.cancel}
         </Button>
         {settingsTab === "storage" ? (
           <Button
@@ -166,6 +166,7 @@ export function CanvasSettingsModal({
               : messages.canvas.storageTest}
           </Button>
         ) : null}
+        {settingsTab === "skills" ? null : (
         <Button
           variant="primary"
           size="sm"
@@ -176,6 +177,7 @@ export function CanvasSettingsModal({
         >
           {settingsSaving ? messages.loading : messages.canvas.saveSettings}
         </Button>
+        )}
       </div>
     }
   >

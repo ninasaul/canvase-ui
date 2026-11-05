@@ -15,6 +15,8 @@ export const zhCanvasPlaygroundMessages = {
     skillsInsert: "插入对话",
     skillsEmpty: "暂无内置技能（检查 skills/ 目录）",
     skillsFiles: "引用文件",
+    skillsSelectHint: "选择左侧技能查看详情",
+    skillsTruncated: "仅预览前 {shown} 字，共 {total} 字；插入后模型可读全文",
     skillsNoMatch: "没有匹配的技能",
     settingsTabStorage: "存储",
     modelSettings: "模型配置",

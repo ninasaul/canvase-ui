@@ -1,6 +1,7 @@
 ---
 name: storyboard-from-script
 description: Turn a script, outline or idea into a storyboard on the canvas — split shots, write a first-frame prompt per shot, wire the image chain, optionally add video nodes. Use for 剧本转分镜 / 拆镜头 / 做故事板 / 分镜脚本.
+description_zh: 剧本转分镜：拆镜头、首帧提示词、串联
 tags: canvas, storyboard, script, image, video
 ---
 

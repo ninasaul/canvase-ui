@@ -1,11 +1,16 @@
 "use client";
 
-import { ArrowSquareOut, MagnifyingGlass, PuzzlePiece } from "@phosphor-icons/react";
-import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowSquareOut,
+  CaretDown,
+  MagnifyingGlass,
+  PuzzlePiece,
+} from "@phosphor-icons/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { PlaygroundChatMarkdown } from "@/components/playground/playground-chat-markdown";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { PlaygroundChatMarkdown } from "@/components/playground/playground-chat-markdown";
 import {
   listCanvasSkills,
   readCanvasSkill,
@@ -14,9 +19,19 @@ import {
 } from "@/lib/canvas/canvas-api";
 import { messages } from "@/messages";
 
+/** Only the head of a long SKILL.md is rendered; the model still gets it all. */
+const PREVIEW_LIMIT = 6_000;
+
+function skillText(skill: CanvasSkillSummary | CanvasSkillDetail): string {
+  return skill.descriptionZh?.trim() || skill.description;
+}
+
 /**
  * Read-only gallery of the built-in skills. Skills ship with the code, so this
  * panel only browses them and hands the chosen one to the agent composer.
+ *
+ * Layout: the list row itself selects a skill, the detail column fills the
+ * dialog height, and insert works in one click (load then hand over).
  */
 export function SkillsSettingsTab({
   onInsert,
@@ -28,8 +43,13 @@ export function SkillsSettingsTab({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<CanvasSkillDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailCache, setDetailCache] = useState<
+    Record<string, CanvasSkillDetail>
+  >({});
+  const [detailLoading, setDetailLoading] = useState<string | null>(null);
+  const [inserting, setInserting] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
+  const requestedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +57,7 @@ export function SkillsSettingsTab({
       .then((list) => {
         if (!cancelled) {
           setSkills(list);
+          setActiveId((current) => current ?? list[0]?.id ?? null);
         }
       })
       .catch(() => {
@@ -54,32 +75,24 @@ export function SkillsSettingsTab({
     };
   }, []);
 
+  // Load the selected skill once. The in-flight guard lives in a ref: keying it
+  // on state re-ran the effect, cancelled the request and looped forever.
   useEffect(() => {
-    if (!activeId) {
-      setDetail(null);
+    if (!activeId || requestedRef.current.has(activeId)) {
       return;
     }
-    let cancelled = false;
-    setDetailLoading(true);
+    requestedRef.current.add(activeId);
+    setDetailLoading(activeId);
     void readCanvasSkill(activeId)
-      .then((next) => {
-        if (!cancelled) {
-          setDetail(next);
-        }
+      .then((detail) => {
+        setDetailCache((current) => ({ ...current, [detail.id]: detail }));
       })
       .catch(() => {
-        if (!cancelled) {
-          setDetail(null);
-        }
+        requestedRef.current.delete(activeId);
       })
       .finally(() => {
-        if (!cancelled) {
-          setDetailLoading(false);
-        }
+        setDetailLoading((current) => (current === activeId ? null : current));
       });
-    return () => {
-      cancelled = true;
-    };
   }, [activeId]);
 
   const filtered = useMemo(() => {
@@ -91,14 +104,33 @@ export function SkillsSettingsTab({
       (skill) =>
         skill.id.includes(needle) ||
         skill.name.toLowerCase().includes(needle) ||
+        skillText(skill).toLowerCase().includes(needle) ||
         skill.tags.some((tag) => tag.toLowerCase().includes(needle)),
     );
   }, [query, skills]);
 
+  const detail = activeId ? detailCache[activeId] : undefined;
+
+  // One click: load (if needed) then insert. Waiting for a second click was
+  // the main "nothing happens" complaint.
+  async function insertSkill(skill: { id: string }) {
+    if (inserting) {
+      return;
+    }
+    setInserting(true);
+    try {
+      const next = detailCache[skill.id] ?? (await readCanvasSkill(skill.id));
+      setDetailCache((current) => ({ ...current, [next.id]: next }));
+      onInsert(next);
+    } finally {
+      setInserting(false);
+    }
+  }
+
   return (
-    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-      <section className="min-w-0">
-        <label className="mb-2 flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-900">
+    <div className="grid h-[460px] gap-3 md:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+      <section className="flex min-h-0 min-w-0 flex-col">
+        <label className="mb-2 flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-900">
           <Icon icon={MagnifyingGlass} size={13} className="text-zinc-400" />
           <input
             value={query}
@@ -108,126 +140,162 @@ export function SkillsSettingsTab({
           />
         </label>
 
-        {loading ? (
-          <p className="py-6 text-center text-[11px] text-zinc-400">
-            {messages.loading}
-          </p>
-        ) : error ? (
-          <p className="py-6 text-center text-[11px] text-red-500">{error}</p>
-        ) : filtered.length === 0 ? (
-          <p className="py-6 text-center text-[11px] text-zinc-400">
-            {skills.length === 0
-              ? messages.canvas.skillsEmpty
-              : messages.canvas.skillsNoMatch}
-          </p>
-        ) : (
-          <ul className="space-y-1">
-            {filtered.map((skill) => {
-              const active = skill.id === activeId;
-              return (
-                <li key={skill.id}>
-                  <div
-                    className={`rounded-lg border px-2.5 py-2 transition-colors ${
-                      active
-                        ? "border-sky-300 bg-sky-50/60 dark:border-sky-500/40 dark:bg-sky-950/30"
-                        : "border-zinc-200 dark:border-zinc-700"
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {loading ? (
+            <p className="py-6 text-center text-[11px] text-zinc-400">
+              {messages.loading}
+            </p>
+          ) : error ? (
+            <p className="py-6 text-center text-[11px] text-red-500">{error}</p>
+          ) : filtered.length === 0 ? (
+            <p className="py-6 text-center text-[11px] text-zinc-400">
+              {skills.length === 0
+                ? messages.canvas.skillsEmpty
+                : messages.canvas.skillsNoMatch}
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {filtered.map((skill) => {
+                const active = skill.id === activeId;
+                return (
+                  <li key={skill.id}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-pressed={active}
+                      onClick={() => setActiveId(skill.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setActiveId(skill.id);
+                        }
+                      }}
+                      className={`group flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2 transition-colors ${
+                        active
+                          ? "border-sky-300 bg-sky-50/70 dark:border-sky-500/40 dark:bg-sky-950/30"
+                          : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/50"
+                      }`}
+                    >
                       <Icon
                         icon={PuzzlePiece}
                         size={14}
-                        className="mt-0.5 shrink-0 text-zinc-400"
+                        className={`mt-0.5 shrink-0 ${
+                          active ? "text-sky-500" : "text-zinc-400"
+                        }`}
                       />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-xs font-medium text-zinc-800 dark:text-zinc-100">
                           {skill.name}
                         </p>
-                        <p className="mt-0.5 line-clamp-2 text-[10px] text-zinc-500 dark:text-zinc-400">
-                          {skill.description}
-                        </p>
-                        {skill.tags.length > 0 ? (
-                          <p className="mt-1 flex flex-wrap gap-1">
-                            {skill.tags.map((tag) => (
-                              <span
-                                key={tag}
-                                className="rounded bg-zinc-100 px-1 text-[9px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
-                              >
-                                {tag}
-                              </span>
-                            ))}
+                        {skill.descriptionZh ? (
+                          <p className="mt-0.5 line-clamp-1 text-[10px] text-zinc-600 dark:text-zinc-300">
+                            {skill.descriptionZh}
                           </p>
                         ) : null}
+                        <p
+                          className={`mt-0.5 text-[10px] text-zinc-400 ${
+                            skill.descriptionZh ? "line-clamp-1" : "line-clamp-2"
+                          }`}
+                        >
+                          {skill.description}
+                        </p>
                       </div>
-                    </div>
-                    <div className="mt-1.5 flex justify-end gap-1.5">
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        onClick={() => setActiveId(active ? null : skill.id)}
-                      >
-                        {messages.canvas.skillsPreview}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        disabled={detailLoading || detail?.id !== skill.id}
-                        onClick={() => {
-                          if (detail?.id === skill.id) {
-                            onInsert(detail);
-                          } else {
-                            setActiveId(skill.id);
-                          }
+                        className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                        aria-label={messages.canvas.skillsInsert}
+                        disabled={inserting}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void insertSkill(skill);
                         }}
                       >
                         <Icon icon={ArrowSquareOut} size={12} />
-                        {messages.canvas.skillsInsert}
                       </Button>
                     </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       </section>
 
-      <section className="min-w-0 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
-        {detailLoading ? (
-          <p className="py-6 text-center text-[11px] text-zinc-400">
-            {messages.loading}
-          </p>
-        ) : detail ? (
-          <div className="max-h-[360px] overflow-y-auto">
-            <PlaygroundChatMarkdown
-              content={detail.content.slice(0, 4_000)}
-              compact
-              className="text-[11px] leading-relaxed text-zinc-700 dark:text-zinc-200"
-            />
-            {detail.files.length > 0 ? (
-              <div className="mt-3 border-t border-zinc-100 pt-2 dark:border-zinc-800">
-                <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
-                  {messages.canvas.skillsFiles}
+      <section className="flex min-h-0 min-w-0 flex-col rounded-lg border border-zinc-200 dark:border-zinc-700">
+        {detail ? (
+          <>
+            <header className="flex shrink-0 items-center gap-2 border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium text-zinc-800 dark:text-zinc-100">
+                  {detail.name}
                 </p>
-                <ul className="space-y-0.5">
-                  {detail.files.map((file) => (
-                    <li
-                      key={file}
-                      className="truncate font-mono text-[10px] text-zinc-500"
-                    >
-                      {file}
-                    </li>
-                  ))}
-                </ul>
+                <p className="truncate text-[10px] text-zinc-400">
+                  {skillText(detail)}
+                </p>
               </div>
-            ) : null}
-          </div>
+              {detail.files.length > 0 ? (
+                <div className="relative shrink-0">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFilesOpen((open) => !open)}
+                  >
+                    {messages.canvas.skillsFiles} ({detail.files.length})
+                    <Icon icon={CaretDown} size={10} />
+                  </Button>
+                  {filesOpen ? (
+                    <div className="absolute right-0 top-full z-10 mt-1 max-h-48 w-64 overflow-y-auto rounded-lg border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                      {detail.files.map((file) => (
+                        <p
+                          key={file}
+                          className="truncate rounded px-2 py-1 font-mono text-[10px] text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                        >
+                          {file}
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="shrink-0"
+                disabled={inserting}
+                onClick={() => void insertSkill(detail)}
+              >
+                <Icon icon={ArrowSquareOut} size={12} />
+                {inserting ? messages.loading : messages.canvas.skillsInsert}
+              </Button>
+            </header>
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+              <PlaygroundChatMarkdown
+                content={detail.content.slice(0, PREVIEW_LIMIT)}
+                compact
+                className="text-[11px] leading-relaxed text-zinc-700 dark:text-zinc-200"
+              />
+              {detail.content.length > PREVIEW_LIMIT ? (
+                <p className="mt-2 rounded bg-zinc-50 px-2 py-1 text-[10px] text-zinc-400 dark:bg-zinc-800/60">
+                  {messages.canvas.skillsTruncated
+                    .replace("{shown}", String(PREVIEW_LIMIT))
+                    .replace("{total}", String(detail.content.length))}
+                </p>
+              ) : null}
+            </div>
+          </>
         ) : (
-          <p className="py-10 text-center text-[11px] text-zinc-400">
-            {messages.canvas.skillsPreview}
-          </p>
+          <div className="flex flex-1 flex-col items-center justify-center gap-1.5 text-zinc-400">
+            <Icon icon={PuzzlePiece} size={22} />
+            <p className="text-[11px]">
+              {detailLoading
+                ? messages.loading
+                : messages.canvas.skillsSelectHint}
+            </p>
+          </div>
         )}
       </section>
     </div>

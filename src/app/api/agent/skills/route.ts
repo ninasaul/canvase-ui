@@ -37,6 +37,7 @@ export async function GET(request: Request) {
         id: skill.id,
         name: skill.name,
         description: skill.description,
+        ...(skill.descriptionZh ? { descriptionZh: skill.descriptionZh } : {}),
         tags: skill.tags,
       })),
     });

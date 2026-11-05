@@ -1,6 +1,7 @@
 ---
 name: character-sheet
 description: Build a consistent character sheet on the canvas — one anchor portrait plus turnaround views and detail crops, all sharing one identity paragraph. Use for 角色设定图 / 三视图 / 人物设定 / 角色一致性.
+description_zh: 角色设定图：锚点、三视图与细节，保证人物一致
 tags: canvas, character, consistency, image
 ---
 

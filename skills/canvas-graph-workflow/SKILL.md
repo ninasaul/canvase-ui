@@ -1,6 +1,7 @@
 ---
 name: canvas-graph-workflow
 description: How to compose, edit and run Canvase canvas graphs safely — node types, edge roles, run modes, and version discipline.
+description_zh: 画布建图、改图与运行的通用纪律
 tags: canvas, graph, workflow, generation
 ---
 

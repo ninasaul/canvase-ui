@@ -35,6 +35,8 @@ export type CanvasSkill = {
   id: string;
   name: string;
   description: string;
+  /** Optional Chinese description for the UI; the model still reads `description`. */
+  descriptionZh?: string;
   tags: string[];
   /** Absolute directory, never exposed to clients. */
   dir: string;
@@ -175,6 +177,9 @@ export async function listSkills(): Promise<CanvasSkill[]> {
       id: entry.name,
       name: data.name?.trim() || entry.name,
       description: data.description?.trim() || firstParagraph(body),
+      ...(data.description_zh?.trim()
+        ? { descriptionZh: data.description_zh.trim() }
+        : {}),
       tags: parseTags(data.tags),
       dir: skillDir,
     });
@@ -269,6 +274,7 @@ export async function readSkill(input: {
       id: skill.id,
       name: skill.name,
       description: skill.description,
+      ...(skill.descriptionZh ? { descriptionZh: skill.descriptionZh } : {}),
       tags: skill.tags,
       content,
       files: [requested],
@@ -284,6 +290,7 @@ export async function readSkill(input: {
     id: skill.id,
     name: skill.name,
     description: skill.description,
+    ...(skill.descriptionZh ? { descriptionZh: skill.descriptionZh } : {}),
     tags: skill.tags,
     content: body.trim(),
     files: await listSkillFiles(realSkillDir),
