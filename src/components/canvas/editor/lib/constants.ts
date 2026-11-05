@@ -1,7 +1,11 @@
 import { CANVAS_EDGE_COLORS } from "@/lib/canvas/canvas-preferences";
 import { messages } from "@/messages";
 
-export type CanvasSettingsTab = "canvas" | "generation" | "storage";
+export type CanvasSettingsTab =
+  | "canvas"
+  | "generation"
+  | "storage"
+  | "skills";
 
 export const NODE_TYPE_COLORS: Record<string, string> = {
   text: "#3b82f6",

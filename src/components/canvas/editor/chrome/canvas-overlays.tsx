@@ -54,6 +54,7 @@ function CanvasOverlaysInner({
   groupSelection,
   selectedNodes,
   nodeInfoNodes,
+  onOpenAgentChat,
 }: {
   infoOpen: boolean;
   titleDraft: string;
@@ -89,6 +90,7 @@ function CanvasOverlaysInner({
   groupSelection: (nodeIds: string[], name: string) => void;
   selectedNodes: CanvasFlowNode[];
   nodeInfoNodes: CanvasFlowNode[];
+  onOpenAgentChat?: () => void;
 }) {
   return (
     <>
@@ -128,6 +130,7 @@ function CanvasOverlaysInner({
         videoModels={videoModels}
         imageDefaultParams={imageDefaultParams}
         videoDefaultParams={videoDefaultParams}
+        onOpenAgentChat={onOpenAgentChat}
       />
       <CanvasNodeInfoModal
         open={nodeInfoOpen}

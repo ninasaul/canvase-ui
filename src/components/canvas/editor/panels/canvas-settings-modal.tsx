@@ -16,7 +16,9 @@ import {
 } from "@/components/preference-list";
 import { CanvasColorPicker } from "@/components/canvas/canvas-color-picker";
 import { EDGE_COLOR_OPTIONS } from "../lib/constants";
+import { useAgentComposerStore } from "@/lib/canvas/agent-composer-store";
 import { messages } from "@/messages";
+import { SkillsSettingsTab } from "@/components/canvas/editor/panels/skills-settings-tab";
 
 import type { CanvasPreferences } from "@/lib/canvas/canvas-preferences";
 import type { PortalPublicModel } from "@/types/admin";
@@ -38,6 +40,7 @@ export function CanvasSettingsModal({
   videoModels,
   imageDefaultParams,
   videoDefaultParams,
+  onOpenAgentChat,
 }: {
   state: SettingsState;
   chatModels: PortalPublicModel[];
@@ -45,6 +48,7 @@ export function CanvasSettingsModal({
   videoModels: PortalPublicModel[];
   imageDefaultParams: Record<string, unknown>;
   videoDefaultParams: Record<string, unknown>;
+  onOpenAgentChat?: () => void;
 }) {
   const {
     settingsOpen,
@@ -125,6 +129,17 @@ export function CanvasSettingsModal({
           onClick={() => setSettingsTab("storage")}
         >
           {messages.canvas.settingsTabStorage}
+        </button>
+        <button
+          type="button"
+          className={`rounded-md px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+            settingsTab === "skills"
+              ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-950 dark:text-zinc-100"
+              : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+          }`}
+          onClick={() => setSettingsTab("skills")}
+        >
+          {messages.canvas.settingsTabSkills}
         </button>
       </div>
     }
@@ -557,6 +572,18 @@ export function CanvasSettingsModal({
             </div>
           </PreferenceGroup>
         </div>
+      ) : settingsTab === "skills" ? (
+        <SkillsSettingsTab
+          onInsert={(skill) => {
+            useAgentComposerStore.getState().queueSkill({
+              id: skill.id,
+              name: skill.name,
+              content: skill.content,
+            });
+            setSettingsOpen(false);
+            onOpenAgentChat?.();
+          }}
+        />
       ) : settingsTab === "storage" ? (
         <div className="space-y-5">
           <PreferenceGroup title={messages.canvas.storageTitle}>

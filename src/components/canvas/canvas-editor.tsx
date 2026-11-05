@@ -2321,6 +2321,7 @@ function CanvasEditorInner({
         groupSelection={groupSelection}
         selectedNodes={selectedNodes}
         nodeInfoNodes={nodeInfoOpen ? nodes : EMPTY_NODES}
+        onOpenAgentChat={() => setAgentChatOpen(true)}
       />
     </>
   );

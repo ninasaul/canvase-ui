@@ -39,6 +39,7 @@ import { Popover } from "@/components/ui/popover";
 import { modelLogoLeading } from "@/components/playground/playground-model-select";
 import { toast } from "@/components/ui/toast";
 import { useMessages } from "@/hooks/use-feature-messages";
+import { useAgentComposerStore } from "@/lib/canvas/agent-composer-store";
 import { useCanvasStore, type CanvasFlowNode } from "@/lib/canvas/canvas-store";
 import {
   cancelAgentRun,
@@ -993,6 +994,19 @@ function CanvasAgentChatPanelInner({
     () => chatModels.find((item) => item.id === modelId),
     [chatModels, modelId],
   );
+  // A skill picked in the settings tab lands here (instead of props).
+  useEffect(() => {
+    const queued = useAgentComposerStore.getState().consumeSkill();
+    if (!queued) {
+      return;
+    }
+    setPendingSkills((current) =>
+      current.some((item) => item.id === queued.id)
+        ? current
+        : [...current, queued],
+    );
+  }, [open]);
+
   const skillMatches = useMemo(() => {
     if (skillQuery === null) {
       return [];
