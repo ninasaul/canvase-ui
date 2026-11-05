@@ -51,6 +51,7 @@ export const enCanvasPlaygroundMessages = {
     agentChatPromptFavorites: "Saved prompts",
     agentChatPromptSave: "Save this prompt",
     agentChatPromptEmpty: "No saved prompts yet",
+    agentChatDiffTitle: "This turn",
     agentChatSend: "Send",
     agentChatStop: "Stop",
     agentChatClear: "Clear chat",

@@ -49,6 +49,7 @@ export const zhCanvasPlaygroundMessages = {
     agentChatPromptFavorites: "提示词收藏",
     agentChatPromptSave: "收藏当前输入",
     agentChatPromptEmpty: "还没有收藏的提示词",
+    agentChatDiffTitle: "本次修改",
     agentChatSend: "发送",
     agentChatStop: "停止",
     agentChatClear: "清空对话",

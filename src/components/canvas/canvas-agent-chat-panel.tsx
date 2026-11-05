@@ -139,6 +139,14 @@ type UiMessage =
     }
   | {
       id: string;
+      /** What the turn changed on the graph, computed after it ended. */
+      kind: "diff";
+      added: number;
+      removed: number;
+      changed: number;
+    }
+  | {
+      id: string;
       kind: "run";
       mode: string;
       runId?: string;
@@ -397,7 +405,10 @@ type MessageGroup =
       key: string;
       type: "assistant-turn";
       items: Array<
-        Extract<UiMessage, { kind: "assistant" | "tool" | "approval" | "run" }>
+        Extract<
+          UiMessage,
+          { kind: "assistant" | "tool" | "approval" | "run" | "diff" }
+        >
       >;
     }
   | { key: string; type: "error"; item: Extract<UiMessage, { kind: "error" }> }
@@ -1536,6 +1547,14 @@ function CanvasAgentChatPanelInner({
     const controller = new AbortController();
     abortRef.current = controller;
     let sawOutput = false;
+    // Snapshot before the turn so the transcript can report what it changed.
+    const beforeTurn = useCanvasStore.getState().nodes;
+    const beforeSignature = new Map(
+      beforeTurn.map((node) => [
+        node.id,
+        `${node.data.status ?? ""}|${node.data.url ?? ""}|${node.data.prompt ?? ""}|${node.data.label ?? ""}`,
+      ]),
+    );
 
     const applyEvent = (event: CanvasAgentChatSseEvent) => {
       if (event.type === "attachment_warning") {
@@ -1731,6 +1750,33 @@ function CanvasAgentChatPanelInner({
         signal: controller.signal,
         onEvent: applyEvent,
       });
+      if (!controller.signal.aborted) {
+        const afterNodes = useCanvasStore.getState().nodes;
+        const afterIds = new Set(afterNodes.map((node) => node.id));
+        const added = afterNodes.filter(
+          (node) => !beforeSignature.has(node.id),
+        ).length;
+        const removed = beforeTurn.filter(
+          (node) => !afterIds.has(node.id),
+        ).length;
+        let changed = 0;
+        for (const node of afterNodes) {
+          const before = beforeSignature.get(node.id);
+          if (before === undefined) {
+            continue;
+          }
+          const now = `${node.data.status ?? ""}|${node.data.url ?? ""}|${node.data.prompt ?? ""}|${node.data.label ?? ""}`;
+          if (before !== now) {
+            changed += 1;
+          }
+        }
+        if (added + removed + changed > 0) {
+          setItems((current) => [
+            ...current,
+            { id: newId("diff"), kind: "diff", added, removed, changed },
+          ]);
+        }
+      }
       if (!controller.signal.aborted && !sawOutput) {
         setItems((current) => [
           ...current,
@@ -2266,6 +2312,41 @@ function CanvasAgentChatPanelInner({
                           void handleApproval(item.id, decision);
                         }}
                       />
+                    );
+                  }
+
+                  if (item.kind === "diff") {
+                    const total = item.added + item.changed + item.removed;
+                    if (total === 0) {
+                      return null;
+                    }
+                    return (
+                      <div
+                        key={item.id}
+                        className="rounded-md border border-zinc-200 bg-zinc-50/70 px-2 py-1.5 text-[10px] text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800/40 dark:text-zinc-400"
+                      >
+                        <span className="font-medium text-zinc-600 dark:text-zinc-300">
+                          {messages.canvas.agentChatDiffTitle}
+                        </span>
+                        {" · "}
+                        <span className="text-emerald-600 dark:text-emerald-400">
+                          +{item.added}
+                        </span>
+                        {" "}
+                        <span className="text-sky-600 dark:text-sky-400">
+                          ~{item.changed}
+                        </span>
+                        {" "}
+                        <span
+                          className={
+                            item.removed > 0
+                              ? "text-red-600 dark:text-red-400"
+                              : undefined
+                          }
+                        >
+                          −{item.removed}
+                        </span>
+                      </div>
                     );
                   }
 
