@@ -92,7 +92,7 @@ export function CanvasSettingsModal({
     open={settingsOpen}
     onClose={closeCanvasSettings}
     title={messages.canvas.canvasSettings}
-    size="5xl"
+    size="7xl"
     closeLabel={messages.close}
     contentClassName="h-[520px] flex-none overflow-y-auto"
     headerExtraLayout="below"

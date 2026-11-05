@@ -128,7 +128,7 @@ export function SkillsSettingsTab({
   }
 
   return (
-    <div className="grid h-full min-h-[440px] gap-3 md:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+    <div className="grid h-full min-h-[440px] gap-3 md:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
       <section className="flex min-h-0 min-w-0 flex-col">
         <label className="mb-2 flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-900">
           <Icon icon={MagnifyingGlass} size={13} className="text-zinc-400" />
