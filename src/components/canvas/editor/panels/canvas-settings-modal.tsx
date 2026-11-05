@@ -94,6 +94,7 @@ export function CanvasSettingsModal({
     title={messages.canvas.canvasSettings}
     size="5xl"
     closeLabel={messages.close}
+    contentClassName="h-[520px] flex-none overflow-y-auto"
     headerExtraLayout="below"
     headerExtra={
       <div className="inline-flex w-fit gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800/70">
