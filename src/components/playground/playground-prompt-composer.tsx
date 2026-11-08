@@ -1221,7 +1221,7 @@ export function PlaygroundPromptComposer({
         <div
           className={`${PLAYGROUND_COMPOSER_TOOLBAR_CLASS} ${
             // Align the controls with the prompt text inside the dock.
-            surface === "plain" ? "px-3 pb-1 pt-1" : ""
+            surface === "plain" ? "px-3 pb-0 pt-1" : ""
           }`}
         >
           {toolbarLeading}
