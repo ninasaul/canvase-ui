@@ -31,7 +31,7 @@ import {
 import { messages } from "@/messages";
 import type { PortalPublicModel } from "@/types/admin";
 import type { CanvasMediaReference } from "@/lib/tu-shared-browser";
-import { CANVAS_GENERATION_FLOAT_SURFACE_CLASS } from "@/components/playground/playground-styles";
+import { CANVAS_GENERATION_BOTTOM_SURFACE_CLASS } from "@/components/playground/playground-styles";
 import { useCanvasActions } from "./canvas-actions";
 
 function toModelIdentity(model: PortalPublicModel | undefined): ModelIdentity {
@@ -331,7 +331,7 @@ export function CanvasVideoGenerationDock({
   return (
     <div className="canvas-bottom-dock relative z-10 shrink-0 px-4 pb-2 pt-1">
       <div
-        className={`mx-auto max-h-[46vh] w-full max-w-4xl overflow-y-auto px-3 pb-1 pt-2 ${CANVAS_GENERATION_FLOAT_SURFACE_CLASS}`}
+        className={`mx-auto max-h-[46vh] w-full max-w-4xl overflow-y-auto px-3 pb-1 pt-2 ${CANVAS_GENERATION_BOTTOM_SURFACE_CLASS}`}
       >
         {composer}
       </div>
