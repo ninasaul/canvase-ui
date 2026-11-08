@@ -1015,7 +1015,9 @@ export function PlaygroundPromptComposer({
       onDrop={handleDrop}
     >
         <div
-          className={`flex flex-col gap-3 pt-3 sm:flex-row sm:items-start ${PLAYGROUND_COMPOSER_FIELD_INSET_CLASS}`}
+          className={`flex flex-col gap-3 sm:flex-row sm:items-start ${PLAYGROUND_COMPOSER_FIELD_INSET_CLASS} ${
+            surface === "plain" ? "pt-1" : "pt-3"
+          }`}
         >
           {allowReferences ? (
             <div className="relative z-30 flex shrink-0 items-start gap-2 overflow-visible">
@@ -1216,10 +1218,13 @@ export function PlaygroundPromptComposer({
           )}
         </Popover>
 
-        <div className={PLAYGROUND_COMPOSER_TOOLBAR_CLASS}>
-          {toolbarLeading ? (
-            <div className="min-w-0 sm:shrink">{toolbarLeading}</div>
-          ) : null}
+        <div
+          className={`${PLAYGROUND_COMPOSER_TOOLBAR_CLASS} ${
+            // Align the controls with the prompt text inside the dock.
+            surface === "plain" ? "px-3" : ""
+          }`}
+        >
+          {toolbarLeading}
           <div className="flex min-w-0 items-center gap-1.5 sm:min-w-0 sm:flex-1">
             {allowReferences && availableUploadOptions.length > 0 ? (
               <Button
@@ -1271,15 +1276,18 @@ export function PlaygroundPromptComposer({
               // the character count stays.
               <>
                 <span className="flex-1" />
-                {footerTrailing}
                 <span
-                  className="shrink-0 tabular-nums text-[11px] text-zinc-400"
+                  className="flex shrink-0 items-center gap-1 tabular-nums text-[11px] text-zinc-400"
                   aria-live="polite"
                 >
-                  {messages.playground.promptCharCount.replace(
-                    "{count}",
-                    String(prompt.length),
-                  )}
+                  {footerTrailing}
+                  {footerTrailing ? <span aria-hidden>·</span> : null}
+                  <span>
+                    {messages.playground.promptCharCount.replace(
+                      "{count}",
+                      String(prompt.length),
+                    )}
+                  </span>
                 </span>
               </>
             ) : (

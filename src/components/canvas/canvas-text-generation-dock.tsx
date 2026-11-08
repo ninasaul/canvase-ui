@@ -203,9 +203,9 @@ export function CanvasTextGenerationDock({
   }
 
   return (
-    <div className="canvas-bottom-dock relative z-10 shrink-0 px-4 pb-4 pt-2">
+    <div className="canvas-bottom-dock relative z-10 shrink-0 px-4 pb-3 pt-1">
       <div
-        className={`mx-auto w-full max-w-4xl p-3 ${CANVAS_GENERATION_FLOAT_SURFACE_CLASS}`}
+        className={`mx-auto w-full max-w-4xl px-3 py-2 ${CANVAS_GENERATION_FLOAT_SURFACE_CLASS}`}
       >
         {body}
       </div>
