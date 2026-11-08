@@ -1015,8 +1015,10 @@ export function PlaygroundPromptComposer({
       onDrop={handleDrop}
     >
         <div
-          className={`flex flex-col gap-3 sm:flex-row sm:items-start ${PLAYGROUND_COMPOSER_FIELD_INSET_CLASS} ${
-            surface === "plain" ? "pt-0" : "pt-3"
+          className={`flex flex-col gap-3 sm:flex-row sm:items-start ${
+            surface === "plain"
+              ? "pt-0 pl-0 pr-0"
+              : `${PLAYGROUND_COMPOSER_FIELD_INSET_CLASS} pt-3`
           }`}
         >
           {allowReferences ? (
@@ -1219,10 +1221,14 @@ export function PlaygroundPromptComposer({
         </Popover>
 
         <div
-          className={`${PLAYGROUND_COMPOSER_TOOLBAR_CLASS} ${
-            // Align the controls with the prompt text inside the dock.
-            surface === "plain" ? "px-3 pb-0 pt-1" : ""
-          }`}
+          className={
+            // Inside the dock the card already provides the horizontal inset,
+            // so the toolbar must not add its own (Tailwind would otherwise
+            // keep the base px-2/pb-2 and the controls sat 8px further in).
+            surface === "plain"
+              ? "flex flex-col gap-1.5 pt-1 sm:flex-row sm:items-center"
+              : PLAYGROUND_COMPOSER_TOOLBAR_CLASS
+          }
         >
           {toolbarLeading}
           <div className="flex min-w-0 items-center gap-1.5 sm:min-w-0 sm:flex-1">
