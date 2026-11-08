@@ -1263,13 +1263,9 @@ export function PlaygroundPromptComposer({
               noise there. The full workbench keeps both.
             */}
             {surface === "plain" ? (
-              prompt.length === 0 ? (
-                <p className="min-w-0 flex-1 truncate pl-0.5 text-[11px] text-zinc-400 max-sm:hidden">
-                  {hint}
-                </p>
-              ) : (
-                <span className="flex-1" />
-              )
+              // The dock already shows the reference slots and the send
+              // button; the mention/shortcut sentence is pure noise there.
+              <span className="flex-1" />
             ) : (
               <>
                 <p className="min-w-0 flex-1 truncate pl-0.5 text-[11px] text-zinc-400 max-sm:hidden">
