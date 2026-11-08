@@ -31,6 +31,7 @@ type PlaygroundVideoComposerProps = {
   disabled?: boolean;
   loading?: boolean;
   toolbarLeading?: ReactNode;
+  footerTrailing?: ReactNode;
   canClear?: boolean;
   surface?: "card" | "plain";
   onPromptChange: (value: string) => void;

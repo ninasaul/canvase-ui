@@ -209,11 +209,6 @@ export function CanvasImageGenerationDock({
           }}
         />
       </PlaygroundMediaParamPill>
-      <CanvasGenerationCost
-        pricing={selectedModel?.pricing}
-        kind="image"
-        params={safeParams}
-      />
     </div>
   );
 
@@ -224,6 +219,13 @@ export function CanvasImageGenerationDock({
       references={references}
       disabled={!effectiveModel}
       toolbarLeading={toolbarLeading}
+      footerTrailing={
+        <CanvasGenerationCost
+          pricing={selectedModel?.pricing}
+          kind="image"
+          params={safeParams}
+        />
+      }
       surface="plain"
       onPromptChange={(next) => {
         promptEditedRef.current = true;

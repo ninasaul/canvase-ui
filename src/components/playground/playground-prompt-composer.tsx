@@ -97,6 +97,8 @@ type PlaygroundPromptComposerProps = {
   frameSlotCount?: 1 | 2;
   showLastFrameSlot?: boolean;
   toolbarLeading?: ReactNode;
+  /** Rendered next to the character count, right of the toolbar. */
+  footerTrailing?: ReactNode;
   canClear?: boolean;
   /** `plain` when nested inside another surface (canvas node dock). */
   surface?: PlaygroundComposerSurface;
@@ -465,6 +467,7 @@ export function PlaygroundPromptComposer({
   frameSlotCount = 2,
   showLastFrameSlot = true,
   toolbarLeading,
+  footerTrailing,
   canClear = false,
   surface = "card",
   onPromptChange,
@@ -1222,7 +1225,7 @@ export function PlaygroundPromptComposer({
               <Button
                 variant="ghost"
                 size={PLAYGROUND_COMPOSER_TOOLBAR_ICON_SIZE}
-                className={PLAYGROUND_COMPOSER_TOOLBAR_ICON_CLASS}
+                className={`${PLAYGROUND_COMPOSER_TOOLBAR_ICON_CLASS} w-8 border border-zinc-200 bg-white px-0 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900`}
                 disabled={interactionDisabled}
                 aria-label={messages.playground.imageMentionHint}
                 title={messages.playground.imageMentionHint}
@@ -1268,6 +1271,7 @@ export function PlaygroundPromptComposer({
               // the character count stays.
               <>
                 <span className="flex-1" />
+                {footerTrailing}
                 <span
                   className="shrink-0 tabular-nums text-[11px] text-zinc-400"
                   aria-live="polite"
@@ -1283,6 +1287,7 @@ export function PlaygroundPromptComposer({
                 <p className="min-w-0 flex-1 truncate pl-0.5 text-[11px] text-zinc-400 max-sm:hidden">
                   {hint}
                 </p>
+                {footerTrailing}
                 <span
                   className="shrink-0 tabular-nums text-[11px] text-zinc-400"
                   aria-live="polite"

@@ -25,6 +25,7 @@ type PlaygroundImageComposerProps = {
   disabled?: boolean;
   loading?: boolean;
   toolbarLeading?: ReactNode;
+  footerTrailing?: ReactNode;
   canClear?: boolean;
   surface?: "card" | "plain";
   onPromptChange: (value: string) => void;
@@ -38,6 +39,7 @@ export function PlaygroundImageComposer({
   references,
   onReferencesChange,
   toolbarLeading,
+  footerTrailing,
   ...props
 }: PlaygroundImageComposerProps) {
   const maxReferences = getImageReferenceLimit(model);
@@ -80,6 +82,7 @@ export function PlaygroundImageComposer({
       {...props}
       references={mediaReferences}
       toolbarLeading={toolbarLeading}
+      footerTrailing={footerTrailing}
       uploadOptions={uploadOptions}
       allowReferences={maxReferences > 0}
       referenceSlotKind="stack"

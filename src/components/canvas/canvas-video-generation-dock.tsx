@@ -269,11 +269,6 @@ export function CanvasVideoGenerationDock({
           onChange={persistParams}
         />
       </PlaygroundMediaParamPill>
-      <CanvasGenerationCost
-        pricing={selectedModel?.pricing}
-        kind="video"
-        params={safeParams}
-      />
     </div>
   );
 
@@ -289,6 +284,13 @@ export function CanvasVideoGenerationDock({
       profile={profile}
       disabled={!effectiveModel}
       toolbarLeading={toolbarLeading}
+      footerTrailing={
+        <CanvasGenerationCost
+          pricing={selectedModel?.pricing}
+          kind="video"
+          params={safeParams}
+        />
+      }
       surface="plain"
       onPromptChange={(next) => {
         promptEditedRef.current = true;
