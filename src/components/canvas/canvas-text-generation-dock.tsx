@@ -203,11 +203,9 @@ export function CanvasTextGenerationDock({
 
   return (
     <div className="canvas-bottom-dock relative z-10 w-full shrink-0">
-      {/* transparent band keeps the canvas toolbar clear of the white bar */}
-      <div className="flex h-2 items-end justify-center">
-        <div className="h-px w-full bg-zinc-200/80 dark:bg-zinc-700/80" />
-      </div>
-      <div className="bg-white dark:bg-zinc-950">
+      {/* transparent gap keeps the canvas toolbar clear of the panel */}
+      <div className="h-2" />
+      <div className="border-t border-zinc-200/80 bg-white dark:border-zinc-700/80 dark:bg-zinc-950">
         <div className="mx-auto max-h-[46vh] w-full max-w-4xl overflow-y-auto px-4 pb-2 pt-2">
           {body}
         </div>
