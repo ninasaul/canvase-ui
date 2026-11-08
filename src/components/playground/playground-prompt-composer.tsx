@@ -1264,8 +1264,20 @@ export function PlaygroundPromptComposer({
             */}
             {surface === "plain" ? (
               // The dock already shows the reference slots and the send
-              // button; the mention/shortcut sentence is pure noise there.
-              <span className="flex-1" />
+              // button, so the mention/shortcut sentence is pure noise there —
+              // the character count stays.
+              <>
+                <span className="flex-1" />
+                <span
+                  className="shrink-0 tabular-nums text-[11px] text-zinc-400"
+                  aria-live="polite"
+                >
+                  {messages.playground.promptCharCount.replace(
+                    "{count}",
+                    String(prompt.length),
+                  )}
+                </span>
+              </>
             ) : (
               <>
                 <p className="min-w-0 flex-1 truncate pl-0.5 text-[11px] text-zinc-400 max-sm:hidden">
