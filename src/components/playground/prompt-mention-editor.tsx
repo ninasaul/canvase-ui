@@ -145,7 +145,7 @@ export const PromptMentionEditor = forwardRef<HTMLDivElement, PromptMentionEdito
           aria-controls={ariaControls}
           contentEditable={disabled ? "false" : "true"}
           suppressContentEditableWarning
-          className={`min-h-30 max-h-80 overflow-y-auto pr-3 pt-1 pb-2 text-sm leading-[1.65] whitespace-pre-wrap wrap-break-word text-zinc-800 outline-none dark:text-zinc-100 ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
+          className={`min-h-30 max-h-80 overflow-y-auto pr-3 pt-0.5 pb-1 text-sm leading-[1.65] whitespace-pre-wrap wrap-break-word text-zinc-800 outline-none dark:text-zinc-100 ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
           onCompositionStart={() => {
             composingRef.current = true;
             setComposing(true);
