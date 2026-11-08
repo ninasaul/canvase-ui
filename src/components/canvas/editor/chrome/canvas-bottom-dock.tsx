@@ -2,9 +2,8 @@
 
 import { Panel } from "@xyflow/react";
 import {
-  BoundingBox,
   CornersOut,
-  DotsNine,
+  Magnet,
   Lock,
   LockOpen,
   MapTrifold,
@@ -107,18 +106,18 @@ export function CanvasBottomDock({
               variant="ghost"
               size="icon-sm"
               className={
+                // The button's own text colour wins over a plain utility, so
+                // the active state needs to be forced.
                 snapToGrid
-                  ? "text-sky-600 dark:text-sky-400"
-                  : undefined
+                  ? "!text-sky-600 dark:!text-sky-400"
+                  : "!text-zinc-400 dark:!text-zinc-500"
               }
               aria-label={messages.canvas.snapToGrid}
               aria-pressed={snapToGrid}
               onClick={onToggleSnap}
             >
               <Icon
-                icon={
-                  snapToGrid ? DotsNine : BoundingBox
-                }
+                icon={Magnet}
                 size={14}
               />
             </Button>
