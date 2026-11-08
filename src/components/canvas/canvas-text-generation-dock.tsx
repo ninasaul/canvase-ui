@@ -4,7 +4,6 @@ import { ArrowUp, Gear } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import { PlaygroundModelSelect } from "@/components/playground/playground-model-select";
 import {
-  CANVAS_GENERATION_BOTTOM_SURFACE_CLASS,
   PLAYGROUND_CIRCLE_ACTION_CLASS,
   PLAYGROUND_CIRCLE_ACTION_SIZE,
   PLAYGROUND_COMPOSER_SHELL_PLAIN_CLASS,
@@ -203,11 +202,15 @@ export function CanvasTextGenerationDock({
   }
 
   return (
-    <div className="canvas-bottom-dock relative z-10 shrink-0 px-4 pb-2 pt-1">
-      <div
-        className={`mx-auto w-full max-w-4xl px-3 pb-1 pt-2 ${CANVAS_GENERATION_BOTTOM_SURFACE_CLASS}`}
-      >
-        {body}
+    <div className="canvas-bottom-dock relative z-10 w-full shrink-0">
+      {/* transparent band keeps the canvas toolbar clear of the white bar */}
+      <div className="flex h-2 items-end justify-center">
+        <div className="h-px w-full bg-zinc-200/80 dark:bg-zinc-700/80" />
+      </div>
+      <div className="bg-white dark:bg-zinc-950">
+        <div className="mx-auto max-h-[46vh] w-full max-w-4xl overflow-y-auto px-4 pb-2 pt-2">
+          {body}
+        </div>
       </div>
     </div>
   );

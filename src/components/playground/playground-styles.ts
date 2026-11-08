@@ -70,14 +70,6 @@ export const PLAYGROUND_COMPOSER_SHELL_PLAIN_CLASS =
 export const CANVAS_GENERATION_FLOAT_SURFACE_CLASS =
   "rounded-2xl border border-zinc-200/70 bg-white/90 shadow-[0_18px_50px_-20px_rgba(24,24,27,0.45)] ring-1 ring-zinc-950/5 backdrop-blur-xl dark:border-zinc-700/70 dark:bg-zinc-950/90 dark:shadow-[0_18px_50px_-18px_rgba(0,0,0,0.75)] dark:ring-white/10";
 
-/**
- * Bottom-docked variant: the panel is pinned to the canvas edge rather than
- * floating over content, so it takes a flat surface with a top edge instead of
- * a large drop shadow.
- */
-export const CANVAS_GENERATION_BOTTOM_SURFACE_CLASS =
-  "rounded-t-2xl border border-b-0 border-zinc-200/80 bg-white dark:border-zinc-700/80 dark:bg-zinc-950";
-
 export type PlaygroundComposerSurface = "card" | "plain";
 
 export function playgroundComposerShellClass(
