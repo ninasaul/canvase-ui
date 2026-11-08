@@ -106,7 +106,7 @@ export function PlaygroundMediaParamPill({
                   id={panelId}
                   role="dialog"
                   aria-label={messages.playground.paramsTitle}
-                  className="relative z-10 flex max-h-[min(85dvh,36rem)] flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-950"
+                  className="relative z-10 flex max-h-[min(85dvh,36rem)] flex-col overflow-hidden rounded-t-2xl border border-zinc-300 bg-white shadow-xl dark:border-zinc-600 dark:bg-zinc-950"
                 >
                   <div className="flex shrink-0 items-start justify-between gap-3 border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
                     <div className="min-w-0">
@@ -144,7 +144,7 @@ export function PlaygroundMediaParamPill({
           role="dialog"
           ariaLabel={messages.playground.paramsTitle}
           flush
-          className="border-zinc-200 dark:border-zinc-700"
+          className="border-zinc-300 dark:border-zinc-600"
           minWidth={PARAM_POPOVER_MIN_WIDTH}
           maxWidth={PARAM_POPOVER_MAX_WIDTH}
           maxHeight={PARAM_POPOVER_MAX_HEIGHT}

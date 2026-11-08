@@ -202,8 +202,8 @@ export function CanvasTextGenerationDock({
   }
 
   return (
-    <div className="canvas-bottom-dock relative z-10 w-full shrink-0 border-t border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-950">
-      <div className="mx-auto max-h-[46vh] w-full max-w-4xl overflow-y-auto px-4 py-2">
+    <div className="canvas-bottom-dock relative z-10 w-full shrink-0 bg-transparent pb-2 pt-1">
+      <div className="mx-auto max-h-[46vh] w-full max-w-4xl overflow-y-auto rounded-xl border border-zinc-400/60 bg-white px-4 py-2 dark:border-zinc-600 dark:bg-zinc-950">
         {body}
       </div>
     </div>
