@@ -1257,18 +1257,35 @@ export function PlaygroundPromptComposer({
                 <Icon icon={Trash} size={15} />
               </Button>
             ) : null}
-            <p className="min-w-0 flex-1 truncate pl-0.5 text-[11px] text-zinc-400 max-sm:hidden">
-              {hint}
-            </p>
-            <span
-              className="shrink-0 tabular-nums text-[11px] text-zinc-400"
-              aria-live="polite"
-            >
-              {messages.playground.promptCharCount.replace(
-                "{count}",
-                String(prompt.length),
-              )}
-            </span>
+            {/*
+              The canvas node dock is a compact surface: the shortcut hint is
+              useful until the first keystroke and the character count is
+              noise there. The full workbench keeps both.
+            */}
+            {surface === "plain" ? (
+              prompt.length === 0 ? (
+                <p className="min-w-0 flex-1 truncate pl-0.5 text-[11px] text-zinc-400 max-sm:hidden">
+                  {hint}
+                </p>
+              ) : (
+                <span className="flex-1" />
+              )
+            ) : (
+              <>
+                <p className="min-w-0 flex-1 truncate pl-0.5 text-[11px] text-zinc-400 max-sm:hidden">
+                  {hint}
+                </p>
+                <span
+                  className="shrink-0 tabular-nums text-[11px] text-zinc-400"
+                  aria-live="polite"
+                >
+                  {messages.playground.promptCharCount.replace(
+                    "{count}",
+                    String(prompt.length),
+                  )}
+                </span>
+              </>
+            )}
             <Button
               variant="primary"
               size={PLAYGROUND_CIRCLE_ACTION_SIZE}
