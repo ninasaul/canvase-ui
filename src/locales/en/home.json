@@ -1,5 +1,11 @@
 {
   "ctaStart": "Get started",
   "ctaSignIn": "Sign in",
-  "description": "Text / image / video workflow canvas. Auth via Better Auth, canvases in Postgres."
+  "kicker": "Open source · Self-hosted",
+  "description": "Text / image / video workflow canvas. Auth via Better Auth, canvases in Postgres.",
+  "highlights": {
+    "canvas": "Node graph canvas",
+    "gateway": "Bring your own models",
+    "storage": "Media in your own bucket"
+  }
 }

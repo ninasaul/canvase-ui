@@ -40,7 +40,8 @@ export function CanvasGenerationCost({
     return messages.canvas.costEstimate.replace("{amount}", `${symbol}${amount}`);
   }, [kind, params, pricing, symbol]);
 
-  if (!label) {
+  // "Billed by usage" adds no information next to the other toolbar pills.
+  if (!label || label === messages.canvas.costByUsage) {
     return null;
   }
   return (

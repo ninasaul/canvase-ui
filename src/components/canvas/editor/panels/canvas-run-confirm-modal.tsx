@@ -75,65 +75,50 @@ export function CanvasRunConfirmModal({
         </div>
       }
     >
-      <div className="space-y-4">
-        <div className="grid grid-cols-3 gap-2">
-          <div className="rounded-lg border border-zinc-200/80 px-3 py-2 dark:border-zinc-700/80">
-            <p className="text-lg font-semibold leading-none text-zinc-900 dark:text-zinc-50">
-              {count}
-            </p>
-            <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+      <div className="space-y-3">
+        {/* One summary line instead of three stat cards. */}
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-zinc-900 dark:text-zinc-50">
+            <span className="text-lg font-semibold tabular-nums">{count}</span>
+            <span className="ml-1 text-[11px] text-zinc-500 dark:text-zinc-400">
               {messages.canvas.runStatNodes}
-            </p>
-          </div>
-          <div className="rounded-lg border border-zinc-200/80 px-3 py-2 dark:border-zinc-700/80">
-            <p
-              className={`text-lg font-semibold leading-none ${
-                overwrite > 0
-                  ? "text-amber-600 dark:text-amber-400"
-                  : "text-zinc-900 dark:text-zinc-50"
-              }`}
-            >
-              {overwrite}
-            </p>
-            <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-              {messages.canvas.runStatOverwrite}
-            </p>
-          </div>
-          <div className="rounded-lg border border-zinc-200/80 px-3 py-2 dark:border-zinc-700/80">
-            <p className="text-lg font-semibold leading-none text-zinc-900 dark:text-zinc-50">
-              {costLabel}
-            </p>
-            <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-              {messages.canvas.runStatCost}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-          {typeMix.map((entry) => (
-            <span key={entry.type}>
-              {nodeTypeLabel(entry.type)} {entry.count}
             </span>
-          ))}
+          </span>
+          {overwrite > 0 ? (
+            <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
+              {overwrite} {messages.canvas.runStatOverwrite}
+            </span>
+          ) : null}
+          <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
+            {typeMix.map((entry) => `${nodeTypeLabel(entry.type)} ${entry.count}`).join(" · ")}
+          </span>
           {upstreamCount > 0 ? (
-            <span className="text-zinc-400 dark:text-zinc-500">
+            <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
               · {upstreamCount} {messages.canvas.runUpstreamNodes}
             </span>
           ) : null}
+          <span className="ml-auto text-[11px] font-medium tabular-nums text-zinc-700 dark:text-zinc-200">
+            {messages.canvas.runStatCost} {costLabel}
+          </span>
         </div>
 
         {showUpstreamToggle ? (
-          <div className="rounded-lg border border-zinc-200/80 px-3 py-2 dark:border-zinc-700/80">
-            <Switch
-              id="run-include-upstream"
-              checked={includeUpstream}
-              onChange={onIncludeUpstreamChange}
-              label={messages.canvas.runIncludeUpstream}
-              layout="between"
-            />
-            <p className="mt-1 text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-              {messages.canvas.runIncludeUpstreamHint}
-            </p>
+          <div className="flex items-center gap-2 rounded-lg border border-zinc-200/80 px-3 py-1.5 dark:border-zinc-700/80">
+            <div className="min-w-0 flex-1">
+              <Switch
+                id="run-include-upstream"
+                checked={includeUpstream}
+                onChange={onIncludeUpstreamChange}
+                label={messages.canvas.runIncludeUpstream}
+                layout="between"
+              />
+            </div>
+            <span
+              className="shrink-0 cursor-help text-[10px] text-zinc-400 dark:text-zinc-500"
+              title={messages.canvas.runIncludeUpstreamHint}
+            >
+              ?
+            </span>
           </div>
         ) : null}
 
@@ -142,6 +127,7 @@ export function CanvasRunConfirmModal({
             {rows.map((row) => (
               <div
                 key={row.id}
+                title={row.meta}
                 className="flex items-center gap-2 px-3 py-1.5 text-xs transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
               >
                 <Icon
@@ -162,9 +148,6 @@ export function CanvasRunConfirmModal({
                     {messages.canvas.runOverwriteTag}
                   </span>
                 ) : null}
-                <span className="w-40 shrink-0 truncate text-right font-mono text-[10px] text-zinc-400 dark:text-zinc-500">
-                  {row.meta}
-                </span>
               </div>
             ))}
           </div>
