@@ -420,6 +420,8 @@ export const enCanvasPlaygroundMessages = {
     audioNode: "Audio",
     emptyImage: "Configure to generate an image",
     videoComingSoon: "Video execution lands in the next phase",
+    mediaBroken: "Media unavailable",
+    mediaRetry: "Reload",
     videoLoadError: "Failed to load video",
     videoRetry: "Retry",
     videoPlay: "Play",

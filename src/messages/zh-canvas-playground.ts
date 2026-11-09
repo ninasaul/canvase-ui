@@ -416,6 +416,8 @@ export const zhCanvasPlaygroundMessages = {
     audioNode: "音频",
     emptyImage: "点击配置生成图片",
     videoComingSoon: "视频执行将在下一阶段接入",
+    mediaBroken: "资源不可用",
+    mediaRetry: "重试加载",
     videoLoadError: "视频加载失败",
     videoRetry: "重试",
     videoPlay: "播放",

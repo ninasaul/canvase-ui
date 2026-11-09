@@ -5,6 +5,8 @@ import {
   SolidPauseIcon,
   SolidPlayIcon,
 } from "@/components/canvas/canvas-media-icons";
+import { Icon } from "@/components/ui/icon";
+import { SpeakerSlash } from "@phosphor-icons/react";
 import { messages } from "@/messages";
 
 function hashString(value: string): number {
@@ -44,6 +46,7 @@ function formatTime(value: number): string {
 export function CanvasAudioPlayer({ src }: { src: string }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
+  const [broken, setBroken] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
   const seekStartXRef = useRef<number | null>(null);
@@ -96,6 +99,7 @@ export function CanvasAudioPlayer({ src }: { src: string }) {
         }}
         onTimeUpdate={(event) => setCurrent(event.currentTarget.currentTime)}
         onPlay={() => setPlaying(true)}
+        onError={() => setBroken(true)}
         onPause={() => setPlaying(false)}
         onEnded={() => {
           setPlaying(false);
@@ -103,6 +107,31 @@ export function CanvasAudioPlayer({ src }: { src: string }) {
         }}
       />
 
+      {broken ? (
+        <div className="flex h-full w-full items-center gap-2 px-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+          <Icon
+            icon={SpeakerSlash}
+            size={16}
+            className="shrink-0 text-amber-500/90 dark:text-amber-400/90"
+          />
+          <span className="truncate">{messages.canvas.mediaBroken}</span>
+          <button
+            type="button"
+            className="nodrag ml-auto shrink-0 rounded-md border border-zinc-200 px-1.5 py-0.5 transition-colors hover:bg-white hover:text-zinc-700 dark:border-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            onClick={(event) => {
+              event.stopPropagation();
+              const audio = audioRef.current;
+              setBroken(false);
+              if (audio) {
+                audio.load();
+              }
+            }}
+          >
+            {messages.canvas.mediaRetry}
+          </button>
+        </div>
+      ) : (
+        <>
       <button
         type="button"
         className="nodrag inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white shadow-[0_6px_16px_-8px_rgba(24,24,27,0.8)] ring-1 ring-white/10 transition-transform duration-200 hover:scale-105 hover:bg-zinc-800 active:scale-95 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
@@ -168,6 +197,8 @@ export function CanvasAudioPlayer({ src }: { src: string }) {
       <span className="shrink-0 text-xs font-medium tabular-nums text-zinc-500 dark:text-zinc-400">
         {formatTime(duration)}
       </span>
+        </>
+      )}
     </div>
   );
 }

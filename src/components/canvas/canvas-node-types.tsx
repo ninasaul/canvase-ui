@@ -5,6 +5,7 @@ import { memo, useDeferredValue, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  ImageBroken,
   ImageSquare,
   Plus,
   VideoCamera,
@@ -434,24 +435,43 @@ function EmptyMedia({
 function MediaPreview({
   type,
   url,
+  fallbackUrl,
   poster,
   preload,
   onAspectRatio,
 }: {
   type: "image" | "video";
   url: string;
+  /** Tried when `url` (often a thumbnail) fails to load. */
+  fallbackUrl?: string;
   poster?: string;
   preload?: "none" | "metadata" | "auto";
   onAspectRatio?: (ratio: number) => void;
 }) {
+  const [src, setSrc] = useState(url);
+  const [broken, setBroken] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    setSrc(url);
+    setBroken(false);
+  }, [url]);
+
   if (type === "image") {
-    if (!url) {
+    if (!src) {
       return null;
+    }
+    if (broken) {
+      return <BrokenMedia onRetry={() => {
+        setBroken(false);
+        setAttempt((value) => value + 1);
+      }} />;
     }
     return (
       // eslint-disable-next-line @next/next/no-img-element -- canvas media preview
       <img
-        src={url}
+        key={`${src}-${attempt}`}
+        src={attempt > 0 ? `${src}${src.includes("?") ? "&" : "?"}retry=${attempt}` : src}
         alt=""
         className="h-full w-full object-cover"
         draggable={false}
@@ -462,6 +482,14 @@ function MediaPreview({
           if (image.naturalWidth > 0 && image.naturalHeight > 0) {
             onAspectRatio?.(image.naturalWidth / image.naturalHeight);
           }
+        }}
+        onError={() => {
+          // A stale thumbnail should not hide a working asset behind it.
+          if (fallbackUrl && src !== fallbackUrl) {
+            setSrc(fallbackUrl);
+            return;
+          }
+          setBroken(true);
         }}
       />
     );
@@ -474,6 +502,32 @@ function MediaPreview({
       preload={preload}
       onAspectRatio={onAspectRatio}
     />
+  );
+}
+
+/** Shown when a node's asset URL no longer resolves. */
+function BrokenMedia({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex h-full min-h-16 flex-col items-center justify-center gap-1.5 bg-zinc-50 px-2 text-center dark:bg-zinc-900">
+      <Icon
+        icon={ImageBroken}
+        size={18}
+        className="text-amber-500/90 dark:text-amber-400/90"
+      />
+      <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
+        {messages.canvas.mediaBroken}
+      </span>
+      <button
+        type="button"
+        className="nodrag rounded-md border border-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-500 transition-colors hover:bg-white hover:text-zinc-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+        onClick={(event) => {
+          event.stopPropagation();
+          onRetry();
+        }}
+      >
+        {messages.canvas.mediaRetry}
+      </button>
+    </div>
   );
 }
 
@@ -607,6 +661,11 @@ export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selecte
             <MediaPreview
               type="image"
               url={data.thumbnailUrl || data.url}
+              fallbackUrl={
+                data.thumbnailUrl && data.url && data.url !== data.thumbnailUrl
+                  ? data.url
+                  : undefined
+              }
               onAspectRatio={(ratio) => {
                 const size = canvasMediaNodeSize("image", ratio);
                 setNodeSize(id, size.width, size.height);
