@@ -384,17 +384,24 @@ function NodeRunningOverlay({
       aria-live="polite"
       // Matches the node's own corner radius and clips the sweep to it, so the
       // overlay no longer paints square corners over a rounded node.
-      className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-1 overflow-hidden rounded-[inherit] bg-white/70 dark:bg-zinc-950/60"
+      className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-1.5 overflow-hidden rounded-[inherit] bg-white/95 ring-1 ring-inset ring-sky-300/50 dark:bg-zinc-950/90 dark:ring-sky-500/30"
     >
       {running ? <span aria-hidden className="canvas-run-shimmer" /> : null}
-      <span className="relative text-[10px] font-medium tracking-wide text-zinc-500 tabular-nums dark:text-zinc-400">
+      {running ? <span aria-hidden className="canvas-run-bar" /> : null}
+      <span
+        className={`relative text-[11px] font-semibold tracking-wide tabular-nums ${
+          running
+            ? "text-sky-600 dark:text-sky-400"
+            : "text-zinc-500 dark:text-zinc-400"
+        }`}
+      >
         {running ? messages.canvas.executingNode : messages.canvas.statusQueued}
         {elapsed !== null ? ` · ${elapsed}s` : ""}
       </span>
       {running ? (
         <button
           type="button"
-          className="relative rounded px-1 text-[10px] text-zinc-400 underline-offset-2 transition-colors pointer-events-auto hover:text-red-500 hover:underline dark:text-zinc-500 dark:hover:text-red-400"
+          className="relative rounded-full border border-zinc-200 bg-white/90 px-2 py-0.5 text-[10px] text-zinc-500 transition-colors pointer-events-auto hover:border-red-200 hover:text-red-500 dark:border-zinc-700 dark:bg-zinc-900/90 dark:text-zinc-400 dark:hover:border-red-900/60 dark:hover:text-red-400"
           onClick={(event) => {
             event.stopPropagation();
             cancelNodeRun(nodeId);
