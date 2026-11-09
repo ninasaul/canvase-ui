@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  CircleNotch,
   DownloadSimple,
   UploadSimple,
 } from "@phosphor-icons/react";
@@ -9,6 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/form-field";
 import { Icon } from "@/components/ui/icon";
+import { Loading } from "@/components/ui/loading";
 import { Modal } from "@/components/ui/modal";
 import { formatDateTime } from "@/lib/format";
 import { messages } from "@/messages";
@@ -114,11 +114,7 @@ export function CanvasInfoModal({
             )}
             {thumbnailBusy ? (
               <span className="absolute inset-0 flex items-center justify-center gap-2 bg-zinc-950/50">
-                <Icon
-                  icon={CircleNotch}
-                  size={16}
-                  className="animate-spin text-white"
-                />
+                <Loading variant="arc" size={18} color="#fff" />
                 <span className="text-xs font-medium text-white">
                   {messages.canvas.thumbnailUploading}
                 </span>

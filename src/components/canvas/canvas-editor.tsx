@@ -84,6 +84,7 @@ import { LocaleToggle } from "@/components/locale-toggle";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { Loading } from "@/components/ui/loading";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Popover } from "@/components/ui/popover";
 import { toast } from "@/components/ui/toast";
@@ -2335,7 +2336,8 @@ export function CanvasEditor({ canvasId }: { canvasId: string }) {
 
   if (query.loading) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-zinc-400">
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-zinc-400">
+        <Loading variant="dots" size={20} label={messages.loading} />
         {messages.loading}
       </div>
     );

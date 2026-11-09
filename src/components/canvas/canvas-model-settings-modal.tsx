@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Empty } from "@/components/ui/empty";
 import { selectTriggerClassName } from "@/components/ui/form-control";
 import { Icon } from "@/components/ui/icon";
+import { Loading } from "@/components/ui/loading";
 import { Modal } from "@/components/ui/modal";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
@@ -641,11 +642,11 @@ export function CanvasModelSettingsModal({
                 void pullModels();
               }}
             >
-              <Icon
-                icon={ArrowClockwise}
-                size={13}
-                className={pulling ? "animate-spin" : undefined}
-              />
+              {pulling ? (
+                <Loading variant="arc" size={14} label={canvas.byokPullingModels} />
+              ) : (
+                <Icon icon={ArrowClockwise} size={13} />
+              )}
               {pulling ? canvas.byokPullingModels : canvas.byokPullModels}
             </Button>
           </div>

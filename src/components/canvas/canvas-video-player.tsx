@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleNotch } from "@phosphor-icons/react";
+import { Loading } from "@/components/ui/loading";
 import { useEffect, useRef, useState } from "react";
 import {
   SolidFullscreenIcon,
@@ -9,7 +9,6 @@ import {
   SolidVolumeIcon,
   SolidVolumeMuteIcon,
 } from "@/components/canvas/canvas-media-icons";
-import { Icon } from "@/components/ui/icon";
 import { messages } from "@/messages";
 
 function formatTime(value: number): string {
@@ -180,11 +179,7 @@ export function CanvasVideoPlayer({
 
       {playing && !ready && !failed ? (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/35">
-          <Icon
-            icon={CircleNotch}
-            size={20}
-            className="animate-spin text-white/85"
-          />
+          <Loading variant="arc" size={22} color="rgba(255,255,255,0.9)" />
         </div>
       ) : null}
 

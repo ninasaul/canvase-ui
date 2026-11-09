@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowsClockwise, CircleNotch, Pulse } from "@phosphor-icons/react";
+import { ArrowsClockwise, Pulse } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CanvasRunHistoryPanel } from "@/components/canvas/canvas-run-history";
 import { Button } from "@/components/ui/button";
 import { Empty } from "@/components/ui/empty";
 import { Icon } from "@/components/ui/icon";
+import { Loading } from "@/components/ui/loading";
 import { Modal } from "@/components/ui/modal";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { useCanvasStore } from "@/lib/canvas/canvas-store";
@@ -185,13 +186,11 @@ export function CanvasRunningTasksModal({
                     className="flex items-start gap-3 py-3 first:pt-0 last:pb-0"
                   >
                     <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-950/50 dark:text-sky-300">
-                      <Icon
-                        icon={status === "queued" ? Pulse : CircleNotch}
-                        size={14}
-                        className={
-                          status === "running" ? "animate-spin" : ""
-                        }
-                      />
+                      {status === "running" ? (
+                        <Loading variant="arc" size={16} speed={1.1} />
+                      ) : (
+                        <Loading variant="ring" size={16} speed={2.2} />
+                      )}
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">

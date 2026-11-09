@@ -34,6 +34,7 @@ import {
 import { PlaygroundChatMarkdown } from "@/components/playground/playground-chat-markdown";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { Loading } from "@/components/ui/loading";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Popover } from "@/components/ui/popover";
 import { modelLogoLeading } from "@/components/playground/playground-model-select";
@@ -2445,7 +2446,7 @@ function CanvasAgentChatPanelInner({
               <Icon icon={ChatCircle} size={13} weight="fill" />
             </div>
             <div className="flex items-center gap-1.5 text-[12px] text-zinc-400">
-              <Icon icon={CircleNotch} size={12} className="animate-spin" />
+              <Loading variant="dots" size={14} label={messages.canvas.agentChatThinking} />
               {messages.canvas.agentChatThinking}
             </div>
           </div>
@@ -2881,7 +2882,7 @@ function CanvasAgentChatPanelInner({
               onClick={() => fileInputRef.current?.click()}
             >
               {uploading ? (
-                <Icon icon={CircleNotch} size={15} className="animate-spin" />
+                <Loading variant="arc" size={16} label={messages.loading} />
               ) : (
                 <Icon icon={Paperclip} size={15} />
               )}
