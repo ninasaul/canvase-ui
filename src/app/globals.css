@@ -275,7 +275,7 @@
   margin-left: 0.05em;
   margin-right: -0.12em;
   border-radius: 1px;
-  background: currentColor;
+  background: var(--loading-color, currentColor);
   vertical-align: -0.1em;
   animation: ui-caret-blink 1.05s steps(1, end) infinite;
 }
@@ -303,89 +303,6 @@
     rgba(9, 9, 11, 0.9) 48%,
     rgba(9, 9, 11, 0) 78%
   );
-}
-
-.canvas-run-orb {
-  position: relative;
-  width: 44px;
-  height: 44px;
-  border-radius: 9999px;
-  filter: drop-shadow(0 2px 10px rgba(14, 165, 233, 0.28));
-}
-
-.canvas-run-orb::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 9999px;
-  background: conic-gradient(
-    from 0turn,
-    rgba(14, 165, 233, 0) 0deg,
-    rgba(14, 165, 233, 0.15) 120deg,
-    rgba(14, 165, 233, 0.9) 330deg,
-    rgba(14, 165, 233, 0) 360deg
-  );
-  -webkit-mask: radial-gradient(
-    farthest-side,
-    transparent calc(100% - 2.5px),
-    #000 calc(100% - 2px)
-  );
-  mask: radial-gradient(
-    farthest-side,
-    transparent calc(100% - 2.5px),
-    #000 calc(100% - 2px)
-  );
-  animation: canvas-run-orb-spin 1.05s linear infinite;
-}
-
-.canvas-run-orb::after {
-  content: "";
-  position: absolute;
-  inset: 11px;
-  border-radius: 9999px;
-  background: radial-gradient(
-    circle at 50% 45%,
-    rgba(14, 165, 233, 0.22),
-    rgba(14, 165, 233, 0) 70%
-  );
-  animation: canvas-run-orb-breathe 1.6s ease-in-out infinite;
-}
-
-.canvas-run-orb--idle::after {
-  animation: none;
-  opacity: 0.4;
-}
-
-@keyframes canvas-run-orb-spin {
-  to {
-    transform: rotate(1turn);
-  }
-}
-
-@keyframes canvas-run-orb-breathe {
-  0%,
-  100% {
-    opacity: 0.45;
-    transform: scale(0.9);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.06);
-  }
-}
-
-[data-panning] .canvas-run-orb::before,
-[data-zooming] .canvas-run-orb::before,
-[data-panning] .canvas-run-orb::after,
-[data-zooming] .canvas-run-orb::after {
-  animation-play-state: paused;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .canvas-run-orb::before,
-  .canvas-run-orb::after {
-    animation: none;
-  }
 }
 
 @keyframes ui-overlay-in {
@@ -661,4 +578,217 @@ body {
 .canvas-chat-list > * {
   content-visibility: auto;
   contain-intrinsic-size: auto 96px;
+}
+
+/*
+ * Loading indicator (components/ui/loading.tsx).
+ * One wrapper owns the box; each variant draws with a single pseudo element
+ * and animates only transform/opacity so it never repaints its surroundings.
+ */
+.ui-loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--loading-size, 24px);
+  height: var(--loading-size, 24px);
+  /* No `color` here: the caller's text-* utility must win. The variants read
+     --loading-color and fall back to currentColor themselves. */
+  flex-shrink: 0;
+}
+
+.ui-loading__shape {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* arc: conic sweep masked into a ring */
+.ui-loading--arc .ui-loading__shape::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 0turn,
+    transparent 0deg,
+    color-mix(in oklab, var(--loading-color, currentColor) 15%, transparent) 120deg,
+    var(--loading-color, currentColor) 330deg,
+    transparent 360deg
+  );
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - var(--loading-thickness, 2.5px)),
+    #000 calc(100% - var(--loading-thickness, 2.5px) + 0.5px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - var(--loading-thickness, 2.5px)),
+    #000 calc(100% - var(--loading-thickness, 2.5px) + 0.5px)
+  );
+  animation: ui-loading-spin var(--loading-duration, 0.9s) linear infinite;
+}
+
+/* ring: full circle with a moving gap */
+.ui-loading--ring .ui-loading__shape::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: var(--loading-thickness, 2.5px) solid
+    var(--loading-track, color-mix(in oklab, var(--loading-color, currentColor) 22%, transparent));
+  border-top-color: var(--loading-color, currentColor);
+  animation: ui-loading-spin var(--loading-duration, 0.9s) linear infinite;
+}
+
+/* dots: three dots, staggered */
+.ui-loading--dots .ui-loading__shape,
+.ui-loading--bars .ui-loading__shape {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--loading-size, 24px) * 0.12);
+}
+
+.ui-loading--dots .ui-loading__shape::before,
+.ui-loading--dots .ui-loading__shape::after,
+.ui-loading--dots .ui-loading__shape {
+  background: none;
+}
+
+.ui-loading--dots .ui-loading__shape {
+  position: relative;
+}
+
+.ui-loading--dots .ui-loading__shape::before,
+.ui-loading--dots .ui-loading__shape::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: calc(var(--loading-size, 24px) * 0.22);
+  height: calc(var(--loading-size, 24px) * 0.22);
+  border-radius: 9999px;
+  background: var(--loading-color, currentColor);
+  transform: translateY(-50%);
+  animation: ui-loading-dot var(--loading-duration, 0.9s) ease-in-out infinite;
+}
+
+.ui-loading--dots .ui-loading__shape::before {
+  left: calc(50% - var(--loading-size, 24px) * 0.2);
+  animation-delay: calc(var(--loading-duration, 0.9s) * -0.2);
+}
+
+.ui-loading--dots .ui-loading__shape::after {
+  left: calc(50% + var(--loading-size, 24px) * 0.2);
+  animation-delay: calc(var(--loading-duration, 0.9s) * 0.1);
+}
+
+/* pulse: a soft disc that breathes */
+.ui-loading--pulse .ui-loading__shape::before {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border-radius: 9999px;
+  background: var(--loading-color, currentColor);
+  opacity: 0.85;
+  animation: ui-loading-pulse var(--loading-duration, 0.9s) ease-in-out infinite;
+}
+
+/* bars: three vertical bars */
+.ui-loading--bars .ui-loading__shape::before,
+.ui-loading--bars .ui-loading__shape::after {
+  content: "";
+  width: calc(var(--loading-size, 24px) * 0.16);
+  height: 60%;
+  border-radius: 9999px;
+  background: var(--loading-color, currentColor);
+  animation: ui-loading-bar var(--loading-duration, 0.9s) ease-in-out infinite;
+}
+
+.ui-loading--bars .ui-loading__shape {
+  position: relative;
+}
+
+.ui-loading--bars .ui-loading__shape::before {
+  animation-delay: calc(var(--loading-duration, 0.9s) * -0.15);
+  opacity: 0.55;
+}
+
+.ui-loading--bars .ui-loading__shape::after {
+  animation-delay: calc(var(--loading-duration, 0.9s) * 0.15);
+  opacity: 0.55;
+}
+
+/* orbit: a dot running around a faint track */
+.ui-loading--orbit .ui-loading__shape::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: var(--loading-thickness, 2.5px) solid
+    var(--loading-track, color-mix(in oklab, var(--loading-color, currentColor) 18%, transparent));
+}
+
+.ui-loading--orbit .ui-loading__shape::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: calc(var(--loading-size, 24px) * 0.22);
+  height: calc(var(--loading-size, 24px) * 0.22);
+  border-radius: 9999px;
+  background: var(--loading-color, currentColor);
+  transform: translate(-50%, -10%);
+  transform-origin: 50% calc(var(--loading-size, 24px) * 0.5);
+  animation: ui-loading-spin var(--loading-duration, 0.9s) linear infinite;
+}
+
+@keyframes ui-loading-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes ui-loading-dot {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(-50%) scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+@keyframes ui-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.82);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ui-loading-bar {
+  0%,
+  100% {
+    transform: scaleY(0.5);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+/* A moving viewport already costs frames; freeze loaders with it. */
+[data-panning] .ui-loading__shape::before,
+[data-zooming] .ui-loading__shape::before,
+[data-panning] .ui-loading__shape::after,
+[data-zooming] .ui-loading__shape::after {
+  animation-play-state: paused;
 }

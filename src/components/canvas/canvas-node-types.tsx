@@ -17,6 +17,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useCanvasActions } from "@/components/canvas/canvas-actions";
+import { Loading } from "@/components/ui/loading";
 import { Icon } from "@/components/ui/icon";
 import { useCanvasDetail } from "@/components/canvas/canvas-detail-context";
 import { getNodeById } from "@/lib/canvas/canvas-node-index";
@@ -391,9 +392,23 @@ function NodeRunningOverlay({
       */}
       <span aria-hidden className="canvas-run-veil" />
       {running ? (
-        <span aria-hidden className="canvas-run-orb" />
+        <Loading
+          variant="arc"
+          size={44}
+          thickness={2.5}
+          speed={1.1}
+          className="relative text-sky-500 dark:text-sky-400"
+          label={messages.canvas.executingNode}
+        />
       ) : (
-        <span aria-hidden className="canvas-run-orb canvas-run-orb--idle" />
+        <Loading
+          variant="ring"
+          size={44}
+          thickness={2.5}
+          speed={2.4}
+          className="relative text-zinc-400 opacity-70 dark:text-zinc-500"
+          label={messages.canvas.statusQueued}
+        />
       )}
       <span className="relative rounded-full bg-white/85 px-2 py-0.5 text-[10px] font-medium tracking-wide text-zinc-600 tabular-nums shadow-sm dark:bg-zinc-900/85 dark:text-zinc-300">
         {running ? messages.canvas.executingNode : messages.canvas.statusQueued}
