@@ -280,33 +280,38 @@
   animation: ui-caret-blink 1.05s steps(1, end) infinite;
 }
 
-@keyframes canvas-node-spin {
+/*
+ * Generating node: one element, one composited transform per frame.
+ * Paused while the viewport is moving (nothing is readable mid-gesture) and
+ * replaced by a static ring when the user asks for reduced motion.
+ */
+.canvas-run-ring {
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  border-width: 2.5px;
+  border-style: solid;
+  animation: canvas-run-spin 0.8s linear infinite;
+  will-change: transform;
+}
+
+@keyframes canvas-run-spin {
   to {
-    transform: rotate(360deg);
+    transform: rotate(1turn);
   }
 }
 
-@keyframes canvas-node-breathe {
-  0%,
-  100% {
-    opacity: 0.72;
-    transform: scale(0.96);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1);
+[data-panning] .canvas-run-ring,
+[data-zooming] .canvas-run-ring {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-run-ring {
+    animation: none;
   }
 }
 
-@keyframes canvas-node-track-pulse {
-  0%,
-  100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 0.7;
-  }
-}
 
 @keyframes ui-overlay-in {
   from {

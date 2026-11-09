@@ -351,11 +351,9 @@ function NodeUploadOverlay({ progress }: { progress: number }) {
 function NodeRunningOverlay({
   nodeId,
   status,
-  selected,
 }: {
   nodeId: string;
   status: CanvasFlowNode["data"]["status"];
-  selected: boolean;
 }) {
   const runStatus = useCanvasRunStatus(nodeId);
   const effectiveStatus = runStatus?.status ?? status;
@@ -365,54 +363,25 @@ function NodeRunningOverlay({
   const running = effectiveStatus === "running";
   return (
     <div
-      className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-white/55 backdrop-blur-md dark:bg-zinc-950/50 ${
-        selected ? "rounded-none" : "rounded-lg"
-      }`}
-      aria-label={
-        running
-          ? messages.canvas.executingNode
-          : messages.canvas.statusQueued
-      }
+      role="status"
+      aria-live="polite"
+      className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-white/70 dark:bg-zinc-950/60"
     >
+      {/*
+        One element, one transform-only animation. The previous version stacked
+        a backdrop blur plus three animations (scale breathe, SVG rotate and a
+        stroke-opacity pulse), which repainted the whole node area every frame.
+      */}
       <span
-        className={`relative flex h-9 w-9 items-center justify-center ${
+        aria-hidden
+        className={
           running
-            ? "animate-[canvas-node-breathe_1.5s_ease-in-out_infinite]"
-            : "animate-[canvas-node-breathe_2.4s_ease-in-out_infinite] opacity-80"
-        }`}
-      >
-        <svg
-          viewBox="0 0 36 36"
-          className={`h-9 w-9 ${
-            running
-              ? "animate-[canvas-node-spin_0.75s_linear_infinite]"
-              : ""
-          }`}
-          aria-hidden
-        >
-          <circle
-            cx="18"
-            cy="18"
-            r="14"
-            fill="none"
-            strokeWidth="2.5"
-            className={`stroke-zinc-300/80 dark:stroke-zinc-600/80 ${
-              running
-                ? "animate-[canvas-node-track-pulse_1.5s_ease-in-out_infinite]"
-                : ""
-            }`}
-          />
-          <circle
-            cx="18"
-            cy="18"
-            r="14"
-            fill="none"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeDasharray={running ? "28 60" : "10 78"}
-            className="stroke-sky-500 dark:stroke-sky-400"
-          />
-        </svg>
+            ? "canvas-run-ring border-zinc-200 border-t-sky-500 dark:border-zinc-700 dark:border-t-sky-400"
+            : "canvas-run-ring border-dashed border-zinc-300 opacity-70 dark:border-zinc-600"
+        }
+      />
+      <span className="sr-only">
+        {running ? messages.canvas.executingNode : messages.canvas.statusQueued}
       </span>
     </div>
   );
@@ -554,11 +523,7 @@ export const TextCanvasNode = memo(function TextCanvasNode({ id, data, selected 
         />
         )}
       </NodeShell>
-      <NodeRunningOverlay
-        nodeId={id}
-        status={data.status}
-        selected={Boolean(selected)}
-      />
+      <NodeRunningOverlay nodeId={id} status={data.status} />
       <OutputHandle color="#3b82f6" />
       {selected ? (
         <CanvasNodeResizer
@@ -626,11 +591,7 @@ export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selecte
           )}
         </div>
       </NodeShell>
-      <NodeRunningOverlay
-        nodeId={id}
-        status={data.status}
-        selected={Boolean(selected)}
-      />
+      <NodeRunningOverlay nodeId={id} status={data.status} />
       <OutputHandle color="#10b981" />
       <CanvasNodeResizer nodeId={id} selected={Boolean(selected)} minWidth={160} minHeight={120} />
       {selected ? (
@@ -699,11 +660,7 @@ export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selecte
           )}
         </div>
       </NodeShell>
-      <NodeRunningOverlay
-        nodeId={id}
-        status={data.status}
-        selected={Boolean(selected)}
-      />
+      <NodeRunningOverlay nodeId={id} status={data.status} />
       <OutputHandle color="#8b5cf6" label={messages.canvas.output} />
       <CanvasNodeResizer nodeId={id} selected={Boolean(selected)} minWidth={180} minHeight={120} />
       {selected ? (
