@@ -400,10 +400,10 @@ function NodeRunningOverlay({
 
   return (
     <Loading
-      variant={running ? "ripple" : "ring"}
-      size={running ? 56 : 44}
+      variant={running ? "bars" : "ring"}
+      size={running ? 40 : 44}
       thickness={running ? 2 : 2.5}
-      speed={running ? 1.6 : 2.4}
+      speed={running ? 1.4 : 2.4}
       overlay
       color={running ? undefined : "#a1a1aa"}
       className={running ? "text-sky-500 dark:text-sky-400" : "opacity-70"}

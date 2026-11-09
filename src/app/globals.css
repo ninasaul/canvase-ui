@@ -694,29 +694,33 @@ body {
   animation: ui-loading-pulse var(--loading-duration, 0.9s) ease-in-out infinite;
 }
 
-/* bars: three vertical bars */
-.ui-loading--bars .ui-loading__shape::before,
-.ui-loading--bars .ui-loading__shape::after {
-  content: "";
-  width: calc(var(--loading-size, 24px) * 0.16);
-  height: 60%;
+/* bars: three bars, staggered — an equaliser rather than a spinner */
+.ui-loading--bars .ui-loading__shape {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--loading-size, 24px) * 0.13);
+}
+
+.ui-loading__bar {
+  width: max(2px, calc(var(--loading-size, 24px) * 0.15));
+  height: 64%;
   border-radius: 9999px;
   background: var(--loading-color, currentColor);
+  transform-origin: 50% 50%;
   animation: ui-loading-bar var(--loading-duration, 0.9s) ease-in-out infinite;
 }
 
-.ui-loading--bars .ui-loading__shape {
-  position: relative;
-}
-
-.ui-loading--bars .ui-loading__shape::before {
-  animation-delay: calc(var(--loading-duration, 0.9s) * -0.15);
-  opacity: 0.55;
-}
-
-.ui-loading--bars .ui-loading__shape::after {
-  animation-delay: calc(var(--loading-duration, 0.9s) * 0.15);
-  opacity: 0.55;
+@keyframes ui-loading-bar {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
 }
 
 /* orbit: a dot running around a faint track */
@@ -812,18 +816,6 @@ body {
   50% {
     opacity: 1;
     transform: scale(1);
-  }
-}
-
-@keyframes ui-loading-bar {
-  0%,
-  100% {
-    transform: scaleY(0.5);
-    opacity: 0.5;
-  }
-  50% {
-    transform: scaleY(1);
-    opacity: 1;
   }
 }
 

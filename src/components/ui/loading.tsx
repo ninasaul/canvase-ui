@@ -83,7 +83,17 @@ export function Loading({
       role="status"
       aria-live="polite"
     >
-      <span className="ui-loading__shape" aria-hidden />
+      <span className="ui-loading__shape" aria-hidden>
+        {variant === "bars"
+          ? [0, 1, 2].map((index) => (
+              <span
+                key={index}
+                className="ui-loading__bar"
+                style={{ animationDelay: `calc(var(--loading-duration) * ${index * 0.12 - 0.12})` }}
+              />
+            ))
+          : null}
+      </span>
       <span className="sr-only">{label ?? "Loading"}</span>
     </span>
   );
