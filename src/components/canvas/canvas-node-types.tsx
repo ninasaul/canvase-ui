@@ -365,22 +365,15 @@ function NodeRunningOverlay({
     <div
       role="status"
       aria-live="polite"
-      className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-white/70 dark:bg-zinc-950/60"
+      className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center overflow-hidden bg-white/70 dark:bg-zinc-950/60"
     >
       {/*
-        One element, one transform-only animation. The previous version stacked
-        a backdrop blur plus three animations (scale breathe, SVG rotate and a
-        stroke-opacity pulse), which repainted the whole node area every frame.
+        A single translating highlight instead of a spinner: it reads as media
+        loading, needs no blur, and animates only `transform`, so the browser
+        composites it without repainting the node.
       */}
-      <span
-        aria-hidden
-        className={
-          running
-            ? "canvas-run-ring border-zinc-200 border-t-sky-500 dark:border-zinc-700 dark:border-t-sky-400"
-            : "canvas-run-ring border-dashed border-zinc-300 opacity-70 dark:border-zinc-600"
-        }
-      />
-      <span className="sr-only">
+      {running ? <span aria-hidden className="canvas-run-shimmer" /> : null}
+      <span className="relative text-[10px] font-medium tracking-wide text-zinc-500 dark:text-zinc-400">
         {running ? messages.canvas.executingNode : messages.canvas.statusQueued}
       </span>
     </div>
