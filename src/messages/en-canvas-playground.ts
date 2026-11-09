@@ -5,6 +5,8 @@ export const enCanvasPlaygroundMessages = {
     newCanvas: "New canvas",
     untitled: "Untitled canvas",
     copySuffix: "copy",
+    createNameHint: "Leave empty to name it \"Untitled canvas\"",
+    createNodeCount: "{count} nodes",
     createTitle: "New canvas",
     createHint: "Pick a template to start.",
     settingsTabCanvas: "Canvas",

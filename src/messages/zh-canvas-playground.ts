@@ -5,6 +5,8 @@ export const zhCanvasPlaygroundMessages = {
     newCanvas: "新建画布",
     untitled: "未命名画布",
     copySuffix: "副本",
+    createNameHint: "留空将命名为「未命名画布」",
+    createNodeCount: "{count} 个节点",
     createTitle: "新建画布",
     createHint: "选择模板后进入画布。",
     settingsTabCanvas: "画布偏好",

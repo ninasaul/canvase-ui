@@ -1,13 +1,14 @@
 "use client";
 
 import {
+  CheckCircle,
   Copy,
   PaintBrush,
   Plus,
   Trash,
   UploadSimple,
 } from "@phosphor-icons/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BrandLogo } from "@/components/brand-logo";
 import { ConfirmModal } from "@/components/confirm-modal";
 import { Button } from "@/components/ui/button";
@@ -100,6 +101,15 @@ export function CanvasList() {
   const messages = useMessages();
   const common = useFeatureMessages("common");
   const templateLabels = templateLabelsFor(messages.canvas);
+  // Node count per template, so a card says what it will actually create.
+  const templateNodeCounts = useMemo(() => {
+    const counts = {} as Record<CanvasTemplateKey, number>;
+    for (const key of canvasTemplateKeys) {
+      counts[key] = createCanvasTemplateGraph(key).nodes.length;
+    }
+    return counts;
+  }, []);
+
   const { push } = useLocaleRouter();
   const importRef = useRef<HTMLInputElement>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -514,38 +524,62 @@ export function CanvasList() {
             <Button
               variant="ghost"
               size="sm"
+              disabled={busy}
               onClick={() => setCreateOpen(false)}
             >
               {messages.canvas.cancel}
             </Button>
             <Button
+              type="submit"
+              form="create-canvas-form"
               variant="primary"
               size="sm"
               disabled={busy}
-              onClick={() => void create()}
             >
-              {messages.canvas.create}
+              {busy ? messages.loading : messages.canvas.create}
             </Button>
           </div>
         }
       >
-        <div className="space-y-4">
+        <form
+          id="create-canvas-form"
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void create();
+          }}
+        >
           <label className="block space-y-1.5">
             <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
               {messages.canvas.canvasName}
             </span>
             <Input
+              autoFocus
               value={title}
               size="sm"
+              maxLength={80}
+              disabled={busy}
               placeholder={messages.canvas.canvasNamePlaceholder}
               onChange={(event) => setTitle(event.target.value)}
             />
+            <span className="block text-[11px] text-zinc-400">
+              {title.trim().length > 0
+                ? `${title.trim().length}/80`
+                : messages.canvas.createNameHint}
+            </span>
           </label>
           <div className="space-y-1.5">
-            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            <span
+              id="create-canvas-template-label"
+              className="text-xs font-medium text-zinc-500 dark:text-zinc-400"
+            >
               {messages.canvas.templateLabel}
             </span>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div
+              role="radiogroup"
+              aria-labelledby="create-canvas-template-label"
+              className="grid gap-2 sm:grid-cols-2"
+            >
               {canvasTemplateKeys.map((key) => {
                 const option = templateLabels[key];
                 const selected = template === key;
@@ -553,25 +587,46 @@ export function CanvasList() {
                   <button
                     key={key}
                     type="button"
-                    className={`rounded-lg border p-3 text-left transition-colors ${
+                    role="radio"
+                    aria-checked={selected}
+                    disabled={busy}
+                    className={`rounded-lg border p-3 text-left transition-colors disabled:opacity-60 ${
                       selected
                         ? "border-sky-400 bg-sky-50/60 dark:bg-sky-950/20"
                         : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/60"
                     }`}
                     onClick={() => setTemplate(key)}
                   >
-                    <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
-                      {option.label}
-                    </p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                        {option.label}
+                      </p>
+                      {selected ? (
+                        <Icon
+                          icon={CheckCircle}
+                          size={14}
+                          weight="fill"
+                          className="mt-0.5 shrink-0 text-sky-500"
+                        />
+                      ) : null}
+                    </div>
                     <p className="mt-0.5 text-[11px] text-zinc-400">
                       {option.hint}
                     </p>
+                    {templateNodeCounts[key] > 0 ? (
+                      <p className="mt-1 text-[10px] text-zinc-400">
+                        {messages.canvas.createNodeCount.replace(
+                          "{count}",
+                          String(templateNodeCounts[key]),
+                        )}
+                      </p>
+                    ) : null}
                   </button>
                 );
               })}
             </div>
           </div>
-        </div>
+        </form>
       </Modal>
 
       <ConfirmModal
