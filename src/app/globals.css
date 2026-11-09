@@ -281,121 +281,112 @@
 }
 
 /*
- * Generating node: one translating highlight. Only `transform` animates, so
- * the browser composites it and never repaints the node body.
+ * Generating node: a soft radial veil (it fades to nothing, so no straight
+ * edge ever crosses a rounded node) under a small conic arc. Only the arc and
+ * its inner glow move; both are 44px, so the cost is negligible.
  */
-.canvas-run-shimmer {
+.canvas-run-veil {
   position: absolute;
-  inset: -40%;
-  background: linear-gradient(
-    100deg,
-    transparent 26%,
-    rgba(14, 165, 233, 0.1) 38%,
-    rgba(14, 165, 233, 0.3) 50%,
-    rgba(14, 165, 233, 0.1) 62%,
-    transparent 74%
-  );
-  animation: canvas-run-sweep 2s ease-in-out infinite;
-  will-change: transform;
-}
-
-:is(.dark) .canvas-run-shimmer {
-  background: linear-gradient(
-    100deg,
-    transparent 26%,
-    rgba(56, 189, 248, 0.12) 38%,
-    rgba(56, 189, 248, 0.34) 50%,
-    rgba(56, 189, 248, 0.12) 62%,
-    transparent 74%
+  inset: 0;
+  background: radial-gradient(
+    115% 115% at 50% 50%,
+    rgba(255, 255, 255, 0.98) 0%,
+    rgba(255, 255, 255, 0.94) 48%,
+    rgba(255, 255, 255, 0) 78%
   );
 }
 
-:is(.dark) .canvas-run-shimmer {
-  background: linear-gradient(
-    100deg,
-    transparent 32%,
-    rgba(56, 189, 248, 0.13) 50%,
-    transparent 68%
+:is(.dark) .canvas-run-veil {
+  background: radial-gradient(
+    115% 115% at 50% 50%,
+    rgba(9, 9, 11, 0.96) 0%,
+    rgba(9, 9, 11, 0.9) 48%,
+    rgba(9, 9, 11, 0) 78%
   );
 }
 
-/* Indeterminate progress rail: 2px, moves its own gradient, so it stays on the
-   compositor like the sweep above. */
-.canvas-run-bar {
-  position: absolute;
-  inset-inline: 0;
-  bottom: 0;
-  height: 2px;
-  overflow: hidden;
+.canvas-run-orb {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  filter: drop-shadow(0 2px 10px rgba(14, 165, 233, 0.28));
 }
 
-.canvas-run-bar::after {
+.canvas-run-orb::before {
   content: "";
   position: absolute;
-  inset-block: 0;
-  width: 45%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(14, 165, 233, 0.9),
-    transparent
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 0turn,
+    rgba(14, 165, 233, 0) 0deg,
+    rgba(14, 165, 233, 0.15) 120deg,
+    rgba(14, 165, 233, 0.9) 330deg,
+    rgba(14, 165, 233, 0) 360deg
   );
-  animation: canvas-run-bar 1.3s ease-in-out infinite;
-  will-change: transform;
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 2.5px),
+    #000 calc(100% - 2px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 2.5px),
+    #000 calc(100% - 2px)
+  );
+  animation: canvas-run-orb-spin 1.05s linear infinite;
 }
 
-:is(.dark) .canvas-run-bar::after {
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(56, 189, 248, 0.95),
-    transparent
+.canvas-run-orb::after {
+  content: "";
+  position: absolute;
+  inset: 11px;
+  border-radius: 9999px;
+  background: radial-gradient(
+    circle at 50% 45%,
+    rgba(14, 165, 233, 0.22),
+    rgba(14, 165, 233, 0) 70%
   );
+  animation: canvas-run-orb-breathe 1.6s ease-in-out infinite;
 }
 
-@keyframes canvas-run-bar {
-  0% {
-    transform: translate3d(-100%, 0, 0);
+.canvas-run-orb--idle::after {
+  animation: none;
+  opacity: 0.4;
+}
+
+@keyframes canvas-run-orb-spin {
+  to {
+    transform: rotate(1turn);
   }
+}
+
+@keyframes canvas-run-orb-breathe {
+  0%,
   100% {
-    transform: translate3d(320%, 0, 0);
+    opacity: 0.45;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
   }
 }
 
-[data-panning] .canvas-run-bar::after,
-[data-zooming] .canvas-run-bar::after {
+[data-panning] .canvas-run-orb::before,
+[data-zooming] .canvas-run-orb::before,
+[data-panning] .canvas-run-orb::after,
+[data-zooming] .canvas-run-orb::after {
   animation-play-state: paused;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .canvas-run-bar::after {
+  .canvas-run-orb::before,
+  .canvas-run-orb::after {
     animation: none;
-    transform: none;
-    width: 100%;
   }
 }
-
-@keyframes canvas-run-sweep {
-  0% {
-    transform: translate3d(-60%, 0, 0);
-  }
-  100% {
-    transform: translate3d(60%, 0, 0);
-  }
-}
-
-[data-panning] .canvas-run-shimmer,
-[data-zooming] .canvas-run-shimmer {
-  animation-play-state: paused;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .canvas-run-shimmer {
-    animation: none;
-    opacity: 0;
-  }
-}
-
 
 @keyframes ui-overlay-in {
   from {
