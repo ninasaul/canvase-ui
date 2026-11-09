@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  CheckCircle,
+  Check,
   Copy,
   PaintBrush,
   Plus,
@@ -550,7 +550,7 @@ export function CanvasList() {
           }}
         >
           <label className="block space-y-1.5">
-            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            <span className="text-[11px] font-medium text-zinc-400">
               {messages.canvas.canvasName}
             </span>
             <Input
@@ -562,7 +562,7 @@ export function CanvasList() {
               placeholder={messages.canvas.canvasNamePlaceholder}
               onChange={(event) => setTitle(event.target.value)}
             />
-            <span className="block text-[11px] text-zinc-400">
+            <span className="block text-xs text-zinc-400">
               {title.trim().length > 0
                 ? `${title.trim().length}/80`
                 : messages.canvas.createNameHint}
@@ -571,7 +571,7 @@ export function CanvasList() {
           <div className="space-y-1.5">
             <span
               id="create-canvas-template-label"
-              className="text-xs font-medium text-zinc-500 dark:text-zinc-400"
+              className="text-[11px] font-medium text-zinc-400"
             >
               {messages.canvas.templateLabel}
             </span>
@@ -592,29 +592,29 @@ export function CanvasList() {
                     disabled={busy}
                     className={`rounded-lg border p-3 text-left transition-colors disabled:opacity-60 ${
                       selected
-                        ? "border-sky-400 bg-sky-50/60 dark:bg-sky-950/20"
+                        ? "border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900"
                         : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/60"
                     }`}
                     onClick={() => setTemplate(key)}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                      <p className="text-sm font-medium text-zinc-800 dark:text-zinc-100">
                         {option.label}
                       </p>
                       {selected ? (
                         <Icon
-                          icon={CheckCircle}
+                          icon={Check}
                           size={14}
-                          weight="fill"
-                          className="mt-0.5 shrink-0 text-sky-500"
+                          weight="bold"
+                          className="mt-0.5 shrink-0 text-zinc-900 dark:text-zinc-100"
                         />
                       ) : null}
                     </div>
-                    <p className="mt-0.5 text-[11px] text-zinc-400">
+                    <p className="mt-0.5 text-xs text-zinc-400">
                       {option.hint}
                     </p>
                     {templateNodeCounts[key] > 0 ? (
-                      <p className="mt-1 text-[10px] text-zinc-400">
+                      <p className="mt-1 text-[11px] text-zinc-400">
                         {messages.canvas.createNodeCount.replace(
                           "{count}",
                           String(templateNodeCounts[key]),
