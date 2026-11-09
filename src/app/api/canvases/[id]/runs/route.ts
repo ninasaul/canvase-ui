@@ -56,8 +56,9 @@ export async function GET(request: Request, context: RouteContext) {
 
 const recordSchema = z.object({
   mode: z.enum(["all", "selected", "node", "from", "retry-failed"]),
-  status: z.enum(["succeeded", "partial", "failed", "cancelled"]),
+  status: z.enum(["queued", "running", "succeeded", "partial", "failed", "cancelled"]),
   nodeIds: z.array(z.string().trim().min(1)).min(1).max(500),
+  error: z.string().max(2_000).optional().nullable(),
   nodeStates: z.record(
     z.string(),
     z.object({
@@ -111,6 +112,7 @@ export async function POST(request: Request, context: RouteContext) {
       status: parsed.data.status,
       nodeIds: parsed.data.nodeIds,
       nodeStates: parsed.data.nodeStates as Prisma.InputJsonValue,
+      ...(parsed.data.error ? { error: parsed.data.error } : {}),
       ...(parsed.data.startedAt ? { startedAt: new Date(parsed.data.startedAt) } : {}),
       ...(parsed.data.finishedAt ? { finishedAt: new Date(parsed.data.finishedAt) } : {}),
     },

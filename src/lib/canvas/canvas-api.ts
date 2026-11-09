@@ -160,6 +160,8 @@ export type CanvasRunDetail = {
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+  /** Last server-side progress write; stale running rows are dead. */
+  updatedAt?: string;
   nodes: CanvasRunNodeDetail[];
 };
 
@@ -186,12 +188,29 @@ export async function listCanvasRuns(
   );
 }
 
+/** Updates the run record created when an editor run started. */
+export async function updateCanvasRun(
+  canvasId: string,
+  runId: string,
+  input: {
+    status: "queued" | "running" | "succeeded" | "partial" | "failed" | "cancelled";
+    nodeStates?: Record<string, { status: string; error?: string | null }>;
+    error?: string | null;
+    finishedAt?: string;
+  },
+): Promise<void> {
+  await portalRequest<{ id: string }>(
+    `/portal/v1/canvases/${canvasId}/runs/${runId}`,
+    { method: "PATCH", body: JSON.stringify(input) },
+  );
+}
+
 /** Records an editor-initiated run so it shows up in the run history. */
 export async function recordCanvasRun(
   canvasId: string,
   input: {
     mode: "all" | "selected" | "node" | "from" | "retry-failed";
-    status: "succeeded" | "partial" | "failed" | "cancelled";
+    status: "queued" | "running" | "succeeded" | "partial" | "failed" | "cancelled";
     nodeIds: string[];
     nodeStates: Record<
       string,

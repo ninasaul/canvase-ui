@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   type Dispatch,
   type MutableRefObject,
   type SetStateAction,
@@ -12,6 +13,7 @@ import {
 import { toast } from "@/components/ui/toast";
 import {
   recordCanvasRun,
+  updateCanvasRun,
   cancelAgentRun,
   cancelCanvasRun,
   getActiveAgentRun,
@@ -106,6 +108,12 @@ export function useCanvasRun(input: {
     activeRunsRef,
     agentRunSeenRef,
   } = input;
+
+  // Latest callbacks for the polling effect, which must not depend on them.
+  const updateNodeDataRef = useRef(updateNodeData);
+  updateNodeDataRef.current = updateNodeData;
+  const syncFromServerRef = useRef(syncFromServer);
+  syncFromServerRef.current = syncFromServer;
 
   const cancelNodeRun = useCallback(
     (nodeId: string) => {
@@ -296,6 +304,15 @@ export function useCanvasRun(input: {
       activeRunsRef.current.set(nodeId, controller);
       const startedAt = new Date().toISOString();
       let failure: string | null = null;
+      // Create the server record up front: a refresh then still finds an
+      // active run instead of losing the node's running state.
+      const liveRunId = await recordCanvasRun(canvasId, {
+        mode: "node",
+        status: "running",
+        nodeIds: [nodeId],
+        nodeStates: { [nodeId]: { status: "running" } },
+        startedAt,
+      }).catch(() => null);
       try {
         await executeNode(nodeId, controller.signal);
       } catch (error) {
@@ -309,19 +326,33 @@ export function useCanvasRun(input: {
         const node = useCanvasStore
           .getState()
           .nodes.find((item) => item.id === nodeId);
-        void recordCanvasRun(canvasId, {
-          mode: "node",
-          status: failure ? "failed" : node?.data.status === "failed" ? "failed" : "succeeded",
-          nodeIds: [nodeId],
-          nodeStates: {
-            [nodeId]: {
-              status: node?.data.status ?? (failure ? "failed" : "succeeded"),
-              ...(node?.data.error ? { error: node.data.error } : {}),
-            },
+        const finalStates = {
+          [nodeId]: {
+            status: node?.data.status ?? (failure ? "failed" : "succeeded"),
+            ...(node?.data.error ? { error: node.data.error } : {}),
           },
-          startedAt,
-          finishedAt: new Date().toISOString(),
-        }).catch(() => undefined);
+        };
+        const finalStatus = failure
+          ? "failed"
+          : node?.data.status === "failed"
+            ? "failed"
+            : "succeeded";
+        const finish = () =>
+          liveRunId
+            ? updateCanvasRun(canvasId, liveRunId, {
+                status: finalStatus,
+                nodeStates: finalStates,
+                finishedAt: new Date().toISOString(),
+              })
+            : recordCanvasRun(canvasId, {
+                mode: "node",
+                status: finalStatus,
+                nodeIds: [nodeId],
+                nodeStates: finalStates,
+                startedAt,
+                finishedAt: new Date().toISOString(),
+              });
+        void finish().catch(() => undefined);
       }
     },
     [activeRun, activeRunsRef, canvasId, executeNode],
@@ -352,6 +383,15 @@ export function useCanvasRun(input: {
       ),
     }));
     const startedAt = new Date().toISOString();
+    const liveRunId = await recordCanvasRun(canvasId, {
+      mode: pending.mode,
+      status: "running",
+      nodeIds: pending.plan.nodeIds,
+      nodeStates: Object.fromEntries(
+        pending.plan.nodeIds.map((nodeId) => [nodeId, { status: "running" }]),
+      ),
+      startedAt,
+    }).catch(() => null);
     try {
       const result = await runCanvasPlan({
         plan: pending.plan,
@@ -382,14 +422,22 @@ export function useCanvasRun(input: {
             : result.failed.length > 0 || result.skipped.length > 0
               ? "partial"
               : "succeeded";
-      void recordCanvasRun(canvasId, {
-        mode: pending.mode,
-        status,
-        nodeIds: pending.plan.nodeIds,
-        nodeStates,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-      }).catch(() => undefined);
+      const finish = () =>
+        liveRunId
+          ? updateCanvasRun(canvasId, liveRunId, {
+              status,
+              nodeStates,
+              finishedAt: new Date().toISOString(),
+            })
+          : recordCanvasRun(canvasId, {
+              mode: pending.mode,
+              status,
+              nodeIds: pending.plan.nodeIds,
+              nodeStates,
+              startedAt,
+              finishedAt: new Date().toISOString(),
+            });
+      void finish().catch(() => undefined);
 
       if (controller.signal.aborted) {
         toast.info(messages.canvas.runCancelled);
@@ -458,6 +506,7 @@ export function useCanvasRun(input: {
             item.taskId ?? undefined,
           );
         }
+
         if (["succeeded", "partial", "failed", "cancelled"].includes(run.status)) {
           stopped = true;
           setServerRunId(null);
@@ -521,18 +570,19 @@ export function useCanvasRun(input: {
             // Drop the overlay entries: the run is over and the transcript of
             // node states is stale from here on.
             useCanvasRunStatusStore.getState().reset();
-            void syncFromServer();
+            void syncFromServerRef.current();
           }
           return;
         }
         agentRunSeenRef.current = true;
         setAgentRunId(run.runId);
         const statusStore = useCanvasRunStatusStore.getState();
+        const updateNode = updateNodeDataRef.current;
         for (const nodeId of run.nodeIds) {
           const state = run.nodes[nodeId];
           if (!state) {
             statusStore.setNode(nodeId, "queued");
-            updateNodeData(nodeId, { status: "queued", error: undefined });
+            updateNode(nodeId, { status: "queued", error: undefined });
             continue;
           }
           const mapped = mapAgentNodeStatus(state.status);
@@ -543,7 +593,7 @@ export function useCanvasRun(input: {
             state.requestId,
             run.runId,
           );
-          updateNodeData(nodeId, {
+          updateNode(nodeId, {
             status: mapped,
             ...(state.error !== undefined ? { error: state.error } : {}),
             ...(state.requestId ? { requestId: state.requestId } : {}),
@@ -572,7 +622,12 @@ export function useCanvasRun(input: {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [agentRunSeenRef, canvasId, setAgentRunId, syncFromServer, updateNodeData]);
+    // `updateNodeData` / `syncFromServer` change identity on most renders; as
+    // deps they tore this effect down constantly and every rebuild fired an
+    // immediate tick — measured at ~60 requests/second. The tick only needs the
+    // canvas id, so the callbacks are read from refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvasId]);
 
   // ---- view models for the dialog -------------------------------------------
   const runSummary = useMemo(
