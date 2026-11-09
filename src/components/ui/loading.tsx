@@ -17,7 +17,8 @@ export type LoadingVariant =
   | "dots"
   | "pulse"
   | "bars"
-  | "orbit";
+  | "orbit"
+  | "ripple";
 
 export type LoadingProps = {
   variant?: LoadingVariant;

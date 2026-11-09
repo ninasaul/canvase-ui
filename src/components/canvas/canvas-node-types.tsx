@@ -411,10 +411,10 @@ function NodeRunningOverlay({
       <span aria-hidden className="canvas-run-veil" />
       {running ? (
         <Loading
-          variant="arc"
-          size={44}
-          thickness={2.5}
-          speed={1.1}
+          variant="ripple"
+          size={56}
+          thickness={2}
+          speed={1.6}
           className="relative text-sky-500 dark:text-sky-400"
           label={messages.canvas.executingNode}
         />

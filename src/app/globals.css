@@ -743,6 +743,48 @@ body {
   animation: ui-loading-spin var(--loading-duration, 0.9s) linear infinite;
 }
 
+/* ripple: two rings expanding out of a still core — reads as "working"
+   without spinning, and only two transforms animate. */
+.ui-loading--ripple .ui-loading__shape::before,
+.ui-loading--ripple .ui-loading__shape::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: var(--loading-thickness, 2px) solid
+    color-mix(in oklab, var(--loading-color, currentColor) 60%, transparent);
+  animation: ui-loading-ripple var(--loading-duration, 1.8s)
+    cubic-bezier(0.22, 0.7, 0.3, 1) infinite;
+}
+
+.ui-loading--ripple .ui-loading__shape::after {
+  animation-delay: calc(var(--loading-duration, 1.8s) / -2);
+}
+
+.ui-loading--ripple .ui-loading__shape {
+  box-shadow: inset 0 0 0 0 transparent;
+}
+
+.ui-loading--ripple .ui-loading__shape {
+  background: radial-gradient(
+    circle at 50% 50%,
+    color-mix(in oklab, var(--loading-color, currentColor) 55%, transparent) 0%,
+    transparent 38%
+  );
+  border-radius: 9999px;
+}
+
+@keyframes ui-loading-ripple {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.45);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
 @keyframes ui-loading-spin {
   to {
     transform: rotate(1turn);
