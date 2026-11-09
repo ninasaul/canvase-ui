@@ -326,7 +326,7 @@ export function CanvasList() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-7xl px-5 py-8">
+      <div className="canvas-page-in mx-auto w-full max-w-7xl px-5 py-8">
         <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="flex min-w-0 items-center gap-2.5">
             <BrandLogo size={28} alt={common.appName} className="shrink-0" />
@@ -439,7 +439,7 @@ export function CanvasList() {
               <div
                 key={document.id}
                 className="canvas-card-in group overflow-hidden rounded-xl border border-zinc-200 bg-white transition-[transform,border-color,box-shadow] duration-300 ease-out hover:-translate-y-1 hover:border-zinc-300 hover:shadow-[0_16px_36px_-24px_rgba(24,24,27,0.5)] dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
-                style={{ animationDelay: `${Math.min(index, 12) * 40}ms` }}
+                style={{ animationDelay: `${Math.min(index, 8) * 30}ms` }}
               >
                 <button
                   type="button"

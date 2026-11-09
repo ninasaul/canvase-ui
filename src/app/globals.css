@@ -545,6 +545,35 @@ body {
 /* Nodes are virtualised around the viewport edge, so they mount as they
    scroll in. A short opacity fade hides the pop without touching layout
    (compositor-only) and it never re-runs for nodes that stay mounted. */
+/* Canvas list: the container and its cards rise in once on mount. The card
+   class was already applied by the list but had no keyframes, so the page
+   simply appeared. Transform + opacity only, so nothing reflows. */
+@keyframes canvas-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.canvas-page-in {
+  animation: canvas-enter 220ms cubic-bezier(0.22, 0.7, 0.3, 1) both;
+}
+
+.canvas-card-in {
+  animation: canvas-enter 220ms cubic-bezier(0.22, 0.7, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-page-in,
+  .canvas-card-in {
+    animation: none;
+  }
+}
+
 @keyframes canvas-node-in {
   from {
     opacity: 0.65;
