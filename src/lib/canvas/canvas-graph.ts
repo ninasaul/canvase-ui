@@ -131,8 +131,9 @@ export const CANVAS_GRAPH_SCHEMA_VERSION = 1 as const;
  * the canvas later has no way to finish them.
  */
 export const TRANSIENT_NODE_DATA_KEYS = [
-  "requestId",
-  "taskId",
+  // `requestId` / `taskId` are NOT transient: they are the only handle a reload
+  // has to resume an async provider task, so stripping them silently lost every
+  // in-flight generation.
   "runId",
   "startedAt",
 ] as const;
@@ -145,7 +146,8 @@ const IN_FLIGHT_RUN_STATUSES = new Set(["running", "queued"]);
  * An in-flight node is rewritten as `interrupted` so a reload shows an honest
  * "this was running" state the user can retry, instead of a zombie `running`
  * that nothing will ever complete. Terminal outcomes (succeeded / failed /
- * cancelled), `error`, `finishedAt` and result fields are kept.
+ * cancelled), `error`, `finishedAt`, result fields and the provider task ids
+ * (needed to resume after a reload) are kept.
  */
 export function normalizeNodeDataForPersistence(
   data: CanvasNodeData,

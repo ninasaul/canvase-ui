@@ -157,6 +157,24 @@ function NodeShell({
   useEffect(() => {
     return () => queryControllerRef.current?.abort();
   }, []);
+  // Resuming after a reload: a node that still carries a task id but never
+  // produced media was interrupted mid-generation (typically a long video
+  // task). Restart its task poll once instead of making the user click 查询任务.
+  const autoRecoveredRef = useRef(false);
+  useEffect(() => {
+    if (autoRecoveredRef.current || !taskId || fallbackUrl) {
+      return;
+    }
+    if (node?.data.status !== "interrupted") {
+      return;
+    }
+    autoRecoveredRef.current = true;
+    void queryTask();
+    // queryTask is intentionally not a dependency: it is re-created each
+    // render and the ref guard already limits this to one attempt per mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId, fallbackUrl, node?.data.status]);
+
 
   async function queryTask() {
     if (!taskId || querying) {
