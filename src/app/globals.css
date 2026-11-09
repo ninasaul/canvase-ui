@@ -285,7 +285,7 @@
  * edge ever crosses a rounded node) under a small conic arc. Only the arc and
  * its inner glow move; both are 44px, so the cost is negligible.
  */
-.canvas-run-veil {
+.ui-loading-veil {
   position: absolute;
   inset: 0;
   background: radial-gradient(
@@ -296,7 +296,7 @@
   );
 }
 
-:is(.dark) .canvas-run-veil {
+:is(.dark) .ui-loading-veil {
   background: radial-gradient(
     115% 115% at 50% 50%,
     rgba(9, 9, 11, 0.96) 0%,

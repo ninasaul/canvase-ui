@@ -399,52 +399,31 @@ function NodeRunningOverlay({
     running && startedAt ? Math.max(0, Math.round((now - startedAt) / 1000)) : null;
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-2"
-    >
-      {/*
-        A soft radial veil instead of a rectangle: it fades to nothing at the
-        edges, so no straight line ever sits across the rounded node.
-      */}
-      <span aria-hidden className="canvas-run-veil" />
-      {running ? (
-        <Loading
-          variant="ripple"
-          size={56}
-          thickness={2}
-          speed={1.6}
-          className="relative text-sky-500 dark:text-sky-400"
-          label={messages.canvas.executingNode}
-        />
-      ) : (
-        <Loading
-          variant="ring"
-          size={44}
-          thickness={2.5}
-          speed={2.4}
-          className="relative text-zinc-400 opacity-70 dark:text-zinc-500"
-          label={messages.canvas.statusQueued}
-        />
-      )}
-      <span className="relative rounded-full bg-white/85 px-2 py-0.5 text-[10px] font-medium tracking-wide text-zinc-600 tabular-nums shadow-sm dark:bg-zinc-900/85 dark:text-zinc-300">
-        {running ? messages.canvas.executingNode : messages.canvas.statusQueued}
-        {elapsed !== null ? ` · ${elapsed}s` : ""}
-      </span>
-      {running ? (
-        <button
-          type="button"
-          className="relative rounded-full px-2 text-[10px] text-zinc-400 transition-colors pointer-events-auto hover:text-red-500 dark:text-zinc-500 dark:hover:text-red-400"
-          onClick={(event) => {
-            event.stopPropagation();
-            cancelNodeRun(nodeId);
-          }}
-        >
-          {messages.canvas.cancel}
-        </button>
-      ) : null}
-    </div>
+    <Loading
+      variant={running ? "ripple" : "ring"}
+      size={running ? 56 : 44}
+      thickness={running ? 2 : 2.5}
+      speed={running ? 1.6 : 2.4}
+      overlay
+      color={running ? undefined : "#a1a1aa"}
+      className={running ? "text-sky-500 dark:text-sky-400" : "opacity-70"}
+      label={
+        running ? messages.canvas.executingNode : messages.canvas.statusQueued
+      }
+      caption={
+        running
+          ? `${messages.canvas.executingNode}${elapsed !== null ? ` · ${elapsed}s` : ""}`
+          : messages.canvas.statusQueued
+      }
+      action={
+        running
+          ? {
+              label: messages.canvas.cancel,
+              onAction: () => cancelNodeRun(nodeId),
+            }
+          : undefined
+      }
+    />
   );
 }
 
