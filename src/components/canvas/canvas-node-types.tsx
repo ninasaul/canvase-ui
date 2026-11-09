@@ -15,6 +15,7 @@ import {
   Position,
   type NodeProps,
 } from "@xyflow/react";
+import { useCanvasActions } from "@/components/canvas/canvas-actions";
 import { Icon } from "@/components/ui/icon";
 import { useCanvasDetail } from "@/components/canvas/canvas-detail-context";
 import { getNodeById } from "@/lib/canvas/canvas-node-index";
@@ -351,31 +352,57 @@ function NodeUploadOverlay({ progress }: { progress: number }) {
 function NodeRunningOverlay({
   nodeId,
   status,
+  startedAt,
 }: {
   nodeId: string;
   status: CanvasFlowNode["data"]["status"];
+  startedAt?: number;
 }) {
   const runStatus = useCanvasRunStatus(nodeId);
+  const { cancelNodeRun } = useCanvasActions();
   const effectiveStatus = runStatus?.status ?? status;
+  const running = effectiveStatus === "running";
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!running) {
+      return;
+    }
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+
   if (effectiveStatus !== "running" && effectiveStatus !== "queued") {
     return null;
   }
-  const running = effectiveStatus === "running";
+  const elapsed =
+    running && startedAt ? Math.max(0, Math.round((now - startedAt) / 1000)) : null;
+
   return (
     <div
       role="status"
       aria-live="polite"
-      className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center overflow-hidden bg-white/70 dark:bg-zinc-950/60"
+      // Matches the node's own corner radius and clips the sweep to it, so the
+      // overlay no longer paints square corners over a rounded node.
+      className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-1 overflow-hidden rounded-[inherit] bg-white/70 dark:bg-zinc-950/60"
     >
-      {/*
-        A single translating highlight instead of a spinner: it reads as media
-        loading, needs no blur, and animates only `transform`, so the browser
-        composites it without repainting the node.
-      */}
       {running ? <span aria-hidden className="canvas-run-shimmer" /> : null}
-      <span className="relative text-[10px] font-medium tracking-wide text-zinc-500 dark:text-zinc-400">
+      <span className="relative text-[10px] font-medium tracking-wide text-zinc-500 tabular-nums dark:text-zinc-400">
         {running ? messages.canvas.executingNode : messages.canvas.statusQueued}
+        {elapsed !== null ? ` · ${elapsed}s` : ""}
       </span>
+      {running ? (
+        <button
+          type="button"
+          className="relative rounded px-1 text-[10px] text-zinc-400 underline-offset-2 transition-colors pointer-events-auto hover:text-red-500 hover:underline dark:text-zinc-500 dark:hover:text-red-400"
+          onClick={(event) => {
+            event.stopPropagation();
+            cancelNodeRun(nodeId);
+          }}
+        >
+          {messages.canvas.cancel}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -516,7 +543,11 @@ export const TextCanvasNode = memo(function TextCanvasNode({ id, data, selected 
         />
         )}
       </NodeShell>
-      <NodeRunningOverlay nodeId={id} status={data.status} />
+      <NodeRunningOverlay
+        nodeId={id}
+        status={data.status}
+        startedAt={data.startedAt}
+      />
       <OutputHandle color="#3b82f6" />
       {selected ? (
         <CanvasNodeResizer
@@ -584,7 +615,11 @@ export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selecte
           )}
         </div>
       </NodeShell>
-      <NodeRunningOverlay nodeId={id} status={data.status} />
+      <NodeRunningOverlay
+        nodeId={id}
+        status={data.status}
+        startedAt={data.startedAt}
+      />
       <OutputHandle color="#10b981" />
       <CanvasNodeResizer nodeId={id} selected={Boolean(selected)} minWidth={160} minHeight={120} />
       {selected ? (
@@ -653,7 +688,11 @@ export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selecte
           )}
         </div>
       </NodeShell>
-      <NodeRunningOverlay nodeId={id} status={data.status} />
+      <NodeRunningOverlay
+        nodeId={id}
+        status={data.status}
+        startedAt={data.startedAt}
+      />
       <OutputHandle color="#8b5cf6" label={messages.canvas.output} />
       <CanvasNodeResizer nodeId={id} selected={Boolean(selected)} minWidth={180} minHeight={120} />
       {selected ? (

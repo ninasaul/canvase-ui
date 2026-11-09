@@ -289,20 +289,20 @@
   inset: -40%;
   background: linear-gradient(
     100deg,
-    transparent 30%,
-    rgba(14, 165, 233, 0.12) 50%,
-    transparent 70%
+    transparent 32%,
+    rgba(14, 165, 233, 0.09) 50%,
+    transparent 68%
   );
-  animation: canvas-run-sweep 1.6s ease-in-out infinite;
+  animation: canvas-run-sweep 2.4s ease-in-out infinite;
   will-change: transform;
 }
 
 :is(.dark) .canvas-run-shimmer {
   background: linear-gradient(
     100deg,
-    transparent 30%,
-    rgba(56, 189, 248, 0.18) 50%,
-    transparent 70%
+    transparent 32%,
+    rgba(56, 189, 248, 0.13) 50%,
+    transparent 68%
   );
 }
 
