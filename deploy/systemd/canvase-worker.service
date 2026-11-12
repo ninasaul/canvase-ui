@@ -1,0 +1,18 @@
+[Unit]
+Description=Canvase asset thumbnail worker
+After=network.target postgresql.service redis-server.service canvase-ui.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/canvase-ui
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/canvase-ui/.env
+ExecStart=/opt/canvase-ui/node_modules/.bin/tsx --tsconfig tsconfig.json worker/src/main.ts
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

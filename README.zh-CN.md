@@ -2,9 +2,7 @@
 
 # VEME（微米）
 
-**VEME / 微米** — https://veme.dev
-
-开源 AI 媒体工作流画布。用节点图编排图片、视频、文本生成，在本地运行 DAG，并把媒体存进你自己的 S3 兼容存储桶。
+开源 AI 媒体工作流画布（[veme.dev](https://veme.dev)）。用节点图编排图片、视频、文本生成，在本地运行 DAG，并把媒体存进你自己的 S3 兼容存储桶。
 
 认证使用 [Better Auth](https://www.better-auth.com/)（邮箱 + 密码）。画布与媒体元数据通过 Prisma 存在 PostgreSQL 中。
 

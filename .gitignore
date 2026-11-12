@@ -17,6 +17,9 @@ node_modules/
 # production
 /build
 
+# local / machine scripts (not published)
+/scripts/
+
 # misc
 .DS_Store
 *.pem

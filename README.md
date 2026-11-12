@@ -2,9 +2,7 @@
 
 # VEME
 
-**VEME** (Chinese: 微米) — https://veme.dev
-
-Open-source AI media workflow canvas. Compose image, video, and text generation as a node graph, run DAGs locally, and store media in your own S3-compatible bucket.
+Open-source AI media workflow canvas ([veme.dev](https://veme.dev)). Compose image, video, and text generation as a node graph, run DAGs locally, and store media in your own S3-compatible bucket.
 
 Auth uses [Better Auth](https://www.better-auth.com/) (email/password). Canvas and media metadata live in PostgreSQL via Prisma.
 

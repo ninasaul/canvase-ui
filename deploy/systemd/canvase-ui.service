@@ -1,0 +1,19 @@
+[Unit]
+Description=Canvase UI (Next.js)
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/canvase-ui
+Environment=NODE_ENV=production
+Environment=PORT=3917
+EnvironmentFile=/opt/canvase-ui/.env
+ExecStart=/usr/bin/node /opt/canvase-ui/node_modules/next/dist/bin/next start -p 3917
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
