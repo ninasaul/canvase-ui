@@ -139,6 +139,22 @@ Email + password through Better Auth. The forms validate on submit (email shape,
 
 Server-side: passwords are limited to 8–128 characters, sessions last 30 days and refresh daily, and the credential endpoints are rate limited (10 sign-ins per minute, 5 sign-ups per 5 minutes). Theme follows the OS until the user picks one.
 
+## Social sign-in
+
+Email + password always works. Google and GitHub are opt-in: set the pair of
+environment variables and the buttons appear on the login screen; leave them unset
+and the page stays as before.
+
+| Provider | Variables | Redirect URI to register |
+| --- | --- | --- |
+| Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | `{APP_URL}/api/auth/callback/google` |
+| GitHub | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | `{APP_URL}/api/auth/callback/github` |
+
+`{APP_URL}` must match `BETTER_AUTH_URL` / `NEXT_PUBLIC_APP_URL`. The callback path is
+provided by Better Auth; nothing else needs configuring. Accounts created through a
+provider are normal users (same session, same canvas ownership); Better Auth links a
+provider identity to an existing account when the email matches.
+
 ## Connect Agent (MCP)
 
 Agents can edit and run a single canvas through scoped tokens.
