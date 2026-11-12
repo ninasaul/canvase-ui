@@ -2,8 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useId, useState, type FormEvent } from "react";
-import { Eye, EyeSlash, GithubLogo, GoogleLogo } from "@phosphor-icons/react";
+import { Eye, EyeSlash } from "@phosphor-icons/react";
 
+import { GithubMark, GoogleMark } from "@/components/auth/provider-icons";
 import { Button } from "@/components/ui/button";
 import { Loading } from "@/components/ui/loading";
 import { Field } from "@/components/ui/field";
@@ -350,12 +351,10 @@ export function AuthForm({
               >
                 {oauthPending === provider ? (
                   <Loading variant="arc" size={14} label={auth.submitting} />
+                ) : provider === "google" ? (
+                  <GoogleMark size={16} />
                 ) : (
-                  <Icon
-                    icon={provider === "google" ? GoogleLogo : GithubLogo}
-                    size={16}
-                    weight="fill"
-                  />
+                  <GithubMark size={16} />
                 )}
                 {provider === "google"
                   ? auth.continueWithGoogle
