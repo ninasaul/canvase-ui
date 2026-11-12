@@ -29,8 +29,8 @@ export async function generateMetadata(): Promise<Metadata> {
     title: common.appName,
     description: common.appTagline,
     icons: {
-      icon: [{ url: "/logo.svg", type: "image/svg+xml" }],
-      apple: [{ url: "/logo.svg", type: "image/svg+xml" }],
+      icon: [{ url: "/veme.svg", type: "image/svg+xml" }],
+      apple: [{ url: "/veme.svg", type: "image/svg+xml" }],
     },
   };
 }
