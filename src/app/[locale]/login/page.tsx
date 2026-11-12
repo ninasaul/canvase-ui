@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 
 import { AuthForm } from "@/components/auth/auth-form";
+import { getEnabledSocialProviders } from "@/lib/auth-providers";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { hasLocale } from "@/i18n/get-dictionary";
 import { withLocale } from "@/lib/i18n-path";
@@ -40,7 +41,12 @@ export default async function LoginPage({
 
   return (
     <AuthShell>
-      <AuthForm mode="sign-in" next={nextPath} notice={notice} />
+      <AuthForm
+        mode="sign-in"
+        next={nextPath}
+        notice={notice}
+        providers={getEnabledSocialProviders()}
+      />
     </AuthShell>
   );
 }

@@ -2,14 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import { useId, useState, type FormEvent } from "react";
-import { CircleNotch, Eye, EyeSlash } from "@phosphor-icons/react";
+import { Eye, EyeSlash, GithubLogo, GoogleLogo } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
+import { Loading } from "@/components/ui/loading";
 import { Field } from "@/components/ui/field";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { useFeatureMessages } from "@/hooks/use-feature-messages";
 import { authClient } from "@/lib/auth-client";
+import type { SocialProviderId } from "@/lib/auth-providers";
 import { LocaleLink, useLocaleRouter } from "@/lib/locale-navigation";
 
 type AuthMode = "sign-in" | "sign-up";
@@ -51,12 +53,15 @@ export function AuthForm({
   mode,
   next,
   notice,
+  providers = [],
 }: {
   mode: AuthMode;
   /** Already-sanitised in-app path to land on after signing in. */
   next?: string;
   /** Optional banner, e.g. an expired session. */
   notice?: string;
+  /** Social providers configured on the server. */
+  providers?: SocialProviderId[];
 }) {
   const router = useRouter();
   const { replace } = useLocaleRouter();
@@ -72,6 +77,28 @@ export function AuthForm({
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [oauthPending, setOauthPending] = useState<SocialProviderId | null>(null);
+
+  async function signInWithProvider(provider: SocialProviderId) {
+    if (oauthPending) {
+      return;
+    }
+    setOauthPending(provider);
+    setFormError(null);
+    try {
+      // Better Auth redirects to the provider; the callback lands back on the
+      // requested path. `origin` keeps the locale + next target intact.
+      const target = `${window.location.origin}${
+        next && next.startsWith("/") ? next : window.location.pathname
+      }`;
+      await authClient.signIn.social({ provider, callbackURL: target });
+    } catch (error) {
+      setOauthPending(null);
+      setFormError(
+        error instanceof Error && error.message ? error.message : auth.oauthFailed,
+      );
+    }
+  }
 
   function validate(): FieldErrors {
     const errors: FieldErrors = {};
@@ -293,7 +320,7 @@ export function AuthForm({
       <Button type="submit" disabled={isSubmitting} className="w-full" size="md">
         {isSubmitting ? (
           <>
-            <Icon icon={CircleNotch} size={14} className="animate-spin" />
+            <Loading variant="arc" size={14} color="currentColor" label={auth.submitting} />
             {auth.submitting}
           </>
         ) : mode === "sign-in" ? (
@@ -302,6 +329,42 @@ export function AuthForm({
           auth.submitSignUp
         )}
       </Button>
+
+      {providers.length > 0 ? (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2" aria-hidden>
+            <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+            <span className="text-[11px] text-zinc-400">{auth.orContinueWith}</span>
+            <span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+          </div>
+          <div className="grid gap-2">
+            {providers.map((provider) => (
+              <Button
+                key={provider}
+                type="button"
+                variant="secondary"
+                size="md"
+                className="w-full justify-center gap-2"
+                disabled={isSubmitting || oauthPending !== null}
+                onClick={() => void signInWithProvider(provider)}
+              >
+                {oauthPending === provider ? (
+                  <Loading variant="arc" size={14} label={auth.submitting} />
+                ) : (
+                  <Icon
+                    icon={provider === "google" ? GoogleLogo : GithubLogo}
+                    size={16}
+                    weight="fill"
+                  />
+                )}
+                {provider === "google"
+                  ? auth.continueWithGoogle
+                  : auth.continueWithGithub}
+              </Button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <LocaleLink
         href={

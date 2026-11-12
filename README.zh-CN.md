@@ -136,6 +136,17 @@ S3_FORCE_PATH_STYLE="false"
 
 服务端：密码限制 8–128 位，会话 30 天并在每日刷新，凭证接口限流（每分钟 10 次登录、每 5 分钟 5 次注册）。用户未选择前，主题跟随系统。
 
+## 第三方登录
+
+邮箱 + 密码始终可用。Google 与 GitHub 是**可选**的：设置对应的一对环境变量后，登录页才会出现按钮；不设置则页面与之前完全一致。
+
+| 提供商 | 环境变量 | 需要登记的回调地址 |
+| --- | --- | --- |
+| Google | `GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET` | `{APP_URL}/api/auth/callback/google` |
+| GitHub | `GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET` | `{APP_URL}/api/auth/callback/github` |
+
+`{APP_URL}` 需与 `BETTER_AUTH_URL` / `NEXT_PUBLIC_APP_URL` 一致。回调路径由 Better Auth 提供，无需额外配置。通过第三方创建的账户就是普通用户（同样的会话与画布归属）；当邮箱已存在时，Better Auth 会把第三方身份关联到已有账户。
+
 ## Connect Agent（MCP）
 
 Agent 可通过作用域令牌编辑并运行单个画布。
