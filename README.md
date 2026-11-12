@@ -1,6 +1,8 @@
 **English** · [简体中文](README.zh-CN.md)
 
-# Canvase
+# VEME
+
+**VEME** (Chinese: 微米) — https://veme.dev
 
 Open-source AI media workflow canvas. Compose image, video, and text generation as a node graph, run DAGs locally, and store media in your own S3-compatible bucket.
 
@@ -209,7 +211,7 @@ skills/
 ```markdown
 ---
 name: canvas-graph-workflow
-description: How to compose, edit and run Canvase canvas graphs safely.
+description: How to compose, edit and run VEME canvas graphs safely.
 tags: canvas, graph
 ---
 ```
@@ -249,4 +251,4 @@ A self-hosted canvas UI with a small BFF. It is intentionally a single-tenant de
 
 ## License
 
-Private / unlicensed unless otherwise stated in the repository.
+[MIT](LICENSE)

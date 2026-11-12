@@ -1,6 +1,8 @@
 [English](README.md) · **简体中文**
 
-# Canvase
+# VEME（微米）
+
+**VEME / 微米** — https://veme.dev
 
 开源 AI 媒体工作流画布。用节点图编排图片、视频、文本生成，在本地运行 DAG，并把媒体存进你自己的 S3 兼容存储桶。
 
@@ -205,7 +207,7 @@ skills/
 ```markdown
 ---
 name: canvas-graph-workflow
-description: How to compose, edit and run Canvase canvas graphs safely.
+description: How to compose, edit and run VEME canvas graphs safely.
 tags: canvas, graph
 ---
 ```
@@ -243,4 +245,4 @@ tags: canvas, graph
 
 ## 许可
 
-除非仓库另有说明，否则为私有 / 未授权。
+[MIT](LICENSE)
