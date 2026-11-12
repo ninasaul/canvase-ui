@@ -326,7 +326,7 @@ export function CanvasList() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="canvas-page-in mx-auto w-full max-w-7xl px-5 py-8">
+      <div className="canvas-page-in w-full px-5 py-8 sm:px-8">
         <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div className="flex min-w-0 items-center gap-2.5">
             <BrandLogo size={28} alt={common.appName} className="shrink-0" />
