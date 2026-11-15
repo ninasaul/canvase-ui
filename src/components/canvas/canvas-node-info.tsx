@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { getNodeById } from "@/lib/canvas/canvas-node-index";
+import { useCanvasNode } from "@/lib/canvas/canvas-selectors";
 import { useCanvasStore } from "@/lib/canvas/canvas-store";
 import { messages } from "@/messages";
 
@@ -51,9 +52,7 @@ export function CanvasNodeInfoModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const node = useCanvasStore((state) =>
-    getNodeById(state.nodes, nodeId),
-  );
+  const node = useCanvasNode(nodeId);
   const parent = useCanvasStore((state) =>
     node?.parentId ? getNodeById(state.nodes, node.parentId) : undefined,
   );

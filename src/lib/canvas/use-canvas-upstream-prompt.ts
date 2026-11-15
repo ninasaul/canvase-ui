@@ -1,30 +1,19 @@
 "use client";
 
-import { useMemo } from "react";
+import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useCanvasStore } from "./canvas-store";
+import { collectCanvasUpstreamPrompt } from "./canvas-upstream-media";
 
-/** Connected prompt/context text that generation will consume. */
+/**
+ * Connected prompt/context text that generation will consume.
+ *
+ * Derived in the selector (edge-first, no full text-node map) and compared with
+ * `Object.is`: typing in an unrelated node no longer re-renders every dock.
+ */
 export function useCanvasUpstreamPrompt(nodeId: string): string {
-  const nodes = useCanvasStore((state) => state.nodes);
-  const edges = useCanvasStore((state) => state.edges);
-  return useMemo(() => {
-    const textById = new Map(
-      nodes
-        .filter((node) => node.type === "text")
-        .map((node) => [node.id, node.data.text?.trim() ?? ""]),
-    );
-    return edges
-      .filter(
-        (edge) =>
-          edge.target === nodeId &&
-          (edge.data?.role === "prompt" || edge.data?.role === "context"),
-      )
-      .sort(
-        (left, right) =>
-          (left.data?.order ?? 0) - (right.data?.order ?? 0),
-      )
-      .map((edge) => textById.get(edge.source) ?? "")
-      .filter(Boolean)
-      .join("\n\n");
-  }, [edges, nodeId, nodes]);
+  return useStoreWithEqualityFn(
+    useCanvasStore,
+    (state) => collectCanvasUpstreamPrompt(state.nodes, state.edges, nodeId),
+    Object.is,
+  );
 }

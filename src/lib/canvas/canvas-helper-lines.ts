@@ -5,9 +5,7 @@ export type CanvasHelperLines = {
   vertical?: number;
 };
 
-export type CanvasHelperLinesResult = CanvasHelperLines & {
-  snapPosition: Partial<XYPosition>;
-};
+export type CanvasHelperLinesResult = CanvasHelperLines;
 
 type NodeBounds = {
   left: number;
@@ -50,14 +48,20 @@ function boundsForPosition(node: Node, position: XYPosition): NodeBounds {
  * Closest horizontal / vertical alignments while dragging a node.
  * Mutates snap targets so edges or centers line up within `distance`.
  */
+/**
+ * Alignment guides for a dragged node. **Display-only**: the guides are shown
+ * while the node is dragged over another node's edge/centre, but the position
+ * is never rewritten. Snapping here fought the pointer (the node stuck to a
+ * guide and popped free again on the next 1px move) and the strength of that
+ * fight depended on zoom, which read as shaking — worst right after zooming.
+ * `distance` is in flow units; pass `6 / zoom` for a constant screen distance.
+ */
 export function getHelperLines(
   change: NodePositionChange,
   nodes: Node[],
   distance = DEFAULT_DISTANCE,
 ): CanvasHelperLinesResult {
-  const empty: CanvasHelperLinesResult = {
-    snapPosition: {},
-  };
+  const empty: CanvasHelperLinesResult = {};
   if (!change.position) {
     return empty;
   }
@@ -76,7 +80,6 @@ export function getHelperLines(
   let verticalDistance = distance;
   let horizontal: number | undefined;
   let vertical: number | undefined;
-  const snapPosition: Partial<XYPosition> = {};
 
   for (const node of nodes) {
     if (node.id === moving.id || node.parentId !== moving.parentId) {
@@ -99,29 +102,24 @@ export function getHelperLines(
       {
         distance: Math.abs(movingBounds.left - other.left),
         line: other.left,
-        snapX: other.left,
       },
       {
         distance: Math.abs(movingBounds.right - other.right),
         line: other.right,
-        snapX: other.right - movingBounds.width,
       },
       {
         distance: Math.abs(movingBounds.left - other.right),
         line: other.right,
-        snapX: other.right,
       },
       {
         distance: Math.abs(movingBounds.right - other.left),
         line: other.left,
-        snapX: other.left - movingBounds.width,
       },
       {
         distance: Math.abs(
           movingBounds.left + movingBounds.width / 2 - (other.left + other.width / 2),
         ),
         line: other.left + other.width / 2,
-        snapX: other.left + other.width / 2 - movingBounds.width / 2,
       },
     ];
 
@@ -129,7 +127,6 @@ export function getHelperLines(
       if (item.distance < verticalDistance) {
         verticalDistance = item.distance;
         vertical = item.line;
-        snapPosition.x = item.snapX;
       }
     }
 
@@ -137,29 +134,24 @@ export function getHelperLines(
       {
         distance: Math.abs(movingBounds.top - other.top),
         line: other.top,
-        snapY: other.top,
       },
       {
         distance: Math.abs(movingBounds.bottom - other.bottom),
         line: other.bottom,
-        snapY: other.bottom - movingBounds.height,
       },
       {
         distance: Math.abs(movingBounds.top - other.bottom),
         line: other.bottom,
-        snapY: other.bottom,
       },
       {
         distance: Math.abs(movingBounds.bottom - other.top),
         line: other.top,
-        snapY: other.top - movingBounds.height,
       },
       {
         distance: Math.abs(
           movingBounds.top + movingBounds.height / 2 - (other.top + other.height / 2),
         ),
         line: other.top + other.height / 2,
-        snapY: other.top + other.height / 2 - movingBounds.height / 2,
       },
     ];
 
@@ -167,14 +159,9 @@ export function getHelperLines(
       if (item.distance < horizontalDistance) {
         horizontalDistance = item.distance;
         horizontal = item.line;
-        snapPosition.y = item.snapY;
       }
     }
   }
 
-  return {
-    horizontal,
-    vertical,
-    snapPosition,
-  };
+  return { horizontal, vertical };
 }

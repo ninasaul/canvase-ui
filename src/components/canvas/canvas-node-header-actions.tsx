@@ -32,7 +32,8 @@ import {
   PLAYGROUND_VIDEO_ACCEPT,
   uploadPlaygroundAssetWithMeta,
 } from "@/lib/playground-media";
-import { getNodeById } from "@/lib/canvas/canvas-node-index";
+import { useCanvasTransientStore } from "@/lib/canvas/canvas-transient-store";
+import { useCanvasNode } from "@/lib/canvas/canvas-selectors";
 import { useCanvasStore } from "@/lib/canvas/canvas-store";
 import { messages } from "@/messages";
 
@@ -50,7 +51,7 @@ export function CanvasNodeHeaderActions({
   mediaType?: PlaygroundUploadKind;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const node = useCanvasStore((state) => getNodeById(state.nodes, nodeId));
+  const node = useCanvasNode(nodeId);
   const {
     canvasId,
     runNode,
@@ -64,7 +65,7 @@ export function CanvasNodeHeaderActions({
   const removeNodeFromGroup = useCanvasStore(
     (state) => state.removeNodeFromGroup,
   );
-  const setUploadProgress = useCanvasStore(
+  const setUploadProgress = useCanvasTransientStore(
     (state) => state.setUploadProgress,
   );
   const [uploading, setUploading] = useState(false);

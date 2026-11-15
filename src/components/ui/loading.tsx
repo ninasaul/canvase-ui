@@ -18,7 +18,11 @@ export type LoadingVariant =
   | "pulse"
   | "bars"
   | "orbit"
-  | "ripple";
+  | "ripple"
+  | "swirl"
+  | "comet"
+  | "grid"
+  | "wave";
 
 export type LoadingProps = {
   variant?: LoadingVariant;
@@ -41,6 +45,12 @@ export type LoadingProps = {
   overlay?: boolean;
   /** Visible text under the indicator (e.g. "执行中 · 12s"). */
   caption?: React.ReactNode;
+  /**
+   * Overlay scrim strength: `strong` hides the content (queue/blank states),
+   * `soft` keeps it readable — right for "regenerating this node".
+   */
+  veil?: "strong" | "soft";
+
   /** Optional single action under the caption (e.g. 取消). */
   action?: { label: string; onAction: () => void };
   className?: string;
@@ -59,6 +69,7 @@ export function Loading({
   label,
   overlay = false,
   caption,
+  veil = "strong",
   action,
   className = "",
 }: LoadingProps) {
@@ -92,7 +103,23 @@ export function Loading({
                 style={{ animationDelay: `calc(var(--loading-duration) * ${index * 0.12 - 0.12})` }}
               />
             ))
-          : null}
+          : variant === "grid"
+            ? Array.from({ length: 9 }, (_, index) => (
+                <span
+                  key={index}
+                  className="ui-loading__dot"
+                  style={{ ["--i" as string]: index }}
+                />
+              ))
+            : variant === "wave"
+              ? Array.from({ length: 5 }, (_, index) => (
+                  <span
+                    key={index}
+                    className="ui-loading__wave-bar"
+                    style={{ ["--i" as string]: index }}
+                  />
+                ))
+              : null}
       </span>
       <span className="sr-only">{label ?? "Loading"}</span>
     </span>
@@ -108,7 +135,10 @@ export function Loading({
       aria-live="polite"
       className={`pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 ${className}`.trim()}
     >
-      <span aria-hidden className="ui-loading-veil" />
+      <span
+        aria-hidden
+        className={`ui-loading-veil ${veil === "soft" ? "ui-loading-veil--soft" : ""}`.trim()}
+      />
       {indicator}
       {caption ? (
         <span className="relative rounded-full bg-white/85 px-2 py-0.5 text-[10px] font-medium tracking-wide text-zinc-600 tabular-nums shadow-sm dark:bg-zinc-900/85 dark:text-zinc-300">
