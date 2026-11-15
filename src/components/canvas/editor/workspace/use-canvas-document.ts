@@ -14,10 +14,7 @@ import { isCanvasVersionConflict } from "@/lib/canvas/canvas-api";
 import { stableGraphJson } from "@/lib/canvas/canvas-graph-json";
 import type { CanvasGraph } from "@/lib/canvas/canvas-graph";
 import type { CanvasSettings } from "@/lib/tu-shared-browser";
-import type {
-  CanvasFlowEdge,
-  CanvasFlowNode,
-} from "@/lib/canvas/canvas-store";
+import { useCanvasStore } from "@/lib/canvas/canvas-store";
 import { messages } from "@/messages";
 
 import {
@@ -37,8 +34,6 @@ export function useCanvasDocument(input: {
   titleRef: MutableRefObject<string>;
   tryRebase: () => Promise<boolean>;
   /** Values observed by the autosave effect. */
-  nodes: CanvasFlowNode[];
-  edges: CanvasFlowEdge[];
   settings: CanvasSettings;
   title: string;
   runActive: boolean;
@@ -50,8 +45,6 @@ export function useCanvasDocument(input: {
     toGraph,
     titleRef,
     tryRebase,
-    nodes,
-    edges,
     settings,
     title,
     runActive,
@@ -176,7 +169,20 @@ export function useCanvasDocument(input: {
     flushSaveRef.current = flushSave;
   }, [flushSave]);
 
-  useEffect(() => {
+  /**
+   * The graph is observed through a store subscription instead of effect
+   * dependencies on `nodes` / `edges`. Depending on the arrays re-ran this
+   * check (and re-rendered the editor) on every drag frame; the subscription
+   * sees the same changes without a render. The check is deferred to a
+   * microtask so follow-up work in the same tick (adopting a remote snapshot
+   * updates `graphObservationRef` right after `reset`) wins the race.
+   */
+  const checkAutosaveRef = useRef<() => void>(() => undefined);
+  checkAutosaveRef.current = () => {
+    const state = useCanvasStore.getState();
+    const nodes = state.nodes;
+    const edges = state.edges;
+    const graphSettings = state.settings;
     if (
       runActive ||
       serverRunId ||
@@ -190,13 +196,23 @@ export function useCanvasDocument(input: {
     }
     if (!initialAutosaveSkippedRef.current) {
       initialAutosaveSkippedRef.current = true;
-      graphObservationRef.current = { nodes, edges, settings, title };
+      graphObservationRef.current = {
+        nodes,
+        edges,
+        settings: graphSettings,
+        title,
+      };
       return;
     }
     if (conflict) {
       return;
     }
-    const observation = { nodes, edges, settings, title };
+    const observation = {
+      nodes,
+      edges,
+      settings: graphSettings,
+      title,
+    };
     const previous = graphObservationRef.current;
     graphObservationRef.current = observation;
     if (previous && sameGraphObservation(previous, observation)) {
@@ -221,7 +237,33 @@ export function useCanvasDocument(input: {
       saveTimerRef.current = null;
       void flushSaveRef.current();
     }, 800);
-  }, [conflict, edges, markDirty, nodes, runActive, serverRunId, settings, title]);
+  };
+
+  useEffect(() => {
+    let queued = false;
+    const unsubscribe = useCanvasStore.subscribe((state, previousState) => {
+      if (
+        state.nodes === previousState.nodes &&
+        state.edges === previousState.edges &&
+        state.settings === previousState.settings
+      ) {
+        return;
+      }
+      if (queued) {
+        return;
+      }
+      queued = true;
+      queueMicrotask(() => {
+        queued = false;
+        checkAutosaveRef.current();
+      });
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    checkAutosaveRef.current();
+  }, [conflict, runActive, serverRunId, settings, title]);
 
   useEffect(() => {
     return () => {

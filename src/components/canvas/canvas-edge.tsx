@@ -9,14 +9,26 @@ import {
   type EdgeProps,
   useNodesData,
 } from "@xyflow/react";
-import { useState, type CSSProperties } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+import { Scissors } from "@phosphor-icons/react";
+import { useStore, useReactFlow } from "@xyflow/react";
 import {
   edgeRoleOptions,
 } from "@/lib/canvas/canvas-edge-roles";
 import type { CanvasFlowEdge, CanvasFlowNode } from "@/lib/canvas/canvas-store";
 import { useCanvasStore } from "@/lib/canvas/canvas-store";
+import { useCanvasEdgeHighlightStore } from "@/lib/canvas/canvas-edge-highlight-store";
+import { useCanvasInteractionStore } from "@/lib/canvas/canvas-interaction-store";
+import { useCanvasEdgeHoverStore } from "@/lib/canvas/canvas-edge-hover-store";
 import { messages } from "@/messages";
-import { useCanvasDetail } from "./canvas-detail-context";
 import { useCanvasPreferences } from "./canvas-preferences-context";
 
 function roleLabel(role: string): string {
@@ -40,8 +52,79 @@ function roleLabel(role: string): string {
   }
 }
 
+/**
+ * Cut button shown while an edge is hovered. Mounted only on hover so the
+ * zoom subscription it needs stays off the hot path, and counter-scaled so it
+ * keeps its screen size at any canvas zoom (ported from the reference canvas).
+ */
+function CanvasEdgeCutButton({
+  labelX,
+  labelY,
+  onEnter,
+  onLeave,
+  onDelete,
+}: {
+  labelX: number;
+  labelY: number;
+  onEnter: () => void;
+  onLeave: () => void;
+  onDelete: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+}) {
+  const zoom = useStore((state) => state.transform[2]);
+  return (
+    <EdgeLabelRenderer>
+      <div
+        className="canvas-edge-cut nodrag nopan pointer-events-auto absolute"
+        style={{
+          transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px) scale(${1 / Math.max(zoom, 0.05)})`,
+          zIndex: 1000,
+        }}
+        onMouseEnter={onEnter}
+        onMouseLeave={onLeave}
+      >
+        <button
+          type="button"
+          aria-label={messages.canvas.deleteEdge}
+          title={messages.canvas.deleteEdge}
+          className="flex h-5 w-5 items-center justify-center rounded-full border border-zinc-300 bg-white text-zinc-600 shadow-md transition-[transform,background-color,border-color,color,box-shadow] duration-150 hover:scale-110 hover:border-red-500 hover:bg-red-500 hover:text-white hover:shadow-[0_0_0_3px_rgba(239,68,68,0.22)] active:scale-100 dark:border-zinc-500 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:border-red-500 dark:hover:bg-red-500 dark:hover:text-white"
+          onClick={onDelete}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <Scissors size={10} />
+        </button>
+      </div>
+    </EdgeLabelRenderer>
+  );
+}
+
 /** Edge with an inline role picker, starting with image targets. */
-export function CanvasEdge({
+/**
+ * Memoised: xyflow re-renders every edge wrapper when the viewport or the node
+ * set changes, and without a boundary here each of those passes re-rendered the
+ * path/label tree of all ~100 edges.
+ */
+function edgePropsEqual(
+  previous: EdgeProps<CanvasFlowEdge>,
+  next: EdgeProps<CanvasFlowEdge>,
+): boolean {
+  return (
+    previous.id === next.id &&
+    previous.source === next.source &&
+    previous.target === next.target &&
+    previous.sourceX === next.sourceX &&
+    previous.sourceY === next.sourceY &&
+    previous.targetX === next.targetX &&
+    previous.targetY === next.targetY &&
+    previous.sourcePosition === next.sourcePosition &&
+    previous.targetPosition === next.targetPosition &&
+    previous.selected === next.selected &&
+    previous.markerEnd === next.markerEnd &&
+    previous.style === next.style &&
+    previous.data === next.data
+  );
+}
+
+export const CanvasEdge = memo(function CanvasEdge({
   id,
   source,
   target,
@@ -57,7 +140,6 @@ export function CanvasEdge({
   data,
 }: EdgeProps<CanvasFlowEdge>) {
   const preferences = useCanvasPreferences();
-  const { showEdgeLabels } = useCanvasDetail();
   const sourceNode = useNodesData<CanvasFlowNode>(source);
   const targetNode = useNodesData<CanvasFlowNode>(target);
   const sourceType = sourceNode?.type;
@@ -65,6 +147,58 @@ export function CanvasEdge({
   const role = data?.role ?? "prompt";
   const setEdgeRole = useCanvasStore((state) => state.setEdgeRole);
   const [editing, setEditing] = useState(false);
+  const { deleteElements } = useReactFlow();
+  const setHoveredEdge = useCanvasEdgeHoverStore(
+    (state) => state.setHoveredEdge,
+  );
+  const clearHoveredEdge = useCanvasEdgeHoverStore(
+    (state) => state.clearHoveredEdge,
+  );
+  // Either endpoint selected → this edge belongs to the selection and lights
+  // up, so a selected node's connections are readable at a glance.
+  const endpointSelected = useCanvasEdgeHighlightStore((state) =>
+    state.selectedIds.has(source) || state.selectedIds.has(target),
+  );
+  // While any gesture moves one of this edge's endpoints (a group drag moves
+  // its children too), the edge lights up: its geometry is changing under the
+  // pointer and it belongs to what the user is holding.
+  const dragAffected = useCanvasInteractionStore((state) =>
+    state.dragAffectedNodeIds.has(source) ||
+    state.dragAffectedNodeIds.has(target),
+  );
+  const [hovered, setHovered] = useState(false);
+  const leaveTimerRef = useRef<number | null>(null);
+
+  const clearLeaveTimer = useCallback(() => {
+    if (leaveTimerRef.current !== null) {
+      window.clearTimeout(leaveTimerRef.current);
+      leaveTimerRef.current = null;
+    }
+  }, []);
+
+  const handleEnter = useCallback(() => {
+    clearLeaveTimer();
+    setHovered(true);
+    setHoveredEdge({ edgeId: id, sourceId: source, targetId: target });
+  }, [clearLeaveTimer, id, setHoveredEdge, source, target]);
+
+  const handleLeave = useCallback(() => {
+    clearLeaveTimer();
+    // Small grace period: the pointer briefly leaves the 12px hit path while
+    // travelling along a curve, and the highlight used to flicker.
+    leaveTimerRef.current = window.setTimeout(() => {
+      leaveTimerRef.current = null;
+      setHovered(false);
+      clearHoveredEdge(id);
+    }, 80);
+  }, [clearLeaveTimer, clearHoveredEdge, id]);
+
+  useEffect(() => {
+    return () => {
+      clearLeaveTimer();
+      clearHoveredEdge(id);
+    };
+  }, [clearHoveredEdge, clearLeaveTimer, id]);
 
   const pathParams = {
     sourceX,
@@ -83,23 +217,71 @@ export function CanvasEdge({
 
   const options =
     sourceType && targetType ? edgeRoleOptions(sourceType, targetType) : [];
+  // Only an explicitly selected edge shows its role chip: a chip on every edge
+  // in the middle of the canvas is pure clutter, but the role is still
+  // editable — select the edge and the chip appears.
   const showPicker =
-    (showEdgeLabels || Boolean(selected)) &&
+    Boolean(selected) &&
     (targetType === "image" ||
       targetType === "video" ||
       targetType === "audio") &&
     options.length > 0;
 
+  // Drop an open dropdown when the edge loses the selection.
+  useEffect(() => {
+    if (!selected) {
+      setEditing(false);
+    }
+  }, [selected]);
+
+  const baseWidth = Number(style?.strokeWidth ?? preferences.edgeWidth);
   const selectedStyle: CSSProperties = selected
     ? {
         stroke: "#0ea5e9",
-        strokeWidth: Math.max(
-          2.5,
-          Number(style?.strokeWidth ?? preferences.edgeWidth) + 1,
-        ),
+        strokeWidth: Math.max(2.5, baseWidth + 1),
         filter: "drop-shadow(0 0 3px rgba(14, 165, 233, 0.55))",
       }
     : {};
+
+  const hoveredStyle: CSSProperties =
+    hovered && !selected
+      ? {
+          stroke: "#38bdf8",
+          strokeWidth: Math.max(2, baseWidth + 1),
+          filter: "drop-shadow(0 0 2px rgba(56, 189, 248, 0.45))",
+        }
+      : {};
+  // Dragging highlight: colour + glow only, no thicken (a thick stroke reads as
+  // selected and fights the selection ring).
+  const draggingStyle: CSSProperties =
+    dragAffected && !selected
+      ? {
+          stroke: "#0ea5e9",
+          filter: "drop-shadow(0 0 3px rgba(14, 165, 233, 0.5))",
+        }
+      : {};
+  // Softer than a direct selection: the edge belongs to a selected node.
+  const relatedStyle: CSSProperties =
+    endpointSelected && !selected && !hovered
+      ? {
+          stroke: "#0ea5e9",
+          strokeWidth: Math.max(2, baseWidth + 0.5),
+          filter: "drop-shadow(0 0 2px rgba(14, 165, 233, 0.35))",
+        }
+      : {};
+
+  const showCutButton = hovered && !selected && !editing;
+  const handleDelete = useCallback(
+    async (event: ReactMouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      clearLeaveTimer();
+      setHovered(false);
+      clearHoveredEdge(id);
+      await deleteElements({ edges: [{ id }] });
+    },
+    [clearHoveredEdge, clearLeaveTimer, deleteElements, id],
+  );
 
   return (
     <>
@@ -107,13 +289,45 @@ export function CanvasEdge({
         id={id}
         path={path}
         markerEnd={markerEnd}
-        style={{ ...style, ...selectedStyle }}
-        interactionWidth={24}
+        // Keep the stroke a constant screen width: SVG stroke widths are in
+        // flow units, so at overview zoom (10% on a big canvas) a 1.5px edge
+        // rendered at 0.15px and the connections looked like they were gone.
+        vectorEffect="non-scaling-stroke"
+        style={{
+          ...style,
+          ...relatedStyle,
+          ...hoveredStyle,
+          ...draggingStyle,
+          ...selectedStyle,
+        }}
+        interactionWidth={0}
       />
+      {/* Generous invisible hit path: hover must be easy on a thin line. */}
+      <path
+        d={path}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={12}
+        className="canvas-edge-hit react-flow__edge-interaction"
+        vectorEffect="non-scaling-stroke"
+        onMouseEnter={handleEnter}
+        onMouseLeave={handleLeave}
+      />
+      {showCutButton ? (
+        <CanvasEdgeCutButton
+          labelX={labelX}
+          labelY={labelY}
+          onEnter={handleEnter}
+          onLeave={handleLeave}
+          onDelete={handleDelete}
+        />
+      ) : null}
       {showPicker ? (
         <EdgeLabelRenderer>
           <div
-            className="nodrag nopan pointer-events-auto absolute"
+            data-selected={selected ? "true" : undefined}
+            data-open={editing ? "true" : undefined}
+            className="canvas-edge-picker nodrag nopan pointer-events-auto absolute"
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
             }}
@@ -156,7 +370,7 @@ export function CanvasEdge({
       ) : null}
     </>
   );
-}
+}, edgePropsEqual);
 
 export const canvasEdgeTypes = {
   canvas: CanvasEdge,

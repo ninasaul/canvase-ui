@@ -19,30 +19,16 @@ import {
   VideoCamera,
   Waveform,
 } from "@phosphor-icons/react";
-import {
-  ReactFlow,
-  ReactFlowProvider,
-  ConnectionLineType,
-  SelectionMode,
-  type Connection,
-  type Edge,
-  type NodeChange,
-  type NodePositionChange,
-  type OnConnect,
-  type OnNodeDrag,
-  useReactFlow,
-  ViewportPortal,
-} from "@xyflow/react";
+import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
 } from "react";
 import { CanvasActionsContext } from "@/components/canvas/canvas-actions";
-import { canvasEdgeTypes } from "@/components/canvas/canvas-edge";
-import { CanvasNodeLabels } from "@/components/canvas/canvas-node-labels";
 import {
   CanvasRunningTasksModal,
   type CanvasTasksTab,
@@ -59,25 +45,36 @@ import {
   CanvasAgentChatPanel,
   loadCanvasAgentChatOpenPreference,
 } from "@/components/canvas/canvas-agent-chat-panel";
-import { CanvasDetailProvider } from "@/components/canvas/canvas-detail-context";
 import { CanvasGenerationDock } from "@/components/canvas/editor/chrome/canvas-generation-dock";
 import { CanvasNodeDockSlot } from "@/components/canvas/editor/chrome/canvas-node-dock-slot";
-import {
-  CanvasOverlays,
-  EMPTY_NODES,
-} from "@/components/canvas/editor/chrome/canvas-overlays";
+import { CanvasOverlays } from "@/components/canvas/editor/chrome/canvas-overlays";
 import { CanvasPanningFlag } from "@/components/canvas/editor/chrome/canvas-panning-flag";
 import { CanvasSelectionBar } from "@/components/canvas/editor/chrome/canvas-selection-bar";
 import { CanvasBackdrop } from "@/components/canvas/editor/chrome/canvas-backdrop";
 import { CanvasBottomDock } from "@/components/canvas/editor/chrome/canvas-bottom-dock";
 import { CanvasConflictBanner } from "@/components/canvas/editor/chrome/canvas-conflict-banner";
 import { CanvasToolbar } from "@/components/canvas/editor/chrome/canvas-toolbar";
-import { CanvasRunConfirmModal } from "@/components/canvas/editor/panels/canvas-run-confirm-modal";
-import { canvasNodeTypes } from "@/components/canvas/canvas-node-types";
+import { CanvasFlowSurface } from "@/components/canvas/editor/workspace/canvas-flow-surface";
 import {
-  getHelperLines,
-  type CanvasHelperLines,
-} from "@/lib/canvas/canvas-helper-lines";
+  connectionFromConnectDrop,
+  type CanvasConnectDropFrom,
+} from "@/lib/canvas/canvas-connect-drop";
+import { CanvasRunConfirmModal } from "@/components/canvas/editor/panels/canvas-run-confirm-modal";
+import {
+  EMPTY_NODES as EMPTY_GRAPH_NODES,
+  getCanvasMediaUrls,
+} from "@/lib/canvas/canvas-derived";
+import {
+  useCanvasMediaCounts,
+  useGroupableSelectionCount,
+  useSelectedIdKey,
+} from "@/lib/canvas/canvas-selectors";
+import { getNodeById } from "@/lib/canvas/canvas-node-index";
+import { useCanvasViewportPerfStore } from "@/lib/canvas/canvas-viewport-perf-store";
+import { useShallow } from "zustand/react/shallow";
+
+/** Stable identity for "no visible nodes" while the chat panel is closed. */
+const EMPTY_VISIBLE_IDS: string[] = [];
 
 
 import { LocaleToggle } from "@/components/locale-toggle";
@@ -104,13 +101,10 @@ import {
 import { mergeRemoteSnapshot } from "@/lib/canvas/canvas-snapshot-merge";
 import type { CanvasGraph } from "@/lib/canvas/canvas-graph";
 import {
-  CANVAS_EDGE_COLORS,
-  canvasEdgeDashArray,
   loadCanvasPreferences,
   saveCanvasPreferences,
   type CanvasPreferences,
 } from "@/lib/canvas/canvas-preferences";
-import { edgeRoleOptions } from "@/lib/canvas/canvas-edge-roles";
 import { stableGraphJson } from "@/lib/canvas/canvas-graph-json";
 import { downloadCanvasArchive } from "@/lib/canvas/canvas-archive";
 import {
@@ -120,10 +114,7 @@ import {
 } from "@/lib/canvas/canvas-auto-layout";
 import {
 } from "@/lib/canvas/canvas-runner";
-import {
-  useCanvasStore,
-  type CanvasFlowNode,
-} from "@/lib/canvas/canvas-store";
+import { useCanvasStore } from "@/lib/canvas/canvas-store";
 import { recoverCanvasNode } from "@/lib/canvas/canvas-task-recovery";
 import { useCanvasDocument } from "@/components/canvas/editor/workspace/use-canvas-document";
 import { useCanvasRun } from "@/components/canvas/editor/workspace/use-canvas-run";
@@ -147,19 +138,9 @@ import { pruneCanvasSettingsModels } from "@/lib/canvas/canvas-settings-prune";
 
 
 
-import {
-  CANVAS_ANIMATED_EDGE_LIMIT,
-  CANVAS_BACKGROUND_PATTERN_COLORS,
-  CANVAS_CONNECTION_SNAP_RADIUS,
-  CANVAS_DEFAULT_FIT_VIEW_OPTIONS,
-  CANVAS_DEFAULT_VIEWPORT,
-  CANVAS_MAX_ZOOM,
-  CANVAS_MIN_ZOOM,
-  CANVAS_SNAP_DISTANCE,
-} from "@/components/canvas/editor/lib/constants";
+import { CANVAS_BACKGROUND_PATTERN_COLORS } from "@/components/canvas/editor/lib/constants";
 import type { RunConfirmState } from "@/components/canvas/editor/lib/run-plan-view";
 import { nodeTypeLabel } from "@/components/canvas/editor/lib/node-display";
-import { isCanvasConnectionValid } from "@/components/canvas/editor/lib/geometry";
 
 
 function CanvasEditorInner({
@@ -214,16 +195,14 @@ function CanvasEditorInner({
   const [titleDraft, setTitleDraft] = useState(canvasDocument.title);
   const [selectMode, setSelectMode] = useState(false);
   const [spacePressed, setSpacePressed] = useState(false);
-  const [draggingNode, setDraggingNode] = useState(false);
-  const [helperLines, setHelperLines] = useState<CanvasHelperLines | null>(
-    null,
-  );
   const runMenuButtonRef = useRef<HTMLButtonElement>(null);
   const [archiveMenuOpen, setArchiveMenuOpen] = useState(false);
   const [insertMenu, setInsertMenu] = useState<{
     left: number;
     top: number;
     flow: { x: number; y: number };
+    /** Set when the menu was opened by a handle drag that missed a target. */
+    connectFrom?: CanvasConnectDropFrom;
   } | null>(null);
   const [archiveBusy, setArchiveBusy] = useState<"image" | "video" | null>(null);
   const archiveButtonRef = useRef<HTMLButtonElement>(null);
@@ -238,26 +217,28 @@ function CanvasEditorInner({
   const agentRunSeenRef = useRef(false);
   const rebaseAttemptsRef = useRef(0);
 
-  const nodes = useCanvasStore((state) => state.nodes);
-
+  /**
+   * The editor deliberately does *not* subscribe to the node/edge arrays: they
+   * are replaced on every drag frame, and holding them here re-rendered the
+   * whole editor tree (chat panel, docks, modals, toolbar) once per mousemove.
+   * Components that really need the array subscribe to it themselves
+   * (`CanvasFlowSurface`, `CanvasNodeLabels`, the overlays); callbacks read it
+   * on demand with `useCanvasStore.getState()`.
+   *
+   * What stays here are cheap, cached summaries: they re-render the editor only
+   * when the selection actually changes.
+   */
   const {
     zoomRef,
-    visibleNodeIds,
-    canvasDetail,
     syncViewport,
     viewportLocked,
     setViewportLocked,
   } = useCanvasViewport();
 
-
-  const edges = useCanvasStore((state) => state.edges);
-  const selectedNodes = useMemo(
-    () =>
-      nodes.filter(
-        (node) => node.selected && node.type !== "group" && !node.parentId,
-      ),
-    [nodes],
-  );
+  // Only the *number* of groupable nodes matters here (toolbar/shortcuts).
+  // Subscribing to the objects re-rendered the editor on every keystroke in a
+  // selected node, because editing replaces that node object.
+  const groupableSelectionCount = useGroupableSelectionCount();
   /**
    * Run planning needs every selected node, including group containers (their
    * children get expanded) and nodes nested inside a group.
@@ -265,12 +246,7 @@ function CanvasEditorInner({
   // Viewport changes every frame while panning; keep only what we need as
   // state, refreshed when the gesture ends (a re-render per frame is costly).
 
-  const selectedIdsKey = useCanvasStore((state) =>
-    state.nodes
-      .filter((node) => node.selected)
-      .map((node) => node.id)
-      .join(","),
-  );
+  const selectedIdsKey = useSelectedIdKey();
 
   // Derived from `selectedIdsKey`  so this stays referentially
   // stable while the selection is unchanged: a drag frame replaces `nodes`,
@@ -307,14 +283,14 @@ function CanvasEditorInner({
       const y = node.position.y + (parent?.position.y ?? 0);
       const width = node.width ?? 240;
       const height = node.height ?? 240;
-      if (!visibleNodeIds.includes(nodeId)) {
+      if (!useCanvasViewportPerfStore.getState().visibleNodeIds.has(nodeId)) {
         setCenter(x + width / 2, y + height / 2, {
           zoom: zoomRef.current || 1,
           duration: 450,
         });
       }
     },
-    [setCenter, visibleNodeIds, zoomRef],
+    [setCenter, zoomRef],
   );
 
   // Keyed on the selected ids, not on the node array: a drag frame replaces
@@ -352,19 +328,6 @@ function CanvasEditorInner({
     }));
   }, []);
 
-  const librarySelectedUrls = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          nodes.flatMap((node) =>
-            [node.data.url, ...(node.data.urls ?? [])].filter(
-              (url): url is string => Boolean(url?.trim()),
-            ),
-          ),
-        ),
-      ),
-    [nodes],
-  );
   const settings = useCanvasStore((state) => state.settings);
   const setSettings = useCanvasStore((state) => state.setSettings);
   const canvasSettings = useCanvasSettings({
@@ -379,24 +342,11 @@ function CanvasEditorInner({
     storageConfigured,
     openCanvasSettings,
   } = canvasSettings;
-  const groupSelection = useCanvasStore((state) => state.groupSelection);
-  const addNodesToGroup = useCanvasStore((state) => state.addNodesToGroup);
-  const setNodePosition = useCanvasStore((state) => state.setNodePosition);
-  const setDragOverGroupId = useCanvasStore(
-    (state) => state.setDragOverGroupId,
-  );
-  const setSnapTargetId = useCanvasStore(
-    (state) => state.setSnapTargetId,
-  );
-  const onNodesChange = useCanvasStore((state) => state.onNodesChange);
-  const onEdgesChange = useCanvasStore((state) => state.onEdgesChange);
-  const onConnect = useCanvasStore((state) => state.onConnect);
   const addNode = useCanvasStore((state) => state.addNode);
   const selectAll = useCanvasStore((state) => state.selectAll);
   const clearSelection = useCanvasStore((state) => state.clearSelection);
   const addMediaNode = useCanvasStore((state) => state.addMediaNode);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
-  const removeNode = useCanvasStore((state) => state.removeNode);
   const duplicateNode = useCanvasStore((state) => state.duplicateNode);
   const replace = useCanvasStore((state) => state.replace);
   const toGraph = useCanvasStore((state) => state.toGraph);
@@ -404,7 +354,7 @@ function CanvasEditorInner({
 
 
 
-  const history = useCanvasHistory({ nodes, edges, apply: replace });
+  const history = useCanvasHistory();
 
   const modelsQuery = usePortalQuery(
     `generation-canvas-models:${readByokBaseUrl()}:${byokRevision}`,
@@ -446,6 +396,13 @@ function CanvasEditorInner({
    */
   const syncFromServerRef = useRef<() => Promise<void>>(async () => undefined);
 
+  // Nodes are only needed by the run-confirm dialog. While it is closed the
+  // selector returns a stable empty array, so drag frames never reach the
+  // editor.
+  const runPlanNodes = useCanvasStore(
+    useShallow((state) => (runConfirm ? state.nodes : EMPTY_GRAPH_NODES)),
+  );
+
   const {
     runNode,
     startPlanRun,
@@ -460,7 +417,9 @@ function CanvasEditorInner({
     runHasUpstream,
   } = useCanvasRun({
     canvasId: canvasDocument.id,
-    nodes,
+    // Only the run-confirm dialog needs the node array. Gating the
+    // subscription on it keeps drag frames out of the editor render.
+    nodes: runPlanNodes,
     models,
     toGraph,
     selectedRunNodeIds,
@@ -512,8 +471,6 @@ function CanvasEditorInner({
     toGraph,
     titleRef,
     tryRebase: () => tryRebaseRef.current(),
-    nodes,
-    edges,
     settings,
     title,
     runActive: Boolean(activeRun),
@@ -757,6 +714,16 @@ function CanvasEditorInner({
   // Stable identity: a fresh object here re-rendered the chat panel on every
   // canvas frame. `version` comes from state, and the server rebuilds its own
   // digest each turn, so a one-tick lag is harmless.
+  // Only the open chat panel consumes the visible-node list, so the
+  // subscription is gated on it: a pan/zoom that changes the visible set must
+  // not re-render the editor while the panel is closed.
+  const visibleNodeIds = useCanvasViewportPerfStore(
+    useShallow((state) =>
+      agentChatOpen
+        ? Array.from(state.visibleNodeIds).slice(0, 40)
+        : EMPTY_VISIBLE_IDS,
+    ),
+  );
   const agentChatContext = useMemo(
     () => ({
       version,
@@ -903,89 +870,9 @@ function CanvasEditorInner({
     saveCanvasPreferences(preferences);
   }, [preferences]);
 
-  const isValidConnection = useCallback(
-    (connection: Connection | Edge) =>
-      isCanvasConnectionValid(connection, nodes, edges),
-    [edges, nodes],
-  );
-
-  /** Multi-select: drag from one selected source → also wire other selected sources. */
-  const handleConnect = useCallback(
-    (connection: Connection) => {
-      onConnect(connection);
-
-      const sourceId = connection.source;
-      const targetId = connection.target;
-      if (!sourceId || !targetId) {
-        return;
-      }
-
-      const state = useCanvasStore.getState();
-      const selectedSourceIds = state.nodes
-        .filter(
-          (node) =>
-            node.selected &&
-            node.type !== "group" &&
-            !node.parentId &&
-            node.id !== targetId,
-        )
-        .map((node) => node.id);
-
-      if (
-        selectedSourceIds.length < 2 ||
-        !selectedSourceIds.includes(sourceId)
-      ) {
-        return;
-      }
-
-      const targetHandle = connection.targetHandle ?? "in";
-      const sourceHandle = connection.sourceHandle ?? "out";
-      let connectedCount = 1;
-
-      for (const extraSourceId of selectedSourceIds) {
-        if (extraSourceId === sourceId) {
-          continue;
-        }
-        const nextConnection: Connection = {
-          source: extraSourceId,
-          target: targetId,
-          sourceHandle,
-          targetHandle,
-        };
-        const latest = useCanvasStore.getState();
-        const alreadyLinked = latest.edges.some(
-          (edge) =>
-            edge.source === extraSourceId &&
-            edge.target === targetId &&
-            (edge.targetHandle ?? "in") === targetHandle,
-        );
-        if (alreadyLinked) {
-          continue;
-        }
-        if (
-          !isCanvasConnectionValid(
-            nextConnection,
-            latest.nodes,
-            latest.edges,
-          )
-        ) {
-          continue;
-        }
-        onConnect(nextConnection);
-        connectedCount += 1;
-      }
-
-      if (connectedCount > 1) {
-        toast.success(
-          messages.canvas.batchConnected.replace(
-            "{count}",
-            String(connectedCount),
-          ),
-        );
-      }
-    },
-    [onConnect],
-  );
+  const handleDragStart = useCallback(() => {
+    setInsertMenu(null);
+  }, []);
 
   const addNodeWithPreset = useCallback(
     (
@@ -993,8 +880,9 @@ function CanvasEditorInner({
       position: { x: number; y: number },
     ) => {
       if (type === "group") {
-        addNode("group", position, { label: messages.canvas.groupDefault });
-        return;
+        return addNode("group", position, {
+          label: messages.canvas.groupDefault,
+        });
       }
       const preset = settings[type];
       const data = preset
@@ -1007,22 +895,23 @@ function CanvasEditorInner({
               : {}),
           }
         : undefined;
-      addNode(type, position, data);
+      return addNode(type, position, data);
     },
     [addNode, settings],
   );
 
   const addAtCenter = useCallback(
     (type: "text" | "image" | "video" | "audio") => {
+      const offset = useCanvasStore.getState().nodes.length * 12;
       addNodeWithPreset(
         type,
         screenToFlowPosition({
-          x: window.innerWidth / 2 + nodes.length * 12,
-          y: window.innerHeight / 2 + nodes.length * 12,
+          x: window.innerWidth / 2 + offset,
+          y: window.innerHeight / 2 + offset,
         }),
       );
     },
-    [addNodeWithPreset, nodes.length, screenToFlowPosition],
+    [addNodeWithPreset, screenToFlowPosition],
   );
 
   const addGroupAtCenter = useCallback(() => {
@@ -1045,9 +934,8 @@ function CanvasEditorInner({
     fitView,
     history,
     insertMenu,
-    nodes,
     refreshCanvas,
-    selectedNodes,
+    groupableSelectionCount,
     selectAll,
     selectMode,
     zoomTo,
@@ -1089,39 +977,17 @@ function CanvasEditorInner({
     ],
   );
 
-  const configNode = useMemo(
-    () => nodes.find((node) => node.id === configNodeId),
-    [configNodeId, nodes],
+  // Only the type is needed to pick a dock. Subscribing to the whole node
+  // would re-render the editor on every keystroke in the dock, which is the
+  // most common interaction in the app.
+  const configNodeType = useCanvasStore((state) =>
+    configNodeId ? getNodeById(state.nodes, configNodeId)?.type : undefined,
   );
 
 
-  const runStatusById = useCanvasRunStatusStore((state) => state.statusById);
-  const runningTaskCount = useMemo(
-    () =>
-      nodes.filter((node) => {
-        const status = runStatusById[node.id]?.status ?? node.data.status;
-        return status === "running" || status === "queued";
-      }).length,
-    [nodes, runStatusById],
-  );
-  const downloadableImages = useMemo(
-    () =>
-      nodes.filter(
-        (node) =>
-          node.type === "image" &&
-          Boolean(node.data.url || node.data.urls?.length || node.data.assetId),
-      ).length,
-    [nodes],
-  );
-  const downloadableVideos = useMemo(
-    () =>
-      nodes.filter(
-        (node) =>
-          node.type === "video" &&
-          Boolean(node.data.url || node.data.urls?.length || node.data.assetId),
-      ).length,
-    [nodes],
-  );
+  const mediaCounts = useCanvasMediaCounts();
+  const downloadableImages = mediaCounts.images;
+  const downloadableVideos = mediaCounts.videos;
   const autoLayoutModeLabel =
     preferences.autoLayoutMode === "layered-tb"
       ? messages.canvas.autoLayoutLayeredTb
@@ -1186,237 +1052,16 @@ function CanvasEditorInner({
       : dirty
         ? "bg-amber-400"
         : "bg-emerald-500";
-  const edgeStroke = CANVAS_EDGE_COLORS[preferences.edgeColor];
-  const edgeDash = canvasEdgeDashArray(preferences.edgeLineStyle);
-  const connectionLineType =
-    preferences.edgeType === "bezier"
-      ? ConnectionLineType.Bezier
-      : preferences.edgeType === "straight"
-        ? ConnectionLineType.Straight
-        : ConnectionLineType.SmoothStep;
-  const connectionLineStyle = useMemo(
-    () => ({
-      stroke: edgeStroke,
-      strokeWidth: preferences.edgeWidth,
-      ...(edgeDash ? { strokeDasharray: edgeDash } : {}),
-    }),
-    [edgeDash, edgeStroke, preferences.edgeWidth],
-  );
-  const animateEdges = useMemo(
-    () =>
-      preferences.animateEdges && edges.length <= CANVAS_ANIMATED_EDGE_LIMIT,
-    [edges.length, preferences.animateEdges],
-  );
-  const defaultEdgeOptions = useMemo(
-    () => ({
-      type: "canvas" as const,
-      animated: animateEdges,
-      style: connectionLineStyle,
-    }),
-    [animateEdges, connectionLineStyle],
-  );
-
-  // React Flow animates an edge when `edge.animated` is set, so the cap has to
-  // be applied at render time for edges that were created earlier.
-  const renderedEdges = useMemo(() => {
-    const needsNormalisation = edges.some(
-      (edge) => Boolean(edge.animated) !== animateEdges,
-    );
-    if (!needsNormalisation) {
-      return edges;
-    }
-    return edges.map((edge) =>
-      edge.animated === animateEdges ? edge : { ...edge, animated: animateEdges },
-    );
-  }, [animateEdges, edges]);
-
-  const nodeDock =
+  const nodeDockId =
     preferences.generationDockPlacement === "node" &&
-    configNode &&
-    (configNode.type === "image" ||
-      configNode.type === "video" ||
-      configNode.type === "text")
-      ? configNode
+    configNodeId &&
+    configNodeType &&
+    (configNodeType === "image" ||
+      configNodeType === "video" ||
+      configNodeType === "text")
+      ? configNodeId
       : null;
 
-
-  const groupAtNode = (node: CanvasFlowNode) => {
-    if (node.type === "group" || node.parentId) {
-      return undefined;
-    }
-    const width = node.measured?.width ?? node.width ?? 240;
-    const height = node.measured?.height ?? node.height ?? 200;
-    const centerX = node.position.x + width / 2;
-    const centerY = node.position.y + height / 2;
-    return [...nodes].reverse().find((item) => {
-      if (item.type !== "group") {
-        return false;
-      }
-      const groupWidth = item.width ?? item.measured?.width ?? 360;
-      const groupHeight = item.height ?? item.measured?.height ?? 280;
-      return (
-        centerX >= item.position.x &&
-        centerX <= item.position.x + groupWidth &&
-        centerY >= item.position.y &&
-        centerY <= item.position.y + groupHeight
-      );
-    });
-  };
-
-  const snapCandidateFor = (node: CanvasFlowNode) => {
-    if (!preferences.autoConnect) {
-      return null;
-    }
-    if (node.type === "group" || node.parentId) {
-      return null;
-    }
-    const width = node.measured?.width ?? node.width ?? 240;
-    const height = node.measured?.height ?? node.height ?? 200;
-    const left = node.position.x;
-    const top = node.position.y;
-    const right = left + width;
-    const bottom = top + height;
-    let best: {
-      id: string;
-      gap: number;
-      sourceId: string;
-      targetId: string;
-    } | null = null;
-    for (const candidate of nodes) {
-      if (
-        candidate.id === node.id ||
-        candidate.type === "group" ||
-        candidate.parentId
-      ) {
-        continue;
-      }
-      const candidateWidth =
-        candidate.measured?.width ?? candidate.width ?? 280;
-      const candidateHeight =
-        candidate.measured?.height ?? candidate.height ?? 200;
-      const candidateLeft = candidate.position.x;
-      const candidateTop = candidate.position.y;
-      const candidateRight = candidateLeft + candidateWidth;
-      const candidateBottom = candidateTop + candidateHeight;
-      const gapX = Math.max(
-        0,
-        Math.max(left, candidateLeft) - Math.min(right, candidateRight),
-      );
-      const gapY = Math.max(
-        0,
-        Math.max(top, candidateTop) - Math.min(bottom, candidateBottom),
-      );
-      const gap = Math.hypot(gapX, gapY);
-      if (gap > CANVAS_SNAP_DISTANCE || (best && gap >= best.gap)) {
-        continue;
-      }
-      const forward = edgeRoleOptions(node.type, candidate.type).length > 0;
-      const backward = edgeRoleOptions(candidate.type, node.type).length > 0;
-      if (!forward && !backward) {
-        continue;
-      }
-      if (
-        edges.some(
-          (edge) =>
-            (edge.source === node.id && edge.target === candidate.id) ||
-            (edge.source === candidate.id && edge.target === node.id),
-        )
-      ) {
-        continue;
-      }
-      const sourceId = forward ? node.id : candidate.id;
-      const targetId = forward ? candidate.id : node.id;
-      if (
-        !isValidConnection({
-          source: sourceId,
-          target: targetId,
-          sourceHandle: "out",
-          targetHandle: "in",
-        })
-      ) {
-        continue;
-      }
-      best = { id: candidate.id, gap, sourceId, targetId };
-    }
-    return best;
-  };
-
-  const handleNodesChange = useCallback(
-    (changes: NodeChange<CanvasFlowNode>[]) => {
-      if (!preferences.showHelperLines) {
-        onNodesChange(changes);
-        return;
-      }
-
-      const positionChange = changes.find(
-        (change): change is NodePositionChange =>
-          change.type === "position" &&
-          change.dragging === true &&
-          Boolean(change.position),
-      );
-
-      if (!positionChange?.position) {
-        onNodesChange(changes);
-        return;
-      }
-
-      const result = getHelperLines(positionChange, nodes);
-      if (result.snapPosition.x !== undefined) {
-        positionChange.position.x = result.snapPosition.x;
-      }
-      if (result.snapPosition.y !== undefined) {
-        positionChange.position.y = result.snapPosition.y;
-      }
-      setHelperLines({
-        horizontal: result.horizontal,
-        vertical: result.vertical,
-      });
-      onNodesChange(changes);
-    },
-    [nodes, onNodesChange, preferences.showHelperLines],
-  );
-
-  const handleNodeDragStart: OnNodeDrag<CanvasFlowNode> = () => {
-    setDraggingNode(true);
-    setHelperLines(null);
-    setDragOverGroupId(null);
-    setSnapTargetId(null);
-    setInsertMenu(null);
-  };
-
-  const handleNodeDragStop: OnNodeDrag<CanvasFlowNode> = (_event, node) => {
-    setDraggingNode(false);
-    setHelperLines(null);
-    const group = groupAtNode(node);
-    const snap = snapCandidateFor(node);
-    setDragOverGroupId(null);
-    setSnapTargetId(null);
-    if (group) {
-      addNodesToGroup(group.id, [node.id]);
-      toast.success(messages.canvas.groupNodeAdded);
-      return;
-    }
-    if (snap) {
-      onConnect({
-        source: snap.sourceId,
-        target: snap.targetId,
-        sourceHandle: "out",
-        targetHandle: "in",
-      });
-      toast.success(messages.canvas.autoConnected);
-    }
-  };
-
-  const handleNodeDrag: OnNodeDrag<CanvasFlowNode> = (_event, node) => {
-    if (node.parentId) {
-      setNodePosition(node.id, node.position.x, node.position.y);
-      setDragOverGroupId(null);
-      setSnapTargetId(null);
-      return;
-    }
-    setDragOverGroupId(groupAtNode(node)?.id ?? null);
-    setSnapTargetId(snapCandidateFor(node)?.id ?? null);
-  };
 
   function exportJson() {
     const payload = JSON.stringify(
@@ -1475,7 +1120,7 @@ function CanvasEditorInner({
     if (archiveBusy) {
       return;
     }
-    const candidates = nodes.filter(
+    const candidates = useCanvasStore.getState().nodes.filter(
       (node) =>
         node.type === kind &&
         Boolean(node.data.url || node.data.urls?.length || node.data.assetId),
@@ -1947,23 +1592,49 @@ function CanvasEditorInner({
                   onContextMenu={(event) => event.preventDefault()}
                 >
                   <p className="px-2 pb-1 pt-1.5 text-[10px] font-medium text-zinc-400">
-                    {messages.canvas.insertNode}
+                    {insertMenu.connectFrom
+                      ? messages.canvas.insertNodeAndConnect
+                      : messages.canvas.insertNode}
                   </p>
-                  {(
-                    [
-                      ["text", messages.canvas.addText, TextT],
-                      ["image", messages.canvas.addImage, ImageSquare],
-                      ["video", messages.canvas.addVideo, VideoCamera],
-                      ["audio", messages.canvas.addAudio, Waveform],
-                      ["group", messages.canvas.addGroup, FolderPlus],
-                    ] as const
+                  {(insertMenu.connectFrom
+                    ? (
+                        [
+                          ["text", messages.canvas.addText, TextT],
+                          ["image", messages.canvas.addImage, ImageSquare],
+                          ["video", messages.canvas.addVideo, VideoCamera],
+                          ["audio", messages.canvas.addAudio, Waveform],
+                        ] as const
+                      ).filter(([type]) =>
+                        insertMenu.connectFrom?.allowedTypes.includes(type),
+                      )
+                    : (
+                        [
+                          ["text", messages.canvas.addText, TextT],
+                          ["image", messages.canvas.addImage, ImageSquare],
+                          ["video", messages.canvas.addVideo, VideoCamera],
+                          ["audio", messages.canvas.addAudio, Waveform],
+                          ["group", messages.canvas.addGroup, FolderPlus],
+                        ] as const
+                      )
                   ).map(([type, label, icon]) => (
                     <button
                       key={type}
                       type="button"
                       className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-zinc-600 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
                       onClick={() => {
-                        addNodeWithPreset(type, insertMenu.flow);
+                        const connectFrom = insertMenu.connectFrom;
+                        const nodeId = addNodeWithPreset(type, insertMenu.flow);
+                        if (connectFrom && type !== "group") {
+                          useCanvasStore
+                            .getState()
+                            .onConnect(
+                              connectionFromConnectDrop({
+                                newNodeId: nodeId,
+                                newNodeType: type,
+                                connectFrom,
+                              }),
+                            );
+                        }
                         setInsertMenu(null);
                       }}
                     >
@@ -1976,183 +1647,125 @@ function CanvasEditorInner({
             ) : null}
 
             <CanvasPreferencesProvider value={preferences}>
-              <CanvasDetailProvider value={canvasDetail}>
-              <ReactFlow
-                className={canvasDetail.far ? "canvas-far" : undefined}
-                nodes={nodes}
-              edges={renderedEdges}
-              nodeTypes={canvasNodeTypes}
-              edgeTypes={canvasEdgeTypes}
-              onNodesChange={handleNodesChange}
-              onNodeDragStart={handleNodeDragStart}
-              onNodeDrag={handleNodeDrag}
-              onNodeDragStop={handleNodeDragStop}
-              onEdgesChange={onEdgesChange}
-              onNodesDelete={(deleted) => {
-                for (const node of deleted) {
-                  removeNode(node.id);
-                }
-              }}
-              deleteKeyCode={["Backspace", "Delete"]}
-              onConnect={handleConnect as OnConnect}
-              isValidConnection={isValidConnection}
-              onNodeClick={(_, node) => {
-                setInsertMenu(null);
-                const isMedia =
-                  node.type === "image" || node.type === "video";
-                const configurable = isMedia || node.type === "text";
-                setConfigNodeId(configurable ? node.id : null);
-              }}
-              onPaneClick={() => {
-                setConfigNodeId(null);
-                setInsertMenu(null);
-              }}
-              onPaneContextMenu={(event) => {
-                event.preventDefault();
-                const rect =
-                  canvasSurfaceRef.current?.getBoundingClientRect();
-                if (!rect) {
-                  return;
-                }
-                setInsertMenu({
-                  left: Math.min(
-                    Math.max(8, event.clientX - rect.left),
-                    Math.max(8, rect.width - 216),
-                  ),
-                  top: Math.min(
-                    Math.max(12, event.clientY - rect.top),
-                    Math.max(12, rect.height - 280),
-                  ),
-                  flow: screenToFlowPosition({
-                    x: event.clientX,
-                    y: event.clientY,
-                  }),
-                });
-              }}
-              onMoveEnd={(_, viewport) => syncViewport(viewport)}
-              fitView
-              proOptions={{ hideAttribution: true }}
-              // LOD blocks are cheap, so keep every node mounted there. In
-              // full detail, painting 100+ nodes off-screen costs more than
-              // the mount/unmount churn at the viewport edge.
-              onlyRenderVisibleElements={!canvasDetail.far && nodes.length > 40}
-              defaultViewport={CANVAS_DEFAULT_VIEWPORT}
-              fitViewOptions={CANVAS_DEFAULT_FIT_VIEW_OPTIONS}
-              panOnDrag={
-                viewportLocked ? false : selectMode ? [1] : true
-              }
-              selectionOnDrag={!viewportLocked && selectMode}
-              panActivationKeyCode="Space"
-              selectionMode={SelectionMode.Partial}
-              zoomOnScroll={!viewportLocked}
-              zoomOnPinch={!viewportLocked}
-              zoomOnDoubleClick={!viewportLocked}
-              snapToGrid={preferences.snapToGrid}
-              snapGrid={[16, 16]}
-              minZoom={CANVAS_MIN_ZOOM}
-              maxZoom={CANVAS_MAX_ZOOM}
-              colorMode={resolvedTheme === "dark" ? "dark" : "light"}
-              connectionRadius={CANVAS_CONNECTION_SNAP_RADIUS}
-              connectionLineType={connectionLineType}
-              connectionLineStyle={connectionLineStyle}
-              defaultEdgeOptions={defaultEdgeOptions}
-            >
-              <CanvasHelperLinesOverlay lines={helperLines} />
-              {highlightedNodeId
-                ? (() => {
-                    const node = nodes.find(
-                      (item) => item.id === highlightedNodeId,
-                    );
-                    if (!node) {
-                      return null;
-                    }
-                    const parent = node.parentId
-                      ? nodes.find((item) => item.id === node.parentId)
-                      : undefined;
-                    const width = node.width ?? 240;
-                    const height = node.height ?? 240;
-                    return (
-                      <ViewportPortal>
-                        <div
-                          className="pointer-events-none rounded-xl ring-2 ring-amber-400 transition-opacity"
-                          style={{
-                            position: "absolute",
-                            transform: `translate(${
-                              node.position.x + (parent?.position.x ?? 0)
-                            }px, ${
-                              node.position.y + (parent?.position.y ?? 0)
-                            }px)`,
-                            width,
-                            height,
-                            zIndex: 999,
-                            boxShadow: "0 0 0 6px rgba(251, 191, 36, 0.18)",
-                          }}
-                        />
-                      </ViewportPortal>
-                    );
-                  })()
-                : null}
-              <CanvasBackdrop
+              <CanvasFlowSurface
                 preferences={preferences}
-                patternSize={backgroundPatternSize}
-                patternColor={backgroundPatternColor}
-                nodeCount={nodes.length}
-                draggingNode={draggingNode}
-              />
-              <CanvasToolbar
-                addAtCenter={addAtCenter}
-                addGroupAtCenter={addGroupAtCenter}
-                applyAutoLayout={applyAutoLayout}
-                autoLayoutModeLabel={autoLayoutModeLabel}
-                history={history}
-                layoutMenuButtonRef={layoutMenuButtonRef}
-                layoutMenuOpen={layoutMenuOpen}
-                openCanvasSettings={openCanvasSettings}
-                preferences={preferences}
-                runningTaskCount={runningTaskCount}
-                selectMode={selectMode}
-                selectedCount={selectedNodes.length}
-                setAssetLibraryOpen={setAssetLibraryOpen}
-                setGroupName={setGroupName}
-                setGroupOpen={setGroupOpen}
-                setLayoutMenuOpen={setLayoutMenuOpen}
-                setNodeInfoOpen={setNodeInfoOpen}
-                setPreferences={setPreferences}
-                setSelectMode={setSelectMode}
-                setTasksOpen={setTasksOpen}
-                setTasksTab={setTasksTab}
-                toolbarPanelPosition={toolbarPanelPosition}
-                toolbarSeparatorClass={toolbarSeparatorClass}
-                toolbarUploadProgress={toolbarUploadProgress}
-                toolbarUploadRef={toolbarUploadRef}
-                toolbarUploading={toolbarUploading}
-                toolbarVertical={toolbarVertical}
-                modLabel={modLabel}
-                shiftLabel={shiftLabel}
-              />
-              <CanvasBottomDock
-                onZoomIn={() => void zoomIn({ duration: 150 })}
-                onZoomOut={() => void zoomOut({ duration: 150 })}
-                onFitView={() => void fitView({ padding: 0.2, duration: 250 })}
-                viewportLocked={viewportLocked}
-                onToggleLock={() => setViewportLocked((locked) => !locked)}
-                snapToGrid={preferences.snapToGrid}
-                onToggleSnap={() =>
-                  setPreferences((current) => ({
-                    ...current,
-                    snapToGrid: !current.snapToGrid,
-                  }))
-                }
-                showMiniMap={preferences.showMiniMap}
-                onToggleMiniMap={() =>
-                  setPreferences((current) => ({
-                    ...current,
-                    showMiniMap: !current.showMiniMap,
-                  }))
-                }
-              />
-              </ReactFlow>
-              </CanvasDetailProvider>
+                colorMode={resolvedTheme === "dark" ? "dark" : "light"}
+                panOnDrag={viewportLocked ? false : selectMode ? [1] : true}
+                selectionOnDrag={!viewportLocked && selectMode}
+                zoomEnabled={!viewportLocked}
+                showHelperLines={preferences.showHelperLines}
+                onDragStart={handleDragStart}
+                onNodeClick={(_, node) => {
+                  setInsertMenu(null);
+                  const isMedia = node.type === "image" || node.type === "video";
+                  const configurable = isMedia || node.type === "text";
+                  setConfigNodeId(configurable ? node.id : null);
+                }}
+                onPaneClick={() => {
+                  setConfigNodeId(null);
+                  setInsertMenu(null);
+                }}
+                onPaneContextMenu={(event) => {
+                  event.preventDefault();
+                  const rect =
+                    canvasSurfaceRef.current?.getBoundingClientRect();
+                  if (!rect) {
+                    return;
+                  }
+                  setInsertMenu({
+                    left: Math.min(
+                      Math.max(8, event.clientX - rect.left),
+                      Math.max(8, rect.width - 216),
+                    ),
+                    top: Math.min(
+                      Math.max(12, event.clientY - rect.top),
+                      Math.max(12, rect.height - 280),
+                    ),
+                    flow: screenToFlowPosition({
+                      x: event.clientX,
+                      y: event.clientY,
+                    }),
+                  });
+                }}
+                onMoveEnd={(_, viewport) => syncViewport(viewport)}
+                onConnectDrop={({ clientX, clientY, connectFrom }) => {
+                  const rect =
+                    canvasSurfaceRef.current?.getBoundingClientRect();
+                  if (!rect) {
+                    return;
+                  }
+                  setInsertMenu({
+                    left: Math.min(
+                      Math.max(8, clientX - rect.left),
+                      Math.max(8, rect.width - 216),
+                    ),
+                    top: Math.min(
+                      Math.max(12, clientY - rect.top),
+                      Math.max(12, rect.height - 280),
+                    ),
+                    flow: screenToFlowPosition({ x: clientX, y: clientY }),
+                    connectFrom,
+                  });
+                }}
+                highlightedNodeId={highlightedNodeId}
+              >
+                <CanvasHelperLinesOverlay />
+                <CanvasBackdrop
+                  preferences={preferences}
+                  patternSize={backgroundPatternSize}
+                  patternColor={backgroundPatternColor}
+                />
+                <CanvasToolbar
+                  addAtCenter={addAtCenter}
+                  addGroupAtCenter={addGroupAtCenter}
+                  applyAutoLayout={applyAutoLayout}
+                  autoLayoutModeLabel={autoLayoutModeLabel}
+                  history={history}
+                  layoutMenuButtonRef={layoutMenuButtonRef}
+                  layoutMenuOpen={layoutMenuOpen}
+                  openCanvasSettings={openCanvasSettings}
+                  preferences={preferences}
+                  selectMode={selectMode}
+                  setAssetLibraryOpen={setAssetLibraryOpen}
+                  setGroupName={setGroupName}
+                  setGroupOpen={setGroupOpen}
+                  setLayoutMenuOpen={setLayoutMenuOpen}
+                  setNodeInfoOpen={setNodeInfoOpen}
+                  setPreferences={setPreferences}
+                  setSelectMode={setSelectMode}
+                  setTasksOpen={setTasksOpen}
+                  setTasksTab={setTasksTab}
+                  toolbarPanelPosition={toolbarPanelPosition}
+                  toolbarSeparatorClass={toolbarSeparatorClass}
+                  toolbarUploadProgress={toolbarUploadProgress}
+                  toolbarUploadRef={toolbarUploadRef}
+                  toolbarUploading={toolbarUploading}
+                  toolbarVertical={toolbarVertical}
+                  modLabel={modLabel}
+                  shiftLabel={shiftLabel}
+                />
+                <CanvasBottomDock
+                  onZoomIn={() => void zoomIn({ duration: 150 })}
+                  onZoomOut={() => void zoomOut({ duration: 150 })}
+                  onFitView={() => void fitView({ padding: 0.2, duration: 250 })}
+                  viewportLocked={viewportLocked}
+                  onToggleLock={() => setViewportLocked((locked) => !locked)}
+                  snapToGrid={preferences.snapToGrid}
+                  onToggleSnap={() =>
+                    setPreferences((current) => ({
+                      ...current,
+                      snapToGrid: !current.snapToGrid,
+                    }))
+                  }
+                  showMiniMap={preferences.showMiniMap}
+                  onToggleMiniMap={() =>
+                    setPreferences((current) => ({
+                      ...current,
+                      showMiniMap: !current.showMiniMap,
+                    }))
+                  }
+                />
+              </CanvasFlowSurface>
             </CanvasPreferencesProvider>
 
             <CanvasSelectionBar
@@ -2162,16 +1775,15 @@ function CanvasEditorInner({
               }}
             />
 
-            {!draggingNode ? <CanvasNodeLabels nodes={nodes} /> : null}
 
             <CanvasNodeDockSlot
-              nodeDock={nodeDock}
+              nodeId={nodeDockId}
               onClose={() => setConfigNodeId(null)}
             />
           </div>
 
           <CanvasGenerationDock
-            configNode={configNode ?? null}
+            nodeId={configNodeId}
             preferences={preferences}
             onClose={() => setConfigNodeId(null)}
           />
@@ -2194,52 +1806,49 @@ function CanvasEditorInner({
       </div>
 
       {assetLibraryOpen ? (
-      <PlaygroundMediaLibraryPicker
-        open={assetLibraryOpen}
-        onClose={() => setAssetLibraryOpen(false)}
-        allowedMediaTypes={["image", "video", "audio"]}
-        selectedUrls={librarySelectedUrls}
-        onConfirm={(items) => {
-          const valid = items.filter(
-            (item) =>
-              item.mediaType === "image" ||
-              item.mediaType === "video" ||
-              item.mediaType === "audio",
-          );
-          if (valid.length > 0) {
-            const center = screenToFlowPosition({
-              x: window.innerWidth / 2,
-              y: window.innerHeight / 2,
-            });
-            const columns = Math.min(3, valid.length);
-            const startX = center.x - ((columns - 1) * 340) / 2;
-            valid.forEach((item, index) => {
-              addMediaNode(
-                item.mediaType as "image" | "video" | "audio",
-                item.url,
-                item.id,
-                {
-                  x: startX + (index % columns) * 340,
-                  y: center.y + Math.floor(index / columns) * 300,
-                },
-                "library",
-                item.thumbnailUrl ?? undefined,
-              );
-            });
-            toast.success(messages.canvas.assetSelected);
-          }
-          setAssetLibraryOpen(false);
-        }}
-        onUpload={() => {
-          setAssetLibraryOpen(false);
-          toolbarUploadRef.current?.click();
-        }}
-        storageConfigured={storageConfigured}
-        onConfigureStorage={() => {
-          setAssetLibraryOpen(false);
-          openCanvasSettings("storage");
-        }}
-      />
+        <CanvasAssetLibraryDialog
+          onClose={() => setAssetLibraryOpen(false)}
+          onConfirm={(items) => {
+            const valid = items.filter(
+              (item) =>
+                item.mediaType === "image" ||
+                item.mediaType === "video" ||
+                item.mediaType === "audio",
+            );
+            if (valid.length > 0) {
+              const center = screenToFlowPosition({
+                x: window.innerWidth / 2,
+                y: window.innerHeight / 2,
+              });
+              const columns = Math.min(3, valid.length);
+              const startX = center.x - ((columns - 1) * 340) / 2;
+              valid.forEach((item, index) => {
+                addMediaNode(
+                  item.mediaType as "image" | "video" | "audio",
+                  item.url,
+                  item.id,
+                  {
+                    x: startX + (index % columns) * 340,
+                    y: center.y + Math.floor(index / columns) * 300,
+                  },
+                  "library",
+                  item.thumbnailUrl ?? undefined,
+                );
+              });
+              toast.success(messages.canvas.assetSelected);
+            }
+            setAssetLibraryOpen(false);
+          }}
+          onUpload={() => {
+            setAssetLibraryOpen(false);
+            toolbarUploadRef.current?.click();
+          }}
+          storageConfigured={storageConfigured}
+          onConfigureStorage={() => {
+            setAssetLibraryOpen(false);
+            openCanvasSettings("storage");
+          }}
+        />
       ) : null}
 
       <CanvasRunConfirmModal
@@ -2294,8 +1903,6 @@ function CanvasEditorInner({
         thumbnailUrl={thumbnailUrl}
         thumbnailBusy={thumbnailBusy}
         thumbnailRef={thumbnailRef}
-        nodeCount={nodes.length}
-        edgeCount={edges.length}
         canvasDocument={canvasDocument}
         savedAt={savedAt}
         exportJson={exportJson}
@@ -2319,12 +1926,43 @@ function CanvasEditorInner({
         groupName={groupName}
         setGroupName={setGroupName}
         setGroupOpen={setGroupOpen}
-        groupSelection={groupSelection}
-        selectedNodes={selectedNodes}
-        nodeInfoNodes={nodeInfoOpen ? nodes : EMPTY_NODES}
         onOpenAgentChat={() => setAgentChatOpen(true)}
       />
     </>
+  );
+}
+
+/**
+ * Media library dialog. Mounted only while open, so the (O(n)) scan that builds
+ * the "already on this canvas" url set stays off the canvas render path.
+ */
+function CanvasAssetLibraryDialog({
+  onClose,
+  onConfirm,
+  onUpload,
+  storageConfigured,
+  onConfigureStorage,
+}: {
+  onClose: () => void;
+  onConfirm: ComponentProps<typeof PlaygroundMediaLibraryPicker>["onConfirm"];
+  onUpload: () => void;
+  storageConfigured: boolean;
+  onConfigureStorage: () => void;
+}) {
+  const selectedUrls = useCanvasStore(
+    useShallow((state) => getCanvasMediaUrls(state.nodes)),
+  );
+  return (
+    <PlaygroundMediaLibraryPicker
+      open
+      onClose={onClose}
+      allowedMediaTypes={["image", "video", "audio"]}
+      selectedUrls={selectedUrls}
+      onConfirm={onConfirm}
+      onUpload={onUpload}
+      storageConfigured={storageConfigured}
+      onConfigureStorage={onConfigureStorage}
+    />
   );
 }
 

@@ -2,7 +2,7 @@
 
 import { NodeToolbar, Position } from "@xyflow/react";
 import type { CanvasNodeType } from "@/lib/tu-shared-browser";
-import { useCanvasStore } from "@/lib/canvas/canvas-store";
+import { useSelectedCount } from "@/lib/canvas/canvas-selectors";
 import { CanvasNodeHeaderActions } from "./canvas-node-header-actions";
 
 /**
@@ -32,9 +32,7 @@ function SelectedCanvasNodeToolbar({
   type: CanvasNodeType;
 }) {
   const mediaType = type === "text" || type === "group" ? undefined : type;
-  const multipleSelected = useCanvasStore(
-    (state) => state.nodes.filter((node) => node.selected).length > 1,
-  );
+  const multipleSelected = useSelectedCount() > 1;
 
   return (
     <NodeToolbar

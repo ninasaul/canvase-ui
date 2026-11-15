@@ -10,8 +10,12 @@ import { CanvasNodeInfoModal } from "@/components/canvas/editor/panels/canvas-no
 import { CanvasSettingsModal } from "@/components/canvas/editor/panels/canvas-settings-modal";
 import type { CanvasDetail } from "@/lib/canvas/canvas-api";
 import type { CanvasFlowNode } from "@/lib/canvas/canvas-store";
-import type {
-} from "@/lib/canvas/canvas-store";
+import { useCanvasStore } from "@/lib/canvas/canvas-store";
+import {
+  useCanvasEdgeCount,
+  useCanvasNodeCount,
+  useCanvasSelection,
+} from "@/lib/canvas/canvas-selectors";
 import type { PortalPublicModel } from "@/types/admin";
 
 import type { useCanvasSettings } from "../workspace/use-canvas-settings";
@@ -26,8 +30,6 @@ function CanvasOverlaysInner({
   thumbnailUrl,
   thumbnailBusy,
   thumbnailRef,
-  nodeCount,
-  edgeCount,
   canvasDocument,
   savedAt,
   exportJson,
@@ -51,9 +53,6 @@ function CanvasOverlaysInner({
   groupName,
   setGroupName,
   setGroupOpen,
-  groupSelection,
-  selectedNodes,
-  nodeInfoNodes,
   onOpenAgentChat,
 }: {
   infoOpen: boolean;
@@ -62,8 +61,6 @@ function CanvasOverlaysInner({
   thumbnailUrl: string | null;
   thumbnailBusy: boolean;
   thumbnailRef: { current: HTMLInputElement | null };
-  nodeCount: number;
-  edgeCount: number;
   canvasDocument: CanvasDetail;
   savedAt: string | null;
   exportJson: () => void;
@@ -87,11 +84,18 @@ function CanvasOverlaysInner({
   groupName: string;
   setGroupName: (value: string) => void;
   setGroupOpen: (value: boolean) => void;
-  groupSelection: (nodeIds: string[], name: string) => void;
-  selectedNodes: CanvasFlowNode[];
-  nodeInfoNodes: CanvasFlowNode[];
   onOpenAgentChat?: () => void;
 }) {
+  // Graph-derived values live here rather than in props: the overlays are
+  // memoised, and passing them from the editor forced a fresh array/object on
+  // every node change, re-rendering all dialogs (closed ones included).
+  const nodeCount = useCanvasNodeCount();
+  const edgeCount = useCanvasEdgeCount();
+  const groupableIds = useCanvasSelection().groupableIds;
+  const groupSelection = useCanvasStore((state) => state.groupSelection);
+  const nodeInfoNodes = useCanvasStore((state) =>
+    nodeInfoOpen ? state.nodes : EMPTY_NODES,
+  );
   return (
     <>
       <CanvasInfoModal
@@ -144,10 +148,7 @@ function CanvasOverlaysInner({
         onNameChange={setGroupName}
         onClose={() => setGroupOpen(false)}
         onCreate={() => {
-          groupSelection(
-            selectedNodes.map((node) => node.id),
-            groupName,
-          );
+          groupSelection(groupableIds, groupName);
           setGroupOpen(false);
         }}
       />

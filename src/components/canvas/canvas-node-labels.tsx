@@ -11,12 +11,14 @@ import type {
   CanvasNodeRunStatus,
   CanvasNodeType,
 } from "@/lib/tu-shared-browser";
-import { useStore, useViewport } from "@xyflow/react";
-import { useViewportMotionStore } from "@/lib/canvas/viewport-motion-store";
+import { memo } from "react";
+import { useStoreApi, ViewportPortal } from "@xyflow/react";
 import { canvasNodeAbsolutePosition } from "@/lib/canvas/canvas-node-position";
 import { Icon } from "@/components/ui/icon";
 import { useCanvasStore } from "@/lib/canvas/canvas-store";
 import type { CanvasFlowNode } from "@/lib/canvas/canvas-store";
+import { getNodeIndex } from "@/lib/canvas/canvas-node-index";
+import { useLabelEntries } from "@/lib/canvas/canvas-selectors";
 import { messages } from "@/messages";
 
 const NODE_ICONS: Record<CanvasNodeType, typeof TextT> = {
@@ -61,46 +63,21 @@ function typeName(type: CanvasNodeType): string {
   }
 }
 
-export function CanvasNodeLabels({
-  nodes,
-}: {
-  nodes: CanvasFlowNode[];
-}) {
-  // Split so the viewport subscription does not run during a pan: the inner
-  // component is unmounted while the pane moves, which removes the per-frame
-  // work entirely instead of just skipping the returned markup.
-  // A viewport gesture (pan or zoom) unmounts the labels: recomputing screen
-  // positions for every visible node on every frame is the expensive part.
-  // The motion flag flips twice per gesture, not per frame.
-  const moving = useViewportMotionStore((state) => state.moving);
-  if (moving) {
-    return null;
-  }
-  return <CanvasNodeLabelsInner nodes={nodes} />;
-}
-
-function CanvasNodeLabelsInner({ nodes }: { nodes: CanvasFlowNode[] }) {
-  const viewport = useViewport();
-  const width = useStore((state) => state.width);
-  const height = useStore((state) => state.height);
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const showDetail = viewport.zoom >= 0.35;
-  const visibleNodes =
-    width > 0 && height > 0
-      ? nodes.filter((node) => {
-          if (!showDetail && !node.selected && node.type !== "group") {
-            return false;
-          }
-          const position = canvasNodeAbsolutePosition(node, byId);
-          const left = viewport.x + position.x * viewport.zoom;
-          const top = viewport.y + position.y * viewport.zoom;
-          const right =
-            left + (node.width ?? node.measured?.width ?? 280) * viewport.zoom;
-          const bottom =
-            top + (node.height ?? node.measured?.height ?? 200) * viewport.zoom;
-          return right > -80 && bottom > -80 && left < width + 80 && top < height + 80;
-        })
-      : nodes;
+/**
+ * Node labels, rendered inside the React Flow viewport portal.
+ *
+ * Living in the portal means pan/zoom moves them with the graph through the
+ * compositor: no per-frame position math, no unmount/remount flash during a
+ * gesture, and no `useViewport()` subscription. Overview zoom hides them via
+ * the `.canvas-far` CSS class instead of a JS filter, and the label data
+ * comes from a cached snapshot so editing a node's prompt does not re-render
+ * the layer.
+ */
+export const CanvasNodeLabels = memo(function CanvasNodeLabels() {
+  const storeApi = useStoreApi();
+  const entries = useLabelEntries();
+  // Absolute positions still need the live node graph (parents move children).
+  const byId = getNodeIndex(useCanvasStore.getState().nodes);
   const setNodePosition = useCanvasStore((state) => state.setNodePosition);
   const selectNode = useCanvasStore((state) => state.selectNode);
 
@@ -114,7 +91,9 @@ function CanvasNodeLabelsInner({ nodes }: { nodes: CanvasFlowNode[] }) {
     const startX = event.clientX;
     const startY = event.clientY;
     const startPosition = { ...node.position };
-    const scale = viewport.zoom || 1;
+    // Read the zoom once, at pointer-down: subscribing to the transform would
+    // re-render every label on each pan/zoom frame.
+    const scale = storeApi.getState().transform[2] || 1;
     const onMove = (moveEvent: PointerEvent) => {
       setNodePosition(
         node.id,
@@ -131,50 +110,59 @@ function CanvasNodeLabelsInner({ nodes }: { nodes: CanvasFlowNode[] }) {
   }
 
   return (
-    <div className="canvas-node-labels pointer-events-none absolute inset-0 z-20 overflow-hidden">
-      {visibleNodes.map((node) => {
-        const position = canvasNodeAbsolutePosition(node, byId);
-        const type = node.type ?? "text";
-        // Group title lives inside the group node chrome.
-        if (type === "group") {
-          return null;
-        }
-        const label = node.data.label?.trim() || typeName(type);
-        return (
-          <div
-            key={node.id}
-            className="pointer-events-auto absolute flex cursor-grab select-none items-center gap-1.5 whitespace-nowrap rounded-md px-0.5 pb-0.5 text-[11px] font-medium text-zinc-600 active:cursor-grabbing dark:text-zinc-300"
-            style={{
-              left: viewport.x + position.x * viewport.zoom,
-              top: viewport.y + position.y * viewport.zoom,
-              transform: `translateY(-100%) scale(${viewport.zoom})`,
-              transformOrigin: "left bottom",
-            }}
-            onPointerDown={(event) => startDrag(event, node)}
-            title={
-              node.data.model?.trim()
-                ? `${label} · ${node.data.model.trim()}`
-                : label
-            }
-          >
-            <span className="flex min-w-0 items-center gap-1.5">
-              <span
-                className="inline-flex shrink-0"
-                style={{ color: NODE_COLORS[type] }}
-              >
-                <Icon icon={NODE_ICONS[type]} size={12} weight="fill" />
+    <ViewportPortal>
+      {/* `absolute left-0 top-0` makes this the containing block for the
+          labels, so their left/top are flow coordinates: the viewport applies
+          the pan/zoom transform to the whole layer. */}
+      <div className="canvas-node-labels pointer-events-none absolute left-0 top-0">
+        {entries.map(({ node }) => {
+          const position = canvasNodeAbsolutePosition(node, byId);
+          const type = node.type ?? "text";
+          // The group title lives inside the group node chrome.
+          if (type === "group") {
+            return null;
+          }
+          const label = node.data.label?.trim() || typeName(type);
+          return (
+            <div
+              key={node.id}
+              data-node-id={node.id}
+              data-selected={node.selected ? "true" : undefined}
+              className="canvas-node-label pointer-events-auto absolute flex cursor-grab select-none items-center gap-1.5 whitespace-nowrap rounded-md px-0.5 pb-0.5 text-[11px] font-medium text-zinc-600 active:cursor-grabbing dark:text-zinc-300"
+              style={{
+                left: position.x + 8,
+                top: position.y,
+                transform: "translateY(calc(-100% - 4px))",
+                transformOrigin: "left bottom",
+              }}
+              onPointerDown={(event) => startDrag(event, node)}
+              title={
+                node.data.model?.trim()
+                  ? `${label} · ${node.data.model.trim()}`
+                  : label
+              }
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span
+                  className="inline-flex shrink-0"
+                  style={{ color: NODE_COLORS[type] }}
+                >
+                  <Icon icon={NODE_ICONS[type]} size={12} weight="fill" />
+                </span>
+                <span className="truncate">{label}</span>
               </span>
-              <span className="truncate">{label}</span>
-            </span>
-            {node.data.status && node.data.status !== "idle" ? (
-              <span
-                className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_COLORS[node.data.status]}`}
-                title={node.data.status}
-              />
-            ) : null}
-          </div>
-        );
-      })}
-    </div>
+              {node.data.status && node.data.status !== "idle" ? (
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                    STATUS_COLORS[node.data.status]
+                  }`}
+                  title={node.data.status}
+                />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </ViewportPortal>
   );
-}
+});
