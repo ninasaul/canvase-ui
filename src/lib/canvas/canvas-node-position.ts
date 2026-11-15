@@ -2,7 +2,7 @@ import type { CanvasFlowNode } from "./canvas-store";
 
 export function canvasNodeAbsolutePosition(
   node: CanvasFlowNode,
-  byId: Map<string, CanvasFlowNode>,
+  byId: ReadonlyMap<string, CanvasFlowNode>,
 ): { x: number; y: number } {
   let x = node.position.x;
   let y = node.position.y;

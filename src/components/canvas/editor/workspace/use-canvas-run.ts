@@ -576,24 +576,29 @@ export function useCanvasRun(input: {
         }
         agentRunSeenRef.current = true;
         setAgentRunId(run.runId);
-        const statusStore = useCanvasRunStatusStore.getState();
-        const updateNode = updateNodeDataRef.current;
+        // One store write per poll instead of one per node: each individual
+        // patch cloned the whole node array and woke every subscriber, so a
+        // 20-node agent run produced 20 render waves every 2 seconds.
+        const patches: Record<string, Partial<CanvasNodeData>> = {};
+        const statusEntries: Parameters<
+          ReturnType<typeof useCanvasRunStatusStore.getState>["patchMany"]
+        >[0] = [];
         for (const nodeId of run.nodeIds) {
           const state = run.nodes[nodeId];
           if (!state) {
-            statusStore.setNode(nodeId, "queued");
-            updateNode(nodeId, { status: "queued", error: undefined });
+            statusEntries.push({ nodeId, status: "queued" });
+            patches[nodeId] = { status: "queued", error: undefined };
             continue;
           }
           const mapped = mapAgentNodeStatus(state.status);
-          statusStore.setNode(
+          statusEntries.push({
             nodeId,
-            mapped,
-            state.error,
-            state.requestId,
-            run.runId,
-          );
-          updateNode(nodeId, {
+            status: mapped,
+            error: state.error,
+            requestId: state.requestId,
+            taskId: run.runId,
+          });
+          patches[nodeId] = {
             status: mapped,
             ...(state.error !== undefined ? { error: state.error } : {}),
             ...(state.requestId ? { requestId: state.requestId } : {}),
@@ -607,8 +612,10 @@ export function useCanvasRun(input: {
             ...(mapped === "running" || mapped === "queued"
               ? { finishedAt: undefined }
               : {}),
-          });
+          };
         }
+        useCanvasRunStatusStore.getState().patchMany(statusEntries);
+        useCanvasStore.getState().patchManyNodeData(patches);
       } catch {
         // Ignore transient poll failures.
       }

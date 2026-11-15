@@ -1,50 +1,57 @@
 "use client";
 
+import { memo } from "react";
+
 import { CanvasNodeDockLayer } from "@/components/canvas/canvas-node-dock-layer";
 import { CanvasImageGenerationDock } from "@/components/canvas/canvas-image-generation-dock";
 import { CanvasTextGenerationDock } from "@/components/canvas/canvas-text-generation-dock";
 import { CanvasVideoGenerationDock } from "@/components/canvas/canvas-video-generation-dock";
-import type { CanvasFlowNode } from "@/lib/canvas/canvas-store";
+import type { CanvasNodeType } from "@/lib/tu-shared-browser";
+import { useCanvasStore } from "@/lib/canvas/canvas-store";
+import { getNodeById } from "@/lib/canvas/canvas-node-index";
 
 /**
- * Generation dock that floats next to a node. The editor decides which node
- * is docked (selection or "open settings" on a node); this only picks the dock
- * that matches the node type.
+ * Generation dock that floats next to a node. The editor passes only the node
+ * id: the type is resolved here, so editing that node (which replaces its
+ * object on every keystroke) no longer re-renders the editor itself.
  */
-export function CanvasNodeDockSlot({
-  nodeDock,
+export const CanvasNodeDockSlot = memo(function CanvasNodeDockSlot({
+  nodeId,
   onClose,
 }: {
-  nodeDock: CanvasFlowNode | null;
+  nodeId: string | null;
   onClose: () => void;
 }) {
-  if (!nodeDock) {
+  const nodeType = useCanvasStore((state): CanvasNodeType | undefined =>
+    nodeId ? getNodeById(state.nodes, nodeId)?.type : undefined,
+  );
+  if (!nodeId || !nodeType) {
     return null;
   }
   return (
-    <CanvasNodeDockLayer key={nodeDock.id} node={nodeDock}>
-      {nodeDock.type === "image" ? (
+    <CanvasNodeDockLayer key={nodeId} nodeId={nodeId}>
+      {nodeType === "image" ? (
         <CanvasImageGenerationDock
-          key={nodeDock.id}
-          nodeId={nodeDock.id}
+          key={nodeId}
+          nodeId={nodeId}
           onClose={onClose}
           embedded
         />
-      ) : nodeDock.type === "video" ? (
+      ) : nodeType === "video" ? (
         <CanvasVideoGenerationDock
-          key={nodeDock.id}
-          nodeId={nodeDock.id}
+          key={nodeId}
+          nodeId={nodeId}
           onClose={onClose}
           embedded
         />
       ) : (
         <CanvasTextGenerationDock
-          key={nodeDock.id}
-          nodeId={nodeDock.id}
+          key={nodeId}
+          nodeId={nodeId}
           onClose={onClose}
           embedded
         />
       )}
     </CanvasNodeDockLayer>
   );
-}
+});

@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Textarea } from "@/components/ui/textarea";
 import { useCanvasStore } from "@/lib/canvas/canvas-store";
+import { useCanvasNode } from "@/lib/canvas/canvas-selectors";
 import { useCanvasRunStatus } from "@/lib/canvas/canvas-run-status-store";
 import { messages } from "@/messages";
 import { useCanvasActions } from "./canvas-actions";
@@ -31,9 +32,7 @@ export function CanvasTextGenerationDock({
   embedded?: boolean;
 }) {
   const { models, runNode } = useCanvasActions();
-  const node = useCanvasStore((state) =>
-    state.nodes.find((item) => item.id === nodeId),
-  );
+  const node = useCanvasNode(nodeId);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const data = node?.data;
   const [model, setModel] = useState(data?.model ?? "");
