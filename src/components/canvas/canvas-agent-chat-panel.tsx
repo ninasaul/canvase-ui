@@ -41,7 +41,8 @@ import { modelLogoLeading } from "@/components/playground/playground-model-selec
 import { toast } from "@/components/ui/toast";
 import { useMessages } from "@/hooks/use-feature-messages";
 import { useAgentComposerStore } from "@/lib/canvas/agent-composer-store";
-import { useCanvasStore, type CanvasFlowNode } from "@/lib/canvas/canvas-store";
+import { useCanvasStore } from "@/lib/canvas/canvas-store";
+import { useMentionEntries } from "@/lib/canvas/canvas-selectors";
 import {
   cancelAgentRun,
   getCanvasRun,
@@ -933,9 +934,11 @@ function CanvasAgentChatPanelInner({
   const [pendingMentions, setPendingMentions] = useState<
     Array<{ id: string; label: string }>
   >([]);
-  const canvasNodes = useCanvasStore(
-    (state) => state.nodes,
-  ) as CanvasFlowNode[];
+  // Only the `@` mention list needs the graph. Subscribing to a compact,
+  // cached entry list (rather than the node array) keeps this 2.9k-line panel
+  // out of every drag frame: the entries are stable per node, so `useShallow`
+  // skips the render until a label or the node set actually changes.
+  const mentionEntries = useMentionEntries();
   const [skillIndex, setSkillIndex] = useState(0);
   const [pendingAttachments, setPendingAttachments] = useState<
     ChatAttachment[]
@@ -1038,20 +1041,15 @@ function CanvasAgentChatPanelInner({
       return [];
     }
     const query = mentionQuery.toLowerCase();
-    return canvasNodes
+    return mentionEntries
       .filter((node) => {
-        const label = (node.data.label ?? "").toLowerCase();
+        const label = node.label.toLowerCase();
         return (
           !query || label.includes(query) || node.id.toLowerCase().includes(query)
         );
       })
-      .slice(0, 8)
-      .map((node) => ({
-        id: node.id,
-        label: node.data.label?.trim() || node.id,
-        type: node.type ?? "text",
-      }));
-  }, [canvasNodes, mentionQuery]);
+      .slice(0, 8);
+  }, [mentionEntries, mentionQuery]);
 
   const pickMention = useCallback((id: string, label: string) => {
     setMentionQuery(null);

@@ -37,6 +37,10 @@ import {
 } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
+import {
+  useCanvasRunningTaskCount,
+  useSelectedCount,
+} from "@/lib/canvas/canvas-selectors";
 import { Popover } from "@/components/ui/popover";
 import { Icon } from "@/components/ui/icon";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -54,9 +58,7 @@ function CanvasToolbarInner({
   layoutMenuOpen,
   openCanvasSettings,
   preferences,
-  runningTaskCount,
   selectMode,
-  selectedCount,
   setAssetLibraryOpen,
   setGroupName,
   setGroupOpen,
@@ -84,9 +86,7 @@ function CanvasToolbarInner({
   layoutMenuOpen: boolean;
   openCanvasSettings: (tab: CanvasSettingsTab) => void;
   preferences: CanvasPreferences;
-  runningTaskCount: number;
   selectMode: boolean;
-  selectedCount: number;
   setAssetLibraryOpen: Dispatch<SetStateAction<boolean>>;
   setGroupName: Dispatch<SetStateAction<string>>;
   setGroupOpen: Dispatch<SetStateAction<boolean>>;
@@ -105,6 +105,11 @@ function CanvasToolbarInner({
   modLabel: string;
   shiftLabel: string;
 }) {
+  // Counts are derived here instead of being passed down: the toolbar is
+  // memoised, and a fresh `selectedCount` per editor render (which happens on
+  // every node change) would defeat that.
+  const selectedCount = useSelectedCount();
+  const runningTaskCount = useCanvasRunningTaskCount();
   return (
     <Panel position={toolbarPanelPosition} className="!m-3">
       <div className={`nodrag relative flex items-center gap-1 rounded-lg border border-zinc-200 bg-white/95 p-1 shadow-lg backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95 ${

@@ -24,6 +24,8 @@ import { create } from "zustand";
 import { messages } from "@/messages";
 import { canvasNodeSizeFromData } from "./canvas-node-size";
 import { defaultEdgeRole } from "./canvas-edge-roles";
+import { getNodeIndex } from "./canvas-node-index";
+import { useCanvasTransientStore } from "./canvas-transient-store";
 
 export type CanvasFlowNode = Node<CanvasNodeData, CanvasNodeType>;
 export type CanvasFlowEdge = Edge<{
@@ -35,18 +37,20 @@ export type CanvasStore = {
   nodes: CanvasFlowNode[];
   edges: CanvasFlowEdge[];
   settings: CanvasSettings;
-  dragOverGroupId: string | null;
-  snapTargetId: string | null;
-  uploadProgressById: Record<string, number>;
   onNodesChange: (changes: NodeChange<CanvasFlowNode>[]) => void;
   onEdgesChange: (changes: EdgeChange<CanvasFlowEdge>[]) => void;
   onConnect: (connection: Connection) => void;
+  /**
+   * Add many connections in **one** store write (multi-select fan-out).
+   * Already-linked pairs and duplicates in the batch are skipped.
+   */
+  connectMany: (connections: Connection[]) => void;
   setEdgeRole: (edgeId: string, role: CanvasEdgeRole) => void;
   addNode: (
     type: CanvasNodeType,
     position?: XYPosition,
     data?: Partial<CanvasNodeData>,
-  ) => void;
+  ) => string;
   addMediaNode: (
     type: "image" | "video" | "audio",
     url: string,
@@ -56,6 +60,10 @@ export type CanvasStore = {
     thumbnailUrl?: string,
   ) => void;
   updateNodeData: (id: string, patch: Partial<CanvasNodeData>) => void;
+  /** Apply many node data patches in one `set` (avoids N full-graph rerenders). */
+  patchManyNodeData: (
+    patches: Record<string, Partial<CanvasNodeData>>,
+  ) => void;
   restoreNodeHistory: (id: string, at: number) => void;
   setNodeSize: (id: string, width: number, height: number) => void;
   setNodePosition: (id: string, x: number, y: number) => void;
@@ -68,11 +76,10 @@ export type CanvasStore = {
   ungroup: (groupId: string) => void;
   removeNode: (id: string) => void;
   duplicateNode: (id: string) => void;
+  /** Replace the nodes array in one write (e.g. commit a drag gesture). */
+  setNodes: (nodes: CanvasFlowNode[]) => void;
   replace: (nodes: CanvasFlowNode[], edges: CanvasFlowEdge[]) => void;
   setSettings: (settings: CanvasSettings) => void;
-  setDragOverGroupId: (groupId: string | null) => void;
-  setSnapTargetId: (nodeId: string | null) => void;
-  setUploadProgress: (nodeId: string, percent: number | null) => void;
   reset: (graph?: CanvasGraph) => void;
   toGraph: () => CanvasGraph;
 };
@@ -185,6 +192,20 @@ function styleDimension(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+/** True when every patch entry already equals the stored value. */
+function sameDataPatch(
+  data: CanvasNodeData,
+  patch: Partial<CanvasNodeData>,
+): boolean {
+  const record = data as Record<string, unknown>;
+  for (const key of Object.keys(patch)) {
+    if (record[key] !== (patch as Record<string, unknown>)[key]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function graphFromState(
   nodes: CanvasFlowNode[],
   edges: CanvasFlowEdge[],
@@ -234,16 +255,61 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   nodes: [],
   edges: [],
   settings: {},
-  dragOverGroupId: null,
-  snapTargetId: null,
-  uploadProgressById: {},
 
   onNodesChange: (changes) => {
-    set({ nodes: applyNodeChanges(changes, get().nodes) });
+    if (changes.length === 0) {
+      return;
+    }
+    set((state) => ({ nodes: applyNodeChanges(changes, state.nodes) }));
   },
 
   onEdgesChange: (changes) => {
-    set({ edges: applyEdgeChanges(changes, get().edges) });
+    if (changes.length === 0) {
+      return;
+    }
+    set((state) => ({ edges: applyEdgeChanges(changes, state.edges) }));
+  },
+
+  connectMany: (connections) => {
+    if (connections.length === 0) {
+      return;
+    }
+    const state = get();
+    const byId = getNodeIndex(state.nodes);
+    let nextEdges = state.edges;
+    let added = 0;
+    for (const connection of connections) {
+      const source = byId.get(connection.source ?? "");
+      const target = byId.get(connection.target ?? "");
+      if (!source || !target) {
+        continue;
+      }
+      const targetHandle = connection.targetHandle ?? "in";
+      const alreadyLinked = nextEdges.some(
+        (edge) =>
+          edge.source === connection.source &&
+          edge.target === connection.target &&
+          (edge.targetHandle ?? "in") === targetHandle,
+      );
+      if (alreadyLinked) {
+        continue;
+      }
+      const resolved =
+        targetHandle === "in" ? defaultEdgeRole(source.type, target.type) : targetHandle;
+      nextEdges = addEdge(
+        {
+          ...connection,
+          id: newId("edge"),
+          type: "canvas",
+          data: { role: (resolved ?? "prompt") as CanvasEdgeRole },
+        },
+        nextEdges,
+      );
+      added += 1;
+    }
+    if (added > 0) {
+      set({ edges: nextEdges });
+    }
   },
 
   onConnect: (connection) => {
@@ -291,6 +357,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       }
     }
     set({ nodes: [...get().nodes, node] });
+    return node.id;
   },
 
   addMediaNode: (
@@ -340,17 +407,51 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   updateNodeData: (id, patch) => {
+    const nodes = get().nodes;
+    const node = nodes.find((item) => item.id === id);
+    // Generation progress and size callbacks re-apply the same patch several
+    // times per run; skipping no-ops keeps every subscriber (all nodes, the
+    // toolbar, the autosave observer…) out of work nobody asked for.
+    if (!node || sameDataPatch(node.data, patch)) {
+      return;
+    }
     set({
-      nodes: get().nodes.map((node) =>
-        node.id === id ? { ...node, data: { ...node.data, ...patch } } : node,
+      nodes: nodes.map((item) =>
+        item.id === id ? { ...item, data: { ...item.data, ...patch } } : item,
       ),
     });
   },
 
+  patchManyNodeData: (patches) => {
+    const ids = Object.keys(patches);
+    if (ids.length === 0) {
+      return;
+    }
+    const nodes = get().nodes;
+    let changed = false;
+    const next = nodes.map((node) => {
+      const patch = patches[node.id];
+      if (!patch || sameDataPatch(node.data, patch)) {
+        return node;
+      }
+      changed = true;
+      return { ...node, data: { ...node.data, ...patch } };
+    });
+    if (!changed) {
+      return;
+    }
+    set({ nodes: next });
+  },
+
   setNodeSize: (id, width, height) => {
+    const nodes = get().nodes;
+    const node = nodes.find((item) => item.id === id);
+    if (!node || (node.width === width && node.height === height)) {
+      return;
+    }
     set({
-      nodes: get().nodes.map((node) =>
-        node.id === id ? { ...node, width, height } : node,
+      nodes: nodes.map((item) =>
+        item.id === id ? { ...item, width, height } : item,
       ),
     });
   },
@@ -359,6 +460,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const nodes = get().nodes;
     const node = nodes.find((item) => item.id === id);
     if (!node) {
+      return;
+    }
+    if (node.position.x === x && node.position.y === y) {
       return;
     }
     let nextX = x;
@@ -389,8 +493,20 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     // Copy only the nodes whose selection actually changes. Re-creating every
     // node object here invalidated the identity check React Flow uses to skip
     // unchanged nodes, so a single click re-rendered the whole graph.
+    const nodes = get().nodes;
+    let selectedCount = 0;
+    let onlySelectedId: string | null = null;
+    for (const node of nodes) {
+      if (node.selected) {
+        selectedCount += 1;
+        onlySelectedId = node.id;
+      }
+    }
+    if (selectedCount === 1 && onlySelectedId === id) {
+      return;
+    }
     set({
-      nodes: get().nodes.map((node) => {
+      nodes: nodes.map((node) => {
         const selected = node.id === id;
         return node.selected === selected ? node : { ...node, selected };
       }),
@@ -436,15 +552,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       });
       return;
     }
-    const uploadProgressById = { ...get().uploadProgressById };
-    delete uploadProgressById[id];
     set({
       nodes: nodes.filter((item) => item.id !== id),
       edges: get().edges.filter(
         (edge) => edge.source !== id && edge.target !== id,
       ),
-      uploadProgressById,
     });
+    useCanvasTransientStore.getState().setUploadProgress(id, null);
   },
 
   duplicateNode: (id) => {
@@ -688,46 +802,32 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
   },
 
+  setNodes: (nodes) => {
+    if (get().nodes === nodes) {
+      return;
+    }
+    set({ nodes });
+  },
+
   replace: (nodes, edges) => {
+    const current = get();
+    if (current.nodes === nodes && current.edges === edges) {
+      return;
+    }
     set({ nodes, edges });
   },
 
   setSettings: (settings) => {
-    set({ settings });
-  },
-
-  setDragOverGroupId: (groupId) => {
-    set({ dragOverGroupId: groupId });
-  },
-
-  setSnapTargetId: (nodeId) => {
-    if (get().snapTargetId !== nodeId) {
-      set({ snapTargetId: nodeId });
+    if (get().settings === settings) {
+      return;
     }
-  },
-
-  setUploadProgress: (nodeId, percent) => {
-    set((state) => {
-      const next = { ...state.uploadProgressById };
-      if (percent === null) {
-        delete next[nodeId];
-      } else {
-        next[nodeId] = Math.max(0, Math.min(100, Math.round(percent)));
-      }
-      return { uploadProgressById: next };
-    });
+    set({ settings });
   },
 
   reset: (graph) => {
     if (!graph) {
-      set({
-        nodes: [],
-        edges: [],
-        settings: {},
-        dragOverGroupId: null,
-        snapTargetId: null,
-        uploadProgressById: {},
-      });
+      set({ nodes: [], edges: [], settings: {} });
+      useCanvasTransientStore.getState().reset();
       return;
     }
     const parsed = parseCanvasGraph(graph);
@@ -761,10 +861,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
         };
       }),
       settings: parsed.settings ?? {},
-      dragOverGroupId: null,
-      snapTargetId: null,
-      uploadProgressById: {},
     });
+    useCanvasTransientStore.getState().reset();
   },
 
   toGraph: () => graphFromState(get().nodes, get().edges, get().settings),

@@ -3,7 +3,7 @@
 import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { ReactFlowInstance } from "@xyflow/react";
 
-import type { CanvasFlowNode } from "@/lib/canvas/canvas-store";
+import { useCanvasStore } from "@/lib/canvas/canvas-store";
 import { messages } from "@/messages";
 
 type InsertMenuState = {
@@ -27,9 +27,9 @@ export function useCanvasShortcuts(input: {
   fitView: ReactFlowInstance["fitView"];
   history: { undo: () => void; redo: () => void };
   insertMenu: InsertMenuState | null;
-  nodes: CanvasFlowNode[];
   refreshCanvas: () => void;
-  selectedNodes: CanvasFlowNode[];
+  /** Number of selected nodes that can be grouped. */
+  groupableSelectionCount: number;
   selectAll: () => void;
   selectMode: boolean;
   zoomTo: ReactFlowInstance["zoomTo"];
@@ -56,9 +56,8 @@ export function useCanvasShortcuts(input: {
     fitView,
     history,
     insertMenu,
-    nodes,
     refreshCanvas,
-    selectedNodes,
+    groupableSelectionCount,
     selectAll,
     selectMode,
     setAgentChatOpen,
@@ -154,8 +153,13 @@ export function useCanvasShortcuts(input: {
         }
         if (key === "d") {
           event.preventDefault();
-          for (const node of nodes.filter((item) => item.selected)) {
-            duplicateNode(node.id);
+          // Read on demand: a dependency on the node array re-registered this
+          // listener on every drag frame.
+          const current = useCanvasStore.getState().nodes;
+          for (const node of current) {
+            if (node.selected) {
+              duplicateNode(node.id);
+            }
           }
           return;
         }
@@ -214,10 +218,10 @@ export function useCanvasShortcuts(input: {
           setSelectMode((value) => !value);
           return;
         case "g":
-          if (selectedNodes.length >= 2) {
+          if (groupableSelectionCount >= 2) {
             event.preventDefault();
             setGroupName(
-              `${messages.canvas.groupDefault} ${selectedNodes.length}`,
+              `${messages.canvas.groupDefault} ${groupableSelectionCount}`,
             );
             setGroupOpen(true);
           }
@@ -275,9 +279,8 @@ export function useCanvasShortcuts(input: {
     fitView,
     history,
     insertMenu,
-    nodes,
     refreshCanvas,
-    selectedNodes,
+    groupableSelectionCount,
     selectAll,
     selectMode,
     setAgentChatOpen,

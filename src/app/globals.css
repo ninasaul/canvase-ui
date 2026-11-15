@@ -477,31 +477,30 @@ body {
   z-index: 30;
 }
 
-/* Panning moves this layer every frame; promote it so the browser composites
-   instead of repainting every node. */
-.react-flow__viewport {
-  will-change: transform;
+/*
+ * Canvas shell: bound and isolate the graph (same contract as the reference
+ * canvas, which does not shake).
+ *
+ * `contain: layout paint style` + `isolation: isolate` keep the transformed
+ * graph out of the app shell's layout/paint/compositing. Without it a wheel
+ * zoom re-rasterises a subtree that shares a layer with the surrounding chrome,
+ * and the whole canvas visibly shimmers. No `will-change: transform` on the
+ * viewport: a forced layer keeps a stale raster that the browser then
+ * re-tiles, which is what made every node look like it was shaking.
+ */
+.react-flow {
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  contain: layout paint style;
+  isolation: isolate;
 }
 
-/* Isolate each node's layout so panning and dragging do not force a relayout
-   of the whole graph. Paint containment is deliberately NOT used: handles and
-   their hover badges straddle the node border, and `contain: paint` clips them
-   (the outer half of the hit area became unclickable).
-
-   No `will-change` here either: it promotes every node to its own compositor
-   layer, and with 100+ nodes that costs more memory and layer bookkeeping than
-   it saves. The viewport layer above is the one that actually moves. */
-.react-flow__node {
-  contain: layout style;
-}
-
-/* Paint isolation belongs on the node body, not the node root: the body has
-   overflow-hidden already, while the root must stay unclipped so connection
-   handles can straddle the border. Without this the whole graph repaints on
-   every pan. */
-.canvas-node-body {
-  contain: paint;
-}
+/* The reference canvas puts no containment on nodes: `contain: layout` makes
+   every node a layout-containment box inside a scaled transform, and Chrome
+   snaps each such box independently while the scale changes — nodes then drift
+   against each other by a pixel, which reads as shaking. Isolation lives on
+   `.react-flow` instead. */
 
 /*
  * Panning sheds the expensive paint work. With 100+ nodes a moving viewport
@@ -512,11 +511,157 @@ body {
   animation: none;
 }
 
-/* Labels are recomputed from the viewport transform; hiding them for the
-   duration of a zoom gesture (via the imperative data-zooming flag) keeps the
-   gesture free of React work and of sub-pixel label shimmer. */
-[data-zooming="true"] .canvas-node-labels {
+/*
+ * Level of detail is a CSS switch, not a React one. The node subtree stays
+ * mounted so zooming never unmounts/remounts nodes (which reloaded every image
+ * and shook the layout); at far zoom the detail layer is hidden and the cheap
+ * block is shown instead.
+ */
+.canvas-far-block {
+  display: none;
+}
+.canvas-far .canvas-far-block {
+  display: block;
+}
+.canvas-far .canvas-detail {
+  display: none;
+}
+
+/*
+ * Zoom keeps the real content. Swapping nodes for blocks during a gesture is a
+ * common trick (it saves the re-rasterisation of every node subtree), but on
+ * this product it hides exactly what the user is trying to read while zooming,
+ * and the measured gain did not survive a fair A/B. Only the far-zoom level of
+ * detail below remains: there the content is illegible anyway.
+ */
+
+/*
+ * Handles must keep a layout box at every detail level: xyflow measures them to
+ * place edges, and a `display: none` handle measured as 0x0 collapsed every
+ * connected edge onto one point. Hidden visually, still measurable.
+ */
+.canvas-far .react-flow__handle {
   visibility: hidden;
+}
+
+/*
+ * Node labels follow the viewport through `ViewportPortal`, so pan/zoom needs
+ * no per-frame React work and no unmount flash. They share the single far-zoom
+ * level of detail with the node content: hiding them at a second threshold
+ * (50%) popped every label out mid-gesture, which read as a zoom flash.
+ */
+.canvas-far .canvas-node-label:not([data-selected="true"]) {
+  display: none;
+}
+
+/*
+ * Edge strokes are non-scaling (see CanvasEdge), but the animated dash pattern
+ * lives in flow units, so at overview zoom the dashes shrink below a pixel and
+ * the connections vanish. Draw plain lines while zoomed out; the animated
+ * dashes come back as soon as the graph is readable.
+ */
+.canvas-far .react-flow__edge.animated path {
+  animation: none;
+  stroke-dasharray: none;
+}
+
+/*
+ * Connection points: the reveal is a springy fade + pop outward from the node
+ * edge, on one shared curve, so hovering a node feels alive instead of a
+ * hard on/off. `scale`/`translate` are animated (not `transform`) because the
+ * badge is centred with those properties.
+ */
+.canvas-handle-badge {
+  transition:
+    opacity 150ms ease-out,
+    scale 220ms cubic-bezier(0.34, 1.5, 0.64, 1),
+    translate 220ms cubic-bezier(0.34, 1.5, 0.64, 1);
+}
+.canvas-handle-badge[data-handle-side="left"] {
+  --canvas-handle-shift: -4px;
+}
+.canvas-handle-badge[data-handle-side="right"] {
+  --canvas-handle-shift: 4px;
+}
+.canvas-handle-glyph {
+  transition:
+    opacity 150ms ease-out,
+    scale 220ms cubic-bezier(0.34, 1.5, 0.64, 1);
+}
+
+/*
+ * Connection points reveal on node hover (and while a connection is being
+ * drawn). The badge markup used to rely on `.group/node:hover`, but the handles
+ * live outside that group (they must stay outside the detail layer so xyflow
+ * can measure them), so hovering a node showed nothing.
+ */
+.react-flow__node:hover .canvas-handle-badge,
+.react-flow__handle.connectingfrom .canvas-handle-badge,
+.react-flow__handle.connectingto .canvas-handle-badge,
+.react-flow__handle.valid .canvas-handle-badge {
+  opacity: 1;
+  visibility: visible;
+  /* `scale`/`translate`, not `transform`: the badge is centred with Tailwind's
+     `translate` property, and a `transform: translate(-50%, -50%)` here applied
+     the offset twice — every badge sat 12 flow px up-left of its connection
+     point. The outward slide makes the pop read as "grab here". */
+  scale: 1.04;
+  translate: calc(-50% + var(--canvas-handle-shift, 0px)) -50%;
+}
+
+.react-flow__node:hover .canvas-handle-glyph,
+.react-flow__handle.connectingfrom .canvas-handle-glyph,
+.react-flow__handle.connectingto .canvas-handle-glyph,
+.react-flow__handle.valid .canvas-handle-glyph {
+  opacity: 1;
+  scale: 1;
+}
+
+/* Far zoom hides handles by default; hovering a node still reveals them. */
+.canvas-far .react-flow__node:hover .react-flow__handle,
+.react-flow__handle.connectingfrom,
+.react-flow__handle.connectingto {
+  visibility: visible;
+}
+
+/*
+ * Multi-selection box: React Flow sets `pointer-events: all` on the wrapper, so
+ * the frame would intercept clicks on the nodes it surrounds. Let the frame
+ * pass clicks through and keep only the batch-connect handle interactive.
+ */
+.react-flow__node.react-flow__node-selectionBounds {
+  pointer-events: none !important;
+}
+.react-flow__node.react-flow__node-selectionBounds .react-flow__handle {
+  pointer-events: auto !important;
+}
+
+/* Edge hover: the thin line needs a forgiving hit area and a pointer cursor. */
+.canvas-edge-hit {
+  cursor: pointer;
+}
+
+/* Temporary connection line: flowing dash, status colour set inline. */
+@keyframes canvas-connection-line-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+.canvas-connection-line-path {
+  animation: canvas-connection-line-flow 0.6s linear infinite;
+}
+
+/* Edge role chips only exist on the selected edge; far zoom keeps them out of
+   the way even then. */
+.canvas-far .canvas-edge-picker:not([data-open="true"]) {
+  display: none;
+}
+
+/* The dragged node's store position is only committed on drop, so its label
+   would trail behind the pointer. Hide the layer for the gesture instead of
+   re-rendering it every frame. */
+.canvas-dragging .canvas-node-labels {
+  display: none;
 }
 
 /* Nodes are virtualised around the viewport edge, so they mount as they
@@ -639,6 +784,159 @@ body {
     var(--loading-track, color-mix(in oklab, var(--loading-color, currentColor) 22%, transparent));
   border-top-color: var(--loading-color, currentColor);
   animation: ui-loading-spin var(--loading-duration, 0.9s) linear infinite;
+}
+
+/*
+ * swirl: two counter-rotating rings. A heavy outer ring (3/4 arc) and a thin
+ * inner ring spinning the other way — reads as "working", not as a progress
+ * bar, and animates only `transform` so it stays on the compositor.
+ */
+.ui-loading--swirl .ui-loading__shape::before,
+.ui-loading--swirl .ui-loading__shape::after {
+  content: "";
+  position: absolute;
+  border-radius: 9999px;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform;
+}
+
+.ui-loading--swirl .ui-loading__shape::before {
+  inset: 0;
+  border: var(--loading-thickness, 2.5px) solid
+    color-mix(in oklab, var(--loading-color, currentColor) 16%, transparent);
+  border-top-color: var(--loading-color, currentColor);
+  border-right-color: color-mix(
+    in oklab,
+    var(--loading-color, currentColor) 70%,
+    transparent
+  );
+  animation-name: ui-loading-swirl;
+  animation-duration: var(--loading-duration, 0.9s);
+}
+
+.ui-loading--swirl .ui-loading__shape::after {
+  inset: calc(var(--loading-size, 24px) * 0.24);
+  border: max(1px, calc(var(--loading-thickness, 2.5px) * 0.7)) solid transparent;
+  border-bottom-color: color-mix(
+    in oklab,
+    var(--loading-color, currentColor) 85%,
+    transparent
+  );
+  animation-name: ui-loading-swirl-reverse;
+  animation-duration: calc(var(--loading-duration, 0.9s) * 1.5);
+}
+
+@keyframes ui-loading-swirl {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes ui-loading-swirl-reverse {
+  to {
+    transform: rotate(-1turn);
+  }
+}
+
+/* comet: a glowing head with a long fading tail orbiting a faint track */
+.ui-loading--comet .ui-loading__shape::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: var(--loading-thickness, 2.5px) solid
+    color-mix(in oklab, var(--loading-color, currentColor) 14%, transparent);
+}
+
+.ui-loading--comet .ui-loading__shape::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 0turn,
+    transparent 0deg,
+    transparent 200deg,
+    color-mix(in oklab, var(--loading-color, currentColor) 35%, transparent)
+      300deg,
+    var(--loading-color, currentColor) 350deg,
+    transparent 360deg
+  );
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - var(--loading-thickness, 2.5px)),
+    #000 calc(100% - var(--loading-thickness, 2.5px) + 0.5px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - var(--loading-thickness, 2.5px)),
+    #000 calc(100% - var(--loading-thickness, 2.5px) + 0.5px)
+  );
+  animation: ui-loading-swirl var(--loading-duration, 1.1s) linear infinite;
+}
+
+/* grid: 3x3 dots pulsing along the diagonal */
+.ui-loading--grid .ui-loading__shape {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: calc(var(--loading-size, 24px) * 0.1);
+  place-items: center;
+}
+
+.ui-loading__dot {
+  width: calc(var(--loading-size, 24px) * 0.18);
+  height: calc(var(--loading-size, 24px) * 0.18);
+  border-radius: 9999px;
+  background: var(--loading-color, currentColor);
+  opacity: 0.25;
+  transform: scale(0.75);
+  animation: ui-loading-grid var(--loading-duration, 1.3s) ease-in-out infinite;
+  animation-delay: calc(var(--loading-duration, 1.3s) * var(--i, 0) * 0.055);
+  will-change: opacity, transform;
+}
+
+@keyframes ui-loading-grid {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.75);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* wave: five bars breathing out of phase (audio-ish) */
+.ui-loading--wave .ui-loading__shape {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--loading-size, 24px) * 0.11);
+}
+
+.ui-loading__wave-bar {
+  width: max(2px, calc(var(--loading-size, 24px) * 0.12));
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--loading-color, currentColor);
+  transform: scaleY(0.35);
+  transform-origin: 50% 50%;
+  animation: ui-loading-wave var(--loading-duration, 1.2s) ease-in-out infinite;
+  animation-delay: calc(var(--loading-duration, 1.2s) * var(--i, 0) * -0.09);
+  will-change: transform;
+}
+
+@keyframes ui-loading-wave {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
 }
 
 /* dots: three dots, staggered */

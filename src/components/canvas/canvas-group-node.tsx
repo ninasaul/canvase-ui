@@ -37,7 +37,11 @@ import {
   useCanvasStore,
   type CanvasFlowNode,
 } from "@/lib/canvas/canvas-store";
-import { useCanvasDetail } from "@/components/canvas/canvas-detail-context";
+import { getGroupChildSummary } from "@/lib/canvas/canvas-derived";
+import {
+  useCanvasDragOverGroup,
+  useSelectedCount,
+} from "@/lib/canvas/canvas-selectors";
 import { messages } from "@/messages";
 
 function nodePropsEqual(
@@ -65,67 +69,26 @@ export const GroupCanvasNode = memo(function GroupCanvasNode({
   // Subscribe to a compact summary of our children instead of the whole node
   // array: dragging any node re-created that array and re-rendered every group.
   // `useShallow` compares the summary field by field, so the group only
-  // re-renders when its own children actually change.
+  // re-renders when its own children actually change; the summary itself is
+  // computed once per store version and cached (see canvas-derived).
   const childSummary = useCanvasStore(
-    useShallow((state) => {
-      let count = 0;
-      let busy = false;
-      let maxWidth = 0;
-      let maxHeight = 0;
-      const runnable: string[] = [];
-      for (const node of state.nodes) {
-        if (node.parentId !== id) {
-          continue;
-        }
-        const width = node.width ?? node.measured?.width ?? 220;
-        const height = node.height ?? node.measured?.height ?? 120;
-        count += 1;
-        maxWidth = Math.max(maxWidth, Math.ceil(node.position.x + width + 24));
-        maxHeight = Math.max(
-          maxHeight,
-          Math.ceil(node.position.y + height + 24),
-        );
-        if (node.data.status === "running" || node.data.status === "queued") {
-          busy = true;
-        }
-        if (
-          node.type === "image" ||
-          node.type === "video" ||
-          node.type === "text"
-        ) {
-          runnable.push(node.id);
-        }
-      }
-      return {
-        count,
-        busy,
-        maxWidth,
-        maxHeight,
-        runnableKey: runnable.join(","),
-      };
-    }),
+    useShallow((state) => getGroupChildSummary(state.nodes, id)),
   );
-  const runnableChildIds = childSummary.runnableKey
-    ? childSummary.runnableKey.split(",")
-    : [];
+  const runnableChildIds = childSummary.runnableIds;
   const {
     prepareRunSelected,
     cancelNodeRun,
     cancelActiveRun,
     isBatchRunActive,
   } = useCanvasActions();
-  const dragOver = useCanvasStore(
-    (state) => state.dragOverGroupId === id,
-  );
-  const multipleSelected = useCanvasStore(
-    (state) => state.nodes.filter((node) => node.selected).length > 1,
-  );
+  const dragOver = useCanvasDragOverGroup(id);
+  const selectedCount = useSelectedCount();
+  const multipleSelected = selectedCount > 1;
   const [renameOpen, setRenameOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [addIds, setAddIds] = useState<string[]>([]);
   const [draft, setDraft] = useState(data.label ?? "");
-  const { far } = useCanvasDetail();
   const { nodeStyle } = useCanvasPreferences();
   // Only needed while the "add nodes" menu is open; reading it on demand keeps
   // the component out of the store's node subscription.
@@ -141,18 +104,15 @@ export const GroupCanvasNode = memo(function GroupCanvasNode({
   const minWidth = Math.max(260, childSummary.maxWidth);
   const minHeight = Math.max(180, childSummary.maxHeight);
 
-  if (far) {
-    return (
-      <div
-        className={`h-full w-full rounded-xl border-2 border-dashed ${
-          selected ? "border-sky-500 bg-sky-500/5" : "border-zinc-400/60"
-        }`}
-      />
-    );
-  }
-
   return (
     <>
+    {/* Always mounted; `.canvas-far` decides which layer is visible. */}
+    <div
+      aria-hidden
+      className={`canvas-far-block pointer-events-none absolute inset-0 rounded-xl border-2 border-dashed ${
+        selected ? "border-sky-500 bg-sky-500/5" : "border-zinc-400/60"
+      }`}
+    />
     {/*
       Resizer must sit outside overflow-hidden, otherwise corner handles are clipped.
       Fragment children both mount under .react-flow__node-group.
@@ -165,7 +125,7 @@ export const GroupCanvasNode = memo(function GroupCanvasNode({
       keepAspectRatio={false}
     />
     <div
-      className={`relative h-full w-full overflow-hidden transition-[border-color,background-color,box-shadow] duration-150 ${GROUP_STYLE_CLASS[nodeStyle]} ${GROUP_STYLE_HOVER_CLASS[nodeStyle]} ${
+      className={`canvas-detail relative h-full w-full overflow-hidden transition-[border-color,background-color,box-shadow] duration-150 ${GROUP_STYLE_CLASS[nodeStyle]} ${GROUP_STYLE_HOVER_CLASS[nodeStyle]} ${
         dragOver
           ? NODE_SNAP_RING_CLASS
           : selected

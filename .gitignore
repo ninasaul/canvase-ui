@@ -38,6 +38,12 @@ pnpm-debug.log*
 !.env.example
 
 
+# local notes and design docs (kept out of the repository)
+docs/
+
+# local deploy scripts (bootstrap + systemd units live on the host only)
+deploy/
+
 # vercel
 .vercel
 

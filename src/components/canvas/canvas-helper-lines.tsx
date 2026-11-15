@@ -2,17 +2,16 @@
 
 import { ViewportPortal } from "@xyflow/react";
 
-import type { CanvasHelperLines } from "@/lib/canvas/canvas-helper-lines";
+import { useCanvasHelperLinesStore } from "@/lib/canvas/canvas-helper-lines-store";
 
 const LINE_EXTENT = 10_000;
 
-type CanvasHelperLinesOverlayProps = {
-  lines: CanvasHelperLines | null;
-};
-
-export function CanvasHelperLinesOverlay({
-  lines,
-}: CanvasHelperLinesOverlayProps) {
+/**
+ * Subscribes to the guide store itself: the guides move every drag frame, and
+ * routing them through editor state re-rendered the entire editor tree.
+ */
+export function CanvasHelperLinesOverlay() {
+  const lines = useCanvasHelperLinesStore((state) => state.lines);
   if (!lines || (lines.horizontal == null && lines.vertical == null)) {
     return null;
   }

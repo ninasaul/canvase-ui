@@ -1,13 +1,12 @@
 "use client";
 
 import { memo } from "react";
-import { useShallow } from "zustand/react/shallow";
 
 import { BoundingBox } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { useCanvasStore } from "@/lib/canvas/canvas-store";
+import { useCanvasSelection } from "@/lib/canvas/canvas-selectors";
 import { messages } from "@/messages";
 
 /** Appears while two or more nodes are selected: count plus "create group". */
@@ -18,17 +17,12 @@ function CanvasSelectionBarInner({
 }) {
   // Subscribe to the selection here instead of receiving an array from the
   // editor: the editor re-renders on every node change, and a fresh array per
-  // render defeated memo. `useShallow` keeps identity stable while the
-  // selection is unchanged.
-  const selectedNodes = useCanvasStore(
-    useShallow((state) =>
-      state.nodes.filter(
-        (node) => node.selected && node.type !== "group" && !node.parentId,
-      ),
-    ),
-  );
+  // render defeated memo. The cached summary keeps the selector O(1) and
+  // `useShallow` keeps the identity stable while the selection is unchanged.
+  const selection = useCanvasSelection();
+  const selectedIds = selection.groupableIds;
 
-  if (selectedNodes.length < 2) {
+  if (selectedIds.length < 2) {
     return null;
   }
   return (
@@ -37,14 +31,14 @@ function CanvasSelectionBarInner({
       <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-300">
         {messages.canvas.selectedNodeCount.replace(
           "{count}",
-          String(selectedNodes.length),
+          String(selectedIds.length),
         )}
       </span>
       <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-700" />
       <Button
         variant="primary"
         size="sm"
-        onClick={() => onCreateGroup(selectedNodes.length)}
+        onClick={() => onCreateGroup(selectedIds.length)}
       >
         {messages.canvas.createGroup}
       </Button>
