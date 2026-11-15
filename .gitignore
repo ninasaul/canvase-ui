@@ -38,6 +38,9 @@ pnpm-debug.log*
 !.env.example
 
 
+# local deploy scripts (bootstrap + systemd units live on the host only)
+deploy/
+
 # vercel
 .vercel
 
