@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useDeferredValue, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 import {
   ArrowLeft,
@@ -19,8 +19,12 @@ import {
 import { useCanvasActions } from "@/components/canvas/canvas-actions";
 import { Loading } from "@/components/ui/loading";
 import { Icon } from "@/components/ui/icon";
-import { useCanvasDetail } from "@/components/canvas/canvas-detail-context";
-import { getNodeById } from "@/lib/canvas/canvas-node-index";
+import {
+  useCanvasIsUploading,
+  useCanvasNode,
+  useCanvasSnapTarget,
+  useCanvasUploadProgress,
+} from "@/lib/canvas/canvas-selectors";
 import { useCanvasStore, type CanvasFlowNode } from "@/lib/canvas/canvas-store";
 import {
   useCanvasRunStatus,
@@ -43,6 +47,7 @@ import { CanvasVideoPlayer } from "./canvas-video-player";
 import { GroupCanvasNode } from "./canvas-group-node";
 import { CanvasNodeResizer } from "./canvas-node-resizer";
 import { CanvasNodeToolbar } from "./canvas-node-toolbar";
+import { SelectionBoundsNode } from "./canvas-selection-bounds-node";
 
 function HandleBadge({
   color,
@@ -52,11 +57,16 @@ function HandleBadge({
   side: "left" | "right";
 }) {
   const { handleStyle } = useCanvasPreferences();
-  const glyphClass =
-    "text-white scale-75 opacity-0 transition-all duration-200 group-hover/node:scale-100 group-hover/node:opacity-100";
+  // Revealed by CSS on node hover (`.react-flow__node:hover`): the handles are
+  // rendered outside `.canvas-detail`, so a `group-hover/node` utility could
+  // never reach them — their group was a sibling.
+  // Resting state only; the reveal animation lives in globals.css so opacity,
+  // scale and the outward slide share one easing curve.
+  const glyphClass = "canvas-handle-glyph text-white scale-75 opacity-0";
   return (
     <span
-      className="canvas-handle-badge pointer-events-none absolute left-1/2 top-1/2 z-10 flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white opacity-0 shadow-sm transition-opacity duration-150 group-hover/node:opacity-100 dark:border-zinc-900"
+      data-handle-side={side}
+      className="canvas-handle-badge pointer-events-none absolute left-1/2 top-1/2 z-10 flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white opacity-0 shadow-sm dark:border-zinc-900"
       style={{ backgroundColor: color }}
     >
       {handleStyle === "plus" ? (
@@ -134,13 +144,12 @@ function NodeShell({
   flush?: boolean;
   children: React.ReactNode;
 }) {
-  const snapTarget = useCanvasStore(
-    (state) => state.snapTargetId === nodeId,
-  );
-  const uploadProgress = useCanvasStore(
-    (state) => state.uploadProgressById[nodeId],
-  );
-  const node = useCanvasStore((state) => getNodeById(state.nodes, nodeId));
+  // One subscription instead of three: the whole graph re-evaluates this
+  // selector on every store write, so the per-node cost is multiplied by the
+  // node count (100+ subscribers on a large canvas).
+  const snapTarget = useCanvasSnapTarget(nodeId);
+  const uploadProgress = useCanvasUploadProgress(nodeId);
+  const node = useCanvasNode(nodeId);
   const runStatus = useCanvasRunStatus(nodeId);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const [querying, setQuerying] = useState(false);
@@ -400,11 +409,12 @@ function NodeRunningOverlay({
 
   return (
     <Loading
-      variant={running ? "bars" : "ring"}
-      size={running ? 40 : 44}
-      thickness={running ? 2 : 2.5}
-      speed={running ? 1.4 : 2.4}
+      variant={running ? "grid" : "ring"}
+      size={running ? 34 : 44}
+      thickness={2.5}
+      speed={running ? 1.2 : 2.4}
       overlay
+      veil={running ? "soft" : "strong"}
       color={running ? undefined : "#a1a1aa"}
       className={running ? "text-sky-500 dark:text-sky-400" : "opacity-70"}
       label={
@@ -556,9 +566,11 @@ function nodePropsEqual(
 }
 
 /**
- * Level of detail: a plain block. Rendering the full node shell, handles and
- * overlays for 100+ nodes made panning unusable when zoomed out, and none of
- * that chrome is readable at that scale anyway.
+ * Level of detail: a plain block shown instead of the full node at far zoom.
+ *
+ * It is always mounted and toggled by the `.canvas-far` CSS class on the React
+ * Flow root, so crossing the zoom threshold never unmounts a node subtree
+ * (which reloaded every image and shook the layout).
  */
 function NodeFarBlock({
   type,
@@ -569,7 +581,8 @@ function NodeFarBlock({
 }) {
   return (
     <div
-      className={`h-full w-full rounded-lg border ${
+      aria-hidden
+      className={`canvas-far-block pointer-events-none absolute inset-0 rounded-lg border ${
         selected
           ? "border-sky-500 ring-2 ring-sky-400/40"
           : "border-zinc-300/80"
@@ -583,45 +596,37 @@ function NodeFarBlock({
 }
 
 export const TextCanvasNode = memo(function TextCanvasNode({ id, data, selected }: NodeProps<CanvasFlowNode>) {
-  // Deferred so the LOD switch back to full nodes is rendered at low
-  // priority: React can interrupt that pass and keep the zoom gesture
-  // responsive instead of freezing while 100+ nodes mount their content.
-  const { far: farTier } = useCanvasDetail();
-  const far = useDeferredValue(farTier);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
-  if (far) {
-    return <NodeFarBlock type="text" selected={Boolean(selected)} />;
-  }
   return (
-    <div className="group/node relative h-full w-full">
-      <InputHandle
-        id="context"
-        label={messages.canvas.contextInput}
-        color="#3b82f6"
-      />
+    <>
+    <NodeFarBlock type="text" selected={Boolean(selected)} />
+    {/* Handles live outside `.canvas-detail`: hiding that layer with
+        `display: none` collapsed the handles to a zero box, and xyflow measures
+        handle bounds to place edges — once those bounds were zero, every edge
+        collapsed onto a single point and the connections disappeared. */}
+    <InputHandle
+      id="context"
+      label={messages.canvas.contextInput}
+      color="#3b82f6"
+    />
+    <OutputHandle color="#3b82f6" />
+    <div className="canvas-detail group/node relative h-full w-full">
       <NodeShell
         nodeId={id}
         selected={Boolean(selected)}
       >
-        {far ? (
-          <p className="line-clamp-3 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-            {data.text?.trim() || messages.canvas.textNode}
-          </p>
-        ) : (
         <textarea
           className="nodrag nowheel h-full min-h-16 w-full resize-none border-0 bg-transparent p-0 text-[11px] leading-relaxed text-zinc-700 outline-none dark:text-zinc-200"
           value={data.text ?? ""}
           placeholder={messages.canvas.textPlaceholder}
           onChange={(event) => updateNodeData(id, { text: event.target.value })}
         />
-        )}
       </NodeShell>
       <NodeRunningOverlay
         nodeId={id}
         status={data.status}
         startedAt={data.startedAt}
       />
-      <OutputHandle color="#3b82f6" />
       {selected ? (
         <CanvasNodeResizer
           nodeId={id}
@@ -635,32 +640,29 @@ export const TextCanvasNode = memo(function TextCanvasNode({ id, data, selected 
         <CanvasNodeToolbar nodeId={id} type="text" selected />
       ) : null}
     </div>
+    </>
   );
 }, nodePropsEqual);
 
 
 
 export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selected }: NodeProps<CanvasFlowNode>) {
-  // Deferred so the LOD switch back to full nodes is rendered at low
-  // priority: React can interrupt that pass and keep the zoom gesture
-  // responsive instead of freezing while 100+ nodes mount their content.
-  const { far: farTier } = useCanvasDetail();
-  const far = useDeferredValue(farTier);
   const setNodeSize = useCanvasStore((state) => state.setNodeSize);
-  const updateNodeData = useCanvasStore((state) => state.updateNodeData);
-  const uploading = useCanvasStore(
-    (state) => typeof state.uploadProgressById[id] === "number",
-  );
-  if (far) {
-    return <NodeFarBlock type="image" selected={Boolean(selected)} />;
-  }
+  const uploading = useCanvasIsUploading(id);
   return (
-    <div className="group/node relative h-full w-full">
-      <InputHandle
-        id="in"
-        label={messages.canvas.input}
-        color="#10b981"
-      />
+    <>
+    <NodeFarBlock type="image" selected={Boolean(selected)} />
+    {/* Handles live outside `.canvas-detail`: hiding that layer with
+        `display: none` collapsed the handles to a zero box, and xyflow measures
+        handle bounds to place edges — once those bounds were zero, every edge
+        collapsed onto a single point and the connections disappeared. */}
+    <InputHandle
+      id="in"
+      label={messages.canvas.input}
+      color="#10b981"
+    />
+    <OutputHandle color="#10b981" />
+    <div className="canvas-detail group/node relative h-full w-full">
       <NodeShell
         nodeId={id}
         selected={Boolean(selected)}
@@ -668,7 +670,6 @@ export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selecte
       >
         <div className="h-full overflow-hidden">
           {data.url ? (
-            far ? null : (
             <div className="h-full">
             <MediaPreview
               type="image"
@@ -684,7 +685,6 @@ export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selecte
               }}
             />
             </div>
-            )
           ) : uploading ? null : (
             <EmptyMedia
               icon={<Icon icon={ImageSquare} size={18} weight="fill" />}
@@ -698,38 +698,35 @@ export const ImageCanvasNode = memo(function ImageCanvasNode({ id, data, selecte
         status={data.status}
         startedAt={data.startedAt}
       />
-      <OutputHandle color="#10b981" />
       <CanvasNodeResizer nodeId={id} selected={Boolean(selected)} minWidth={160} minHeight={120} />
       {selected ? (
         <CanvasNodeToolbar nodeId={id} type="image" selected />
       ) : null}
     </div>
+    </>
   );
 }, nodePropsEqual);
 
 
 
 export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selected }: NodeProps<CanvasFlowNode>) {
-  // Deferred so the LOD switch back to full nodes is rendered at low
-  // priority: React can interrupt that pass and keep the zoom gesture
-  // responsive instead of freezing while 100+ nodes mount their content.
-  const { far: farTier } = useCanvasDetail();
-  const far = useDeferredValue(farTier);
   const setNodeSize = useCanvasStore((state) => state.setNodeSize);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
-  const uploading = useCanvasStore(
-    (state) => typeof state.uploadProgressById[id] === "number",
-  );
-  if (far) {
-    return <NodeFarBlock type="video" selected={Boolean(selected)} />;
-  }
+  const uploading = useCanvasIsUploading(id);
   return (
-    <div className="group/node relative h-full w-full">
-      <InputHandle
-        id="in"
-        label={messages.canvas.input}
-        color="#8b5cf6"
-      />
+    <>
+    <NodeFarBlock type="video" selected={Boolean(selected)} />
+    {/* Handles live outside `.canvas-detail`: hiding that layer with
+        `display: none` collapsed the handles to a zero box, and xyflow measures
+        handle bounds to place edges — once those bounds were zero, every edge
+        collapsed onto a single point and the connections disappeared. */}
+    <InputHandle
+      id="in"
+      label={messages.canvas.input}
+      color="#8b5cf6"
+    />
+    <OutputHandle color="#8b5cf6" label={messages.canvas.output} />
+    <div className="canvas-detail group/node relative h-full w-full">
       <NodeShell
         nodeId={id}
         selected={Boolean(selected)}
@@ -737,7 +734,6 @@ export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selecte
       >
         <div className="h-full overflow-hidden">
           {data.url ? (
-            far ? null : (
             <div className="h-full">
             <MediaPreview
             type="video"
@@ -757,7 +753,6 @@ export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selecte
             }}
           />
             </div>
-            )
           ) : uploading ? null : (
             <EmptyMedia
               icon={<Icon icon={VideoCamera} size={18} weight="fill" />}
@@ -771,46 +766,41 @@ export const VideoCanvasNode = memo(function VideoCanvasNode({ id, data, selecte
         status={data.status}
         startedAt={data.startedAt}
       />
-      <OutputHandle color="#8b5cf6" label={messages.canvas.output} />
       <CanvasNodeResizer nodeId={id} selected={Boolean(selected)} minWidth={180} minHeight={120} />
       {selected ? (
         <CanvasNodeToolbar nodeId={id} type="video" selected />
       ) : null}
     </div>
+    </>
   );
 }, nodePropsEqual);
 
 
 
 export const AudioCanvasNode = memo(function AudioCanvasNode({ id, data, selected }: NodeProps<CanvasFlowNode>) {
-  // Deferred so the LOD switch back to full nodes is rendered at low
-  // priority: React can interrupt that pass and keep the zoom gesture
-  // responsive instead of freezing while 100+ nodes mount their content.
-  const { far: farTier } = useCanvasDetail();
-  const far = useDeferredValue(farTier);
-  const uploading = useCanvasStore(
-    (state) => typeof state.uploadProgressById[id] === "number",
-  );
-  if (far) {
-    return <NodeFarBlock type="audio" selected={Boolean(selected)} />;
-  }
+  const uploading = useCanvasIsUploading(id);
   return (
-    <div className="group/node relative h-full w-full">
-      <InputHandle
-        id="in"
-        label={messages.canvas.input}
-        color="#f97316"
-      />
+    <>
+    <NodeFarBlock type="audio" selected={Boolean(selected)} />
+    {/* Handles live outside `.canvas-detail`: hiding that layer with
+        `display: none` collapsed the handles to a zero box, and xyflow measures
+        handle bounds to place edges — once those bounds were zero, every edge
+        collapsed onto a single point and the connections disappeared. */}
+    <InputHandle
+      id="in"
+      label={messages.canvas.input}
+      color="#f97316"
+    />
+    <OutputHandle color="#f97316" label={messages.canvas.output} />
+    <div className="canvas-detail group/node relative h-full w-full">
       <NodeShell
         nodeId={id}
         selected={Boolean(selected)}
       >
         {data.url ? (
-          far ? null : (
           <div>
             <CanvasAudioPlayer key={data.url} src={data.url} />
           </div>
-          )
         ) : uploading ? null : (
           <EmptyMedia
             icon={<Icon icon={Waveform} size={18} weight="fill" />}
@@ -818,7 +808,6 @@ export const AudioCanvasNode = memo(function AudioCanvasNode({ id, data, selecte
           />
         )}
       </NodeShell>
-      <OutputHandle color="#f97316" label={messages.canvas.output} />
       {selected ? (
         <CanvasNodeResizer
           nodeId={id}
@@ -832,6 +821,7 @@ export const AudioCanvasNode = memo(function AudioCanvasNode({ id, data, selecte
         <CanvasNodeToolbar nodeId={id} type="audio" selected />
       ) : null}
     </div>
+    </>
   );
 }, nodePropsEqual);
 
@@ -843,4 +833,12 @@ export const canvasNodeTypes = {
   video: VideoCanvasNode,
   audio: AudioCanvasNode,
   group: GroupCanvasNode,
+} as const;
+
+/**
+ * Extra renderers that are not document node types: the multi-selection box is
+ * synthetic and never persisted.
+ */
+export const canvasSyntheticNodeTypes = {
+  selectionBounds: SelectionBoundsNode,
 } as const;

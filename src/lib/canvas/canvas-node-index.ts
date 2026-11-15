@@ -35,3 +35,10 @@ export function getNodeById(
 ): CanvasFlowNode | undefined {
   return indexOf(nodes).get(nodeId);
 }
+
+/** The cached id → node map for this array. Do not mutate it. */
+export function getNodeIndex(
+  nodes: readonly CanvasFlowNode[],
+): ReadonlyMap<string, CanvasFlowNode> {
+  return indexOf(nodes);
+}

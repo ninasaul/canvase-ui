@@ -10,6 +10,7 @@ import { CanvasGenerationCost } from "./canvas-generation-cost";
 import { useCanvasUpstreamPrompt } from "@/lib/canvas/use-canvas-upstream-prompt";
 import { useCanvasUpstreamImages } from "@/lib/canvas/use-canvas-upstream-images";
 import { useCanvasStore } from "@/lib/canvas/canvas-store";
+import { useCanvasNode } from "@/lib/canvas/canvas-selectors";
 import {
   canvasMediaNodeSize,
   videoAspectRatio,
@@ -66,9 +67,7 @@ export function CanvasVideoGenerationDock({
   embedded?: boolean;
 }) {
   const { models, runNode } = useCanvasActions();
-  const node = useCanvasStore((state) =>
-    state.nodes.find((item) => item.id === nodeId),
-  );
+  const node = useCanvasNode(nodeId);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const setNodeSize = useCanvasStore((state) => state.setNodeSize);
 
